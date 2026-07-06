@@ -46,6 +46,7 @@ create table sedes (
   pais                 text default 'Perú',
   telefono_coordinador text,
   google_maps_url      text,
+  cabecera_url         text,                              -- imagen de cabecera del estado de cuenta
   activo               boolean not null default true
 );
 
@@ -192,7 +193,8 @@ create table medios_pago (
 create table ciclos_pago (
   id            uuid primary key default gen_random_uuid(),
   academia_id   uuid not null references academias(id),
-  dia           int not null check (dia between 1 and 28),  -- "Ciclo al N"
+  dia           int not null check (dia between 1 and 28),  -- día de corte ("Ciclo al N")
+  dia_venc      int check (dia_venc between 1 and 28),      -- día de vencimiento (dentro del mes del ciclo)
   es_default    boolean not null default false,
   activo        boolean not null default true
 );
@@ -215,6 +217,8 @@ create table cargos (
   jugador_id    uuid references jugadores(id),
   inscripcion_id uuid references inscripciones(id),
   tipo          text not null default 'CR' check (tipo in ('CR','CNR')),
+  origen        text check (origen in ('manual','proceso','promo')), -- cómo se generó el CR
+  proceso_id    uuid references procesos_facturacion(id),  -- si vino de una generación masiva
   concepto_cnr_id uuid references conceptos_cnr(id),    -- si es CNR, concepto del catálogo
   concepto      text not null,                          -- CR: nombre del track · CNR: nombre del concepto
   descripcion   text,                                   -- CR: "Del <ini> al <fin>" · CNR: detalle
@@ -222,8 +226,11 @@ create table cargos (
   ciclo_inicio  date,                                   -- CR: inicio del ciclo facturado
   ciclo_fin     date,                                   -- CR: fin del ciclo (fecha de corte)
   ciclo_dia     int,                                    -- CR: día del ciclo usado (1, 16, ...)
+  fecha_vencimiento date,                                -- vencimiento de la cuenta por cobrar
   promo_id      uuid references promociones(id),        -- CR generado por una promoción
   gratis        boolean not null default false,         -- mes gratis de promo (monto 0)
+  sin_cobro     boolean not null default false,         -- CR en $0 (beca/promo): registrado sin cobro
+  motivo_sin_cobro text,                                -- 'Beca' | 'Promoción'
   monto         decimal(12,2) not null,
   pagado_monto  decimal(12,2) not null default 0,       -- acumulado aplicado por abonos
   estado        text not null default 'por_pagar'
@@ -247,6 +254,21 @@ create table pagos (
   processed_at  timestamptz,
   rejection_reason text
 );
+
+-- Procesos de generación masiva de CR por ciclo (auditoría)
+create table procesos_facturacion (
+  id            uuid primary key default gen_random_uuid(),
+  academia_id   uuid not null references academias(id),
+  sede_id       uuid references sedes(id),
+  ciclo_dia     int not null,                           -- ciclo facturado
+  corte         date not null,                          -- fin del período facturado
+  vencimiento   date not null,
+  total_crs     int not null default 0,
+  total_monto   decimal(12,2) not null default 0,
+  created_by    uuid,
+  created_at    timestamptz not null default now()
+);
+-- Un cargo puede referenciar el proceso que lo generó (cargos.proceso_id, opcional).
 
 -- Aplicación de un pago a uno o varios cargos (soporta abonos parciales)
 create table pago_cargo (

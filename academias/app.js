@@ -75,31 +75,41 @@ const DB = {
   // Inscripción jugador<->track (costo personalizado = beca; null usa el sugerido)
   // Mateo (j1) está en DOS tracks de San Miguel: "2015-2016" y "ARQUEROS 5pm".
   // Cada inscripción activa es la DEFINICIÓN de un CR. ultima_fecha_corte = fin del último ciclo generado.
+  // ciclo_dia = ciclo de pago asignado (para la generación masiva por ciclo).
   inscripciones: [
-    { id: 'i1', jugador_id: 'j1', track_id: 't1', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-07', ultima_fecha_corte: '2026-07-31' },
-    { id: 'i1b', jugador_id: 'j1', track_id: 't2', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-07', ultima_fecha_corte: '2026-07-31' },
-    { id: 'i2', jugador_id: 'j2', track_id: 't1', costo_mensual_personalizado: 80,   activo: true, fecha_inscripcion: '2026-04-07', ultima_fecha_corte: '2026-07-31' }, // media beca
-    { id: 'i3', jugador_id: 'j3', track_id: 't1', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-08', ultima_fecha_corte: '2026-07-31' },
-    { id: 'i4', jugador_id: 'j4', track_id: 't2', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-08', ultima_fecha_corte: null },
-    { id: 'i5', jugador_id: 'j5', track_id: 't3', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-05-02', ultima_fecha_corte: '2026-07-31' },
+    { id: 'i1', jugador_id: 'j1', track_id: 't1', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-07', ultima_fecha_corte: '2026-07-31', ciclo_dia: 1 },
+    { id: 'i1b', jugador_id: 'j1', track_id: 't2', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-07', ultima_fecha_corte: '2026-07-31', ciclo_dia: 1 },
+    { id: 'i2', jugador_id: 'j2', track_id: 't1', costo_mensual_personalizado: 80,   activo: true, fecha_inscripcion: '2026-04-07', ultima_fecha_corte: '2026-07-31', ciclo_dia: 1 }, // media beca
+    { id: 'i3', jugador_id: 'j3', track_id: 't1', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-08', ultima_fecha_corte: '2026-07-31', ciclo_dia: 1 },
+    { id: 'i4', jugador_id: 'j4', track_id: 't2', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-04-08', ultima_fecha_corte: null, ciclo_dia: null },
+    { id: 'i5', jugador_id: 'j5', track_id: 't3', costo_mensual_personalizado: null, activo: true, fecha_inscripcion: '2026-05-02', ultima_fecha_corte: '2026-07-31', ciclo_dia: 1 },
   ],
 
   // tipo: 'CR' (recurrente, mensualidad de track) | 'CNR' (no recurrente, eventual)
   // concepto = nombre del cargo; descripcion = detalle (SIN el nombre del alumno)
   cargos: [
-    { id: 'c1',  tutor_id: 'tu1', jugador_id: 'j1', inscripcion_id: 'i1',  tipo: 'CR',  concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', periodo: PERIODO, monto: 220, pagado_monto: 0,  estado: 'por_pagar' },
-    { id: 'c1b', tutor_id: 'tu1', jugador_id: 'j1', inscripcion_id: 'i1b', tipo: 'CR',  concepto: 'ARQUEROS 5pm', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', periodo: PERIODO, monto: 250, pagado_monto: 0,  estado: 'por_pagar' },
-    { id: 'c2',  tutor_id: 'tu1', jugador_id: 'j2', inscripcion_id: 'i2',  tipo: 'CR',  concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', periodo: PERIODO, monto: 80,  pagado_monto: 80, estado: 'pagado' },
-    { id: 'c3',  tutor_id: 'tu2', jugador_id: 'j3', inscripcion_id: 'i3',  tipo: 'CR',  concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', periodo: PERIODO, monto: 220, pagado_monto: 0,  estado: 'vencido' },
-    { id: 'c4',  tutor_id: 'tu2', jugador_id: 'j4', tipo: 'CNR', concepto: 'Matrícula anual', descripcion: '', periodo: PERIODO, monto: 150, pagado_monto: 0,  estado: 'por_pagar' },
-    { id: 'c5',  tutor_id: 'tu3', jugador_id: 'j5', inscripcion_id: 'i5',  tipo: 'CR',  concepto: '2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', periodo: PERIODO, monto: 200, pagado_monto: 0,  estado: 'por_pagar' },
+    { id: 'c1',  tutor_id: 'tu1', jugador_id: 'j1', inscripcion_id: 'i1',  tipo: 'CR', origen: 'proceso', concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 220, pagado_monto: 0,  estado: 'por_pagar' },
+    { id: 'c1b', tutor_id: 'tu1', jugador_id: 'j1', inscripcion_id: 'i1b', tipo: 'CR', origen: 'proceso', concepto: 'ARQUEROS 5pm', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 250, pagado_monto: 0,  estado: 'por_pagar' },
+    { id: 'c2',  tutor_id: 'tu1', jugador_id: 'j2', inscripcion_id: 'i2',  tipo: 'CR', origen: 'proceso', concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 80,  pagado_monto: 80, estado: 'pagado' },
+    { id: 'c3',  tutor_id: 'tu2', jugador_id: 'j3', inscripcion_id: 'i3',  tipo: 'CR', origen: 'proceso', concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 220, pagado_monto: 0,  estado: 'por_pagar' },
+    { id: 'c4',  tutor_id: 'tu2', jugador_id: 'j4', tipo: 'CNR', concepto: 'Matrícula anual', descripcion: '', fecha_vencimiento: '2026-06-15', periodo: PERIODO, monto: 150, pagado_monto: 0,  estado: 'por_pagar' },
+    { id: 'c5',  tutor_id: 'tu3', jugador_id: 'j5', inscripcion_id: 'i5',  tipo: 'CR', origen: 'proceso', concepto: '2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 200, pagado_monto: 0,  estado: 'por_pagar' },
     { id: 'c6',  tutor_id: 'tu1', jugador_id: 'j1', tipo: 'CNR', concepto: 'Uniforme', descripcion: '', periodo: PERIODO, monto: 120, pagado_monto: 0,  estado: 'por_pagar' },
   ],
 
   // Documentos de pago: cada pago cubre uno o más cargos (CR/CNR) y los marca Pagados.
+  // detalle.cat = categoría de ingreso (Mensualidades para CR; nombre del concepto para CNR)
   pagos: [
     { id: 'pg1', tutor_id: 'tu1', jugador_id: 'j2', sede_id: 's1', fecha: '2026-07-01', medio: 'Yape', num_operacion: '00012345', voucher_url: 'mock.jpg', total: 80, estado: 'registrado',
-      detalle: [{ cargo_id: 'c2', concepto: '2015 - 2016 Del 01/07/2026 al 31/07/2026', tipo: 'CR', monto: 80 }] },
+      detalle: [{ cargo_id: 'c2', concepto: '2015 - 2016 Del 01/07/2026 al 31/07/2026', cat: 'Mensualidades', tipo: 'CR', monto: 80 }] },
+    { id: 'pg2', tutor_id: 'tu1', jugador_id: 'j2', sede_id: 's1', fecha: '2026-07-02', medio: 'Efectivo', num_operacion: '', voucher_url: null, total: 120, estado: 'registrado',
+      detalle: [{ cargo_id: 'h1', concepto: 'Uniforme', cat: 'Uniforme', tipo: 'CNR', monto: 120 }] },
+    { id: 'pg3', tutor_id: 'tu3', jugador_id: 'j5', sede_id: 's2', fecha: '2026-07-03', medio: 'Transferencia', num_operacion: 'OP-778', voucher_url: 'mock.jpg', total: 300, estado: 'registrado',
+      detalle: [{ cargo_id: 'h2', concepto: 'Mensualidad', cat: 'Mensualidades', tipo: 'CR', monto: 200 }, { cargo_id: 'h3', concepto: 'Inscripción torneo', cat: 'Inscripción torneo', tipo: 'CNR', monto: 100 }] },
+    { id: 'pg4', tutor_id: 'tu2', jugador_id: 'j3', sede_id: 's1', fecha: '2026-06-28', medio: 'Yape', num_operacion: 'OP-551', voucher_url: 'mock.jpg', total: 220, estado: 'registrado',
+      detalle: [{ cargo_id: 'h4', concepto: 'Mensualidad', cat: 'Mensualidades', tipo: 'CR', monto: 220 }] },
+    { id: 'pg5', tutor_id: 'tu2', jugador_id: 'j3', sede_id: 's1', fecha: '2026-06-20', medio: 'Efectivo', num_operacion: '', voucher_url: null, total: 150, estado: 'registrado',
+      detalle: [{ cargo_id: 'h5', concepto: 'Matrícula anual', cat: 'Matrícula anual', tipo: 'CNR', monto: 150 }] },
   ],
 
   // Medios de pago habilitados (configurables)
@@ -112,10 +122,11 @@ const DB = {
   ],
 
   // Ciclos de pago: día del mes de corte para generar los CR
+  // dia = día de corte · dia_venc = día de vencimiento (próxima ocurrencia tras el corte)
   ciclosPago: [
-    { id: 'ci1', dia: 1, es_default: true, activo: true },
-    { id: 'ci2', dia: 6, es_default: false, activo: true },
-    { id: 'ci3', dia: 16, es_default: false, activo: true },
+    { id: 'ci1', dia: 1, dia_venc: 5, es_default: true, activo: true },
+    { id: 'ci2', dia: 6, dia_venc: 10, es_default: false, activo: true },
+    { id: 'ci3', dia: 16, dia_venc: 20, es_default: false, activo: true },
   ],
 
   // Promociones NxM: N meses total, M pagados; los últimos (N−M) van gratis
@@ -125,6 +136,9 @@ const DB = {
   ],
 
   asistencias: [],   // { track_id, jugador_id, fecha, estado }
+
+  // Procesos de generación masiva de CR por ciclo (log)
+  procesosCR: [],    // { id, fecha, ciclo_dia, corte, vencimiento, sede_id, cargo_ids:[], total }
 
   // Catálogo configurable de Cargos No Recurrentes (CNR)
   // maneja_stock: asociado a inventario (uniforme, buzo). es_torneo: inscripción a torneo (seguimiento especial).
@@ -146,13 +160,22 @@ const staffDe = (id) => DB.staff.find((s) => s.id === id);
 const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const fmtDMY = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 const isoAddDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return isoDate(d); };
-// Fecha de corte = (próxima ocurrencia del día del ciclo, estrictamente > inicio) − 1 día
-function proximoCorte(inicioIso, dia) {
-  const d = new Date(inicioIso + 'T00:00:00');
-  let b = new Date(d.getFullYear(), d.getMonth(), dia);          // frontera del ciclo este mes
-  if (b <= d) b = new Date(d.getFullYear(), d.getMonth() + 1, dia); // si no es posterior, la del mes siguiente
-  b.setDate(b.getDate() - 1);
+// Próxima ocurrencia de 'dia' (día del mes) estrictamente posterior a 'desde'
+function proximoDia(desdeIso, dia) {
+  const d = new Date(desdeIso + 'T00:00:00');
+  let b = new Date(d.getFullYear(), d.getMonth(), dia);
+  if (b <= d) b = new Date(d.getFullYear(), d.getMonth() + 1, dia);
   return isoDate(b);
+}
+// Fecha de corte = (próxima ocurrencia del día del ciclo, estrictamente > inicio) − 1 día
+const proximoCorte = (inicioIso, dia) => isoAddDays(proximoDia(inicioIso, dia), -1);
+// Fecha de vencimiento = día de vencimiento en el mes del ciclo (mes de inicio);
+// si cayera antes del inicio, pasa al mes siguiente.
+function fechaVencimiento(inicioIso, diaVenc) {
+  const d = new Date(inicioIso + 'T00:00:00');
+  let v = new Date(d.getFullYear(), d.getMonth(), diaVenc);
+  if (v < d) v = new Date(d.getFullYear(), d.getMonth() + 1, diaVenc);
+  return isoDate(v);
 }
 // Inicio del CR: día siguiente a la última fecha de corte, o hoy si no hay
 const inicioCR = (ultimaCorteIso) => (ultimaCorteIso ? isoAddDays(ultimaCorteIso, 1) : HOY);
@@ -196,6 +219,13 @@ const descCargo = (c) => {
   if (!c.descripcion) return base;
   return c.tipo === 'CR' ? `${base} ${c.descripcion}` : `${base} · ${c.descripcion}`;
 };
+// Etiqueta de origen del CR: automático (proceso) o manual
+const origenTag = (c) => {
+  if (c.tipo !== 'CR' || c.origen === 'promo') return '';
+  if (c.origen === 'proceso') return ' <span class="text-[10px] rounded bg-sky-100 text-sky-600 px-1 py-0.5 align-middle">⚙️ auto</span>';
+  if (c.origen === 'manual') return ' <span class="text-[10px] rounded bg-slate-100 text-slate-500 px-1 py-0.5 align-middle">✋ manual</span>';
+  return '';
+};
 
 // Cálculos de negocio (Flujo C)
 function statsTrack(t) {
@@ -219,6 +249,7 @@ const MENU = [
   { id: 'tracks',      label: 'Tracks · Rentabilidad', icon: '🎯', roles: ['admin','coordinador'] },
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
+  { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero'] },
   { id: 'asistencia',  label: 'Asistencia',    icon: '✅', roles: ['admin','profesor'] },
   { id: 'cromos',      label: 'Cromos',        icon: '🃏', roles: ['admin','profesor'] },
   { id: 'config',      label: 'Configuración', icon: '⚙️', roles: ['admin'] },
@@ -228,6 +259,7 @@ let ROL = 'admin';
 let SCREEN = 'dashboard';
 let CONFIG_TAB = 'perfil';
 let SEDE_EDIT = null;          // id de sede en edición (o null)
+let SEDE_CABECERA = null;      // dataURL de la cabecera de la sede en edición
 let CNR_EDIT = null;           // id de concepto CNR en edición (o null)
 let MP_EDIT = null;            // id de medio de pago en edición (o null)
 let CICLO_EDIT = null;         // id de ciclo de pago en edición (o null)
@@ -306,6 +338,15 @@ const SCREENS = {
     const tracksDash = DB.tracks.filter((t) => t.activo !== false && inDash(t.sede_id));
     const nuevos = alumnosDash.filter((j) => j.fecha_registro && j.fecha_registro >= win.inicio && j.fecha_registro <= win.fin);
     const activos = alumnosDash.filter((j) => j.estado_alumno === 'activo').length;
+    const pagosDash = DB.pagos.filter((p) => p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin);
+    const ingresosItems = pagosDash.flatMap((p) => (p.detalle || []).map((d) => ({ cat: d.cat || (d.tipo === 'CR' ? 'Mensualidades' : d.concepto || 'Otros'), monto: d.monto })))
+      .filter((d) => d.monto > 0);   // los documentos en $0 (beca/promo) no suman al recaudado
+    const totalIngresos = ingresosItems.reduce((s, d) => s + d.monto, 0);
+    // Cuentas por cobrar (snapshot): cargos pendientes por tipo, no depende del periodo
+    const porCobrarItems = DB.cargos
+      .filter((c) => c.jugador_id && inDash(jugador(c.jugador_id).sede_id) && (c.monto - (c.pagado_monto || 0)) > 0)
+      .map((c) => ({ cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), monto: c.monto - (c.pagado_monto || 0) }));
+    const totalPorCobrar = porCobrarItems.reduce((s, d) => s + d.monto, 0);
     const utilidadTotal = tracksDash.reduce((s, t) => s + statsTrack(t).utilidad, 0);
     const rentables = tracksDash.filter((t) => statsTrack(t).rentable).length;
     const ciclos = DB.ciclosPago.filter((c) => c.activo);
@@ -333,15 +374,26 @@ const SCREENS = {
 
       <div class="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-6">
         ${card('Alumnos nuevos', nuevos.length, 'en el periodo')}
+        ${card('Recaudado', S(totalIngresos), 'pagos del periodo')}
+        ${card('Por cobrar', S(totalPorCobrar), 'pendiente total')}
         ${card('Alumnos activos', activos)}
-        ${card('Tracks', tracksDash.length, `${rentables} rentables`)}
-        ${card('Utilidad tracks', S(utilidadTotal))}
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-2 mb-6">
+        <div>
+          <h3 class="mb-2 text-sm font-semibold text-slate-600">Ingresos del periodo por tipo</h3>
+          ${donaPorCategoria(ingresosItems, 'Sin ingresos en el periodo.')}
+        </div>
+        <div>
+          <h3 class="mb-2 text-sm font-semibold text-slate-600">Cuentas por cobrar por tipo</h3>
+          ${donaPorCategoria(porCobrarItems, 'Sin cuentas por cobrar.')}
+        </div>
       </div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Alumnos nuevos por día</h3>
-      ${chartNuevosPorDia(nuevos)}
+      <div class="mb-6">${chartNuevosPorDia(nuevos)}</div>
 
-      <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Salud de tracks (break-even)</h3>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Salud de tracks (break-even)</h3>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         ${tracksDash.length ? tracksDash.map(trackCard).join('') : '<p class="text-sm text-slate-400">Sin tracks.</p>'}
       </div>`;
@@ -413,9 +465,10 @@ const SCREENS = {
     }).filter((x) => x.deuda > 0);
 
     el('content').innerHTML = `
-      <div class="mb-4 flex justify-end gap-2">
-        <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
-        <button onclick="formPago()" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ Registrar pago</button>
+      <div class="mb-4 flex flex-wrap justify-end gap-2">
+        <button onclick="formGenerarCR()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">⚙️ Generar CR por ciclo</button>
+        <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
+        <button onclick="formPago()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Registrar pago</button>
       </div>
       <div class="grid gap-4 md:grid-cols-3 mb-6">
         ${card('Por cobrar', S(porCobrar.reduce((s, c) => s + saldoC(c), 0)), `${porCobrar.length} cargos`)}
@@ -433,11 +486,81 @@ const SCREENS = {
       </div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Documentos de pago</h3>
+      <div class="mb-6">
       ${table(['Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado'],
         pagosS.map((p) => [
           p.jugador_id ? nom(jugador(p.jugador_id)) : `DNI ${tutor(p.tutor_id).dni_tutor}`,
           S(p.total ?? p.monto ?? 0), p.medio || '—', p.num_operacion || '—', fmtDMY(p.fecha),
-          badge(p.estado, estadoColor[p.estado] || 'emerald')]))}`;
+          badge(p.estado, estadoColor[p.estado] || 'emerald')]))}
+      </div>
+
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Procesos de facturación (CR por ciclo)</h3>
+      ${DB.procesosCR.filter((p) => p.sede_id === SEDE_ACTUAL).length
+        ? table(['Fecha', 'Ciclo', 'Corte', 'Vencimiento', 'CRs', 'Total', ''],
+            DB.procesosCR.filter((p) => p.sede_id === SEDE_ACTUAL).slice().reverse().map((p) => [
+              fmtDMY(p.fecha), `Ciclo al ${p.ciclo_dia}`, fmtDMY(p.corte), fmtDMY(p.vencimiento),
+              p.cargo_ids.length, S(p.total),
+              `<button onclick="verProcesoCR('${p.id}')" class="text-indigo-600 hover:underline text-xs">Ver detalle</button>`]))
+        : '<p class="text-sm text-slate-400">Aún no se ha ejecutado ningún proceso de facturación en esta sede.</p>'}`;
+  },
+
+  porcobrar() {
+    const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+    const telDe = (j) => (tutor(j.tutor_id) && tutor(j.tutor_id).telefono_celular) || j.telefono || '';
+    const alumnos = alumnosSede().map((j) => {
+      const cs = cargosSede().filter((c) => c.jugador_id === j.id && saldoC(c) > 0);
+      if (!cs.length) return null;
+      const total = cs.reduce((s, c) => s + saldoC(c), 0);
+      const venc = cs.filter((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY);
+      return { j, total, totalVenc: venc.reduce((s, c) => s + saldoC(c), 0), tieneVencido: venc.length > 0 };
+    }).filter(Boolean);
+    const vencidos = alumnos.filter((a) => a.tieneVencido).sort((a, b) => b.totalVenc - a.totalVenc);
+    const porVencer = alumnos.filter((a) => !a.tieneVencido).sort((a, b) => b.total - a.total);
+    const totVenc = vencidos.reduce((s, a) => s + a.total, 0);
+    const totPorVencer = porVencer.reduce((s, a) => s + a.total, 0);
+
+    const pcCard = (a, esVencido) => {
+      const j = a.j;
+      const ini = ((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase();
+      const tel = telDe(j); const wa = tel.replace(/\D/g, '');
+      return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-3">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            ${j.foto_url ? `<img src="${j.foto_url}" class="h-9 w-9 rounded-full object-cover">` : `<span class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-medium">${ini}</span>`}
+            <div class="min-w-0"><div class="font-medium truncate">${nom(j)}</div><div class="text-xs text-slate-400">Cat. ${anio(j.fecha_nacimiento)}</div></div>
+          </div>
+          <div class="text-right">
+            <div class="font-bold ${esVencido ? 'text-rose-600' : 'text-slate-800'}">${S(a.total)}</div>
+            ${esVencido ? `<div class="text-xs text-rose-500">${S(a.totalVenc)} vencido</div>` : ''}
+          </div>
+        </div>
+        <div class="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+          ${tel ? `<a href="https://wa.me/51${wa}" target="_blank" class="text-emerald-600 hover:underline">📱 ${tel}</a>` : '<span class="text-slate-400">sin teléfono</span>'}
+          <button onclick="formDocumentoCuenta('${j.id}')" class="font-medium text-indigo-600 hover:underline">Ver estado de cuenta</button>
+        </div>
+      </div>`;
+    };
+    const kpi = (label, val, sub, color) => `
+      <div class="rounded-xl bg-${color}-50 ring-1 ring-${color}-100 p-4">
+        <div class="text-xs uppercase tracking-wide text-${color}-500">${label}</div>
+        <div class="mt-1 text-2xl font-bold text-${color}-600">${val}</div>
+        <div class="text-xs text-slate-400">${sub}</div>
+      </div>`;
+
+    el('content').innerHTML = `
+      <p class="text-sm text-slate-500 mb-3">Cuentas por cobrar de <b>${sede(SEDE_ACTUAL).nombre_sede}</b></p>
+      <div class="grid grid-cols-2 gap-3 mb-5">
+        ${kpi('Vencido', S(totVenc), `${vencidos.length} alumno(s)`, 'rose')}
+        ${kpi('Por vencer', S(totPorVencer), `${porVencer.length} alumno(s)`, 'amber')}
+      </div>
+      <h3 class="mb-2 text-sm font-semibold text-rose-600">🔴 Vencidos (${vencidos.length})</h3>
+      <div class="grid gap-2 md:grid-cols-2 mb-6">
+        ${vencidos.length ? vencidos.map((a) => pcCard(a, true)).join('') : '<p class="text-sm text-slate-400">Ningún alumno con cargos vencidos. 🎉</p>'}
+      </div>
+      <h3 class="mb-2 text-sm font-semibold text-amber-600">🟡 Por vencer (${porVencer.length})</h3>
+      <div class="grid gap-2 md:grid-cols-2">
+        ${porVencer.length ? porVencer.map((a) => pcCard(a, false)).join('') : '<p class="text-sm text-slate-400">Sin cuentas por vencer.</p>'}
+      </div>`;
   },
 
   asistencia() {
@@ -600,6 +723,46 @@ function chartNuevosPorDia(nuevos) {
     </div>`;
 }
 
+// Gráfico circular (dona) por categoría. items = [{cat, monto}]
+function donaPorCategoria(items, emptyMsg) {
+  const totals = {};
+  items.forEach((d) => { const cat = d.cat || 'Otros'; totals[cat] = (totals[cat] || 0) + d.monto; });
+  const cats = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+  if (!cats.length) return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-6 text-center text-sm text-slate-400">${emptyMsg}</div>`;
+  const total = cats.reduce((s, c) => s + totals[c], 0);
+  const palette = ['#6366f1', '#f59e0b', '#10b981', '#ec4899', '#0ea5e9', '#94a3b8'];
+  const cx = 90, cy = 90, r = 82, rInner = 50;
+  const rad = (a) => ((a - 90) * Math.PI) / 180;
+  let acc = 0;
+  const slices = cats.map((c, i) => {
+    const start = (acc / total) * 360; acc += totals[c];
+    const end = (acc / total) * 360;
+    const color = palette[i % palette.length];
+    if (cats.length === 1) return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"><title>${c}: ${S(totals[c])}</title></circle>`;
+    const x1 = (cx + r * Math.cos(rad(start))).toFixed(2), y1 = (cy + r * Math.sin(rad(start))).toFixed(2);
+    const x2 = (cx + r * Math.cos(rad(end))).toFixed(2), y2 = (cy + r * Math.sin(rad(end))).toFixed(2);
+    const large = end - start > 180 ? 1 : 0;
+    return `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}"><title>${c}: ${S(totals[c])}</title></path>`;
+  }).join('');
+  const donut = `<circle cx="${cx}" cy="${cy}" r="${rInner}" fill="white"/>
+    <text x="${cx}" y="${cy - 3}" text-anchor="middle" font-size="9" fill="#94a3b8">Total</text>
+    <text x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">${S(total)}</text>`;
+  const legend = cats.map((c, i) => {
+    const pctTot = Math.round((totals[c] / total) * 100);
+    return `<div class="flex items-center justify-between gap-2 text-xs py-1">
+      <span class="flex items-center gap-1.5 min-w-0"><span class="inline-block h-3 w-3 rounded-sm shrink-0" style="background:${palette[i % palette.length]}"></span><span class="truncate text-slate-600">${c}</span></span>
+      <span class="font-medium shrink-0">${S(totals[c])} · ${pctTot}%</span>
+    </div>`;
+  }).join('');
+  return `
+    <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
+      <div class="flex flex-col sm:flex-row items-center gap-4">
+        <svg viewBox="0 0 180 180" width="180" height="180" class="shrink-0">${slices}${donut}</svg>
+        <div class="flex-1 w-full min-w-0">${legend}</div>
+      </div>
+    </div>`;
+}
+
 // ---------- Tarjetas compuestas ----------
 function trackCard(t) {
   const x = statsTrack(t);
@@ -735,8 +898,9 @@ function renderTrackRows() {
         </div>
         ${debe > 0 ? badge('Pendiente', 'amber') : badge('Al día', 'emerald')}
       </div>
-      <div class="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+      <div class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
         <div><div class="text-slate-400">Inscrito</div><div class="font-medium">${fmtFecha(i.fecha_inscripcion)}</div></div>
+        <div><div class="text-slate-400">Últ. corte</div><div class="font-medium">${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '—'}</div></div>
         <div><div class="text-slate-400">Asistencias</div><div class="font-medium">${asis}/${t.clases_mensuales || 8}</div></div>
         <div><div class="text-slate-400">Mensualidad</div><div class="font-medium">${beca ? `<span class="text-indigo-600">${S(efect)}</span>` : S(efect)}</div></div>
       </div>
@@ -914,17 +1078,24 @@ function estadoCuentaHTML(jid) {
   const cargos = DB.cargos.filter((c) => c.jugador_id === jid);
   const pagos = DB.pagos.filter((p) => p.jugador_id === jid);
   const saldoC = (c) => c.monto - (c.pagado_monto || 0);
-  // Cargos pendientes de pago (saldo > 0) + CR gratis de promo (evidencia)
-  const mostrar = cargos.filter((c) => saldoC(c) > 0 || c.gratis).sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
+  // Cargos aún no pagados (incluye los de $0 por beca/promo, para que se paguen junto al resto)
+  const mostrar = cargos.filter((c) => c.estado !== 'pagado').sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
   const totCR = mostrar.filter((c) => c.tipo === 'CR').reduce((s, c) => s + saldoC(c), 0);
   const totCNR = mostrar.filter((c) => c.tipo === 'CNR').reduce((s, c) => s + saldoC(c), 0);
   const saldo = totCR + totCNR;
-  const hayPagables = saldo > 0;
-  const rows = mostrar.map((c) => [
-    c.periodo || '—',
-    `${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${descCargo(c)}${c.promo ? ` <span class="text-xs text-emerald-600">· Promo ${c.promo}</span>` : ''}`,
-    c.gratis ? '<span class="text-emerald-600 text-xs font-medium">Gratis</span>' : S(saldoC(c)),
-  ]);
+  const hayPagables = mostrar.length > 0;
+  const rows = mostrar.map((c) => {
+    const vencido = c.fecha_vencimiento && c.fecha_vencimiento < HOY && saldoC(c) > 0;
+    return [
+      `${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${descCargo(c)}${c.promo ? ` <span class="text-xs text-emerald-600">· Promo ${c.promo}</span>` : ''}${origenTag(c)}`,
+      c.fecha_vencimiento
+        ? `<span class="${vencido ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(c.fecha_vencimiento)}</span>${vencido ? ' <span class="text-xs text-rose-500">(vencido)</span>' : ''}`
+        : '—',
+      saldoC(c) === 0
+        ? `<span class="text-emerald-600 text-xs font-medium">${c.gratis ? 'Gratis' : 'Beca'}</span>`
+        : S(saldoC(c)),
+    ];
+  });
 
   const cnrCat = DB.conceptosCNR.filter((c) => c.activo);
   const inscAct = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
@@ -934,6 +1105,7 @@ function estadoCuentaHTML(jid) {
   const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
   const firstInicio = firstI ? inicioCR(firstI.ultima_fecha_corte) : '';
   const firstFin = (firstI && cicloDef) ? proximoCorte(firstInicio, cicloDef.dia) : '';
+  const firstVenc = (firstInicio && cicloDef && cicloDef.dia_venc) ? fechaVencimiento(firstInicio, cicloDef.dia_venc) : '';
 
   return `
     <div class="mb-4 rounded-xl p-4 ${saldo > 0 ? 'bg-rose-50' : saldo < 0 ? 'bg-emerald-50' : 'bg-slate-50'}">
@@ -945,7 +1117,7 @@ function estadoCuentaHTML(jid) {
     ${hayPagables ? `<div class="mb-3 flex justify-end">
       <button type="button" onclick="formPagoAlumno('${jid}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Registrar pago</button>
     </div>` : ''}
-    ${rows.length ? table(['Periodo', 'Concepto', 'Pendiente'], rows) : '<p class="text-sm text-slate-400 px-1">Sin cargos pendientes de pago. 🎉</p>'}
+    ${rows.length ? table(['Concepto', 'Vence', 'Pendiente'], rows) : '<p class="text-sm text-slate-400 px-1">Sin cargos pendientes de pago. 🎉</p>'}
     <div class="mt-3 space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
       <div class="text-xs font-medium text-slate-500">Agregar cargo recurrente (CR) — manual</div>
       ${inscAct.length && ciclos.length ? `
@@ -960,7 +1132,7 @@ function estadoCuentaHTML(jid) {
           <select id="cr_ciclo" onchange="crAutoDatos()" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
             ${ciclos.map((c) => `<option value="${c.id}" ${c === cicloDef ? 'selected' : ''}>${nombreCiclo(c)}</option>`).join('')}
           </select>
-          <span class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(firstInicio)} al ${fmtDMY(firstFin)}</b></span>
+          <span class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(firstInicio)} al ${fmtDMY(firstFin)}${firstVenc ? ` · vence ${fmtDMY(firstVenc)}` : ''}</b></span>
         </div>
         <input type="hidden" id="cr_inicio" value="${firstInicio}"><input type="hidden" id="cr_fin" value="${firstFin}">
         <div class="flex gap-2">
@@ -991,9 +1163,10 @@ window.crAutoDatos = () => {
   const ciclo = DB.ciclosPago.find((c) => c.id === el('cr_ciclo').value);
   const inicio = inicioCR(i.ultima_fecha_corte);
   const fin = proximoCorte(inicio, ciclo ? ciclo.dia : 1);
+  const venc = ciclo && ciclo.dia_venc ? fechaVencimiento(inicio, ciclo.dia_venc) : null;
   el('cr_inicio').value = inicio;
   el('cr_fin').value = fin;
-  el('cr_ciclotxt').textContent = `Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}`;
+  el('cr_ciclotxt').textContent = `Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${venc ? ` · vence ${fmtDMY(venc)}` : ''}`;
 };
 window.agregarCR = (jid) => {
   const i = DB.inscripciones.find((x) => x.id === el('cr_track').value);
@@ -1005,10 +1178,12 @@ window.agregarCR = (jid) => {
   const monto = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;   // fijo, no editable
   const nota = el('cr_desc').value.trim();
   const j = jugador(jid);
-  DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: i.id, tipo: 'CR',
+  const venc = ciclo && ciclo.dia_venc ? fechaVencimiento(inicio, ciclo.dia_venc) : null;
+  const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: i.id, tipo: 'CR', origen: 'manual',
     concepto: t.nombre_track, descripcion: `Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${nota ? ' · ' + nota : ''}`,
-    ciclo_inicio: inicio, ciclo_fin: fin, ciclo_dia: ciclo ? ciclo.dia : null,
-    periodo: inicio.slice(0, 7), monto, pagado_monto: 0, estado: 'por_pagar' });
+    ciclo_inicio: inicio, ciclo_fin: fin, ciclo_dia: ciclo ? ciclo.dia : null, fecha_vencimiento: venc,
+    periodo: inicio.slice(0, 7), monto, pagado_monto: 0, estado: 'por_pagar' };
+  DB.cargos.push(cargo);
   i.ultima_fecha_corte = fin;             // actualiza la última fecha de corte del CR
   i.ciclo_dia = ciclo ? ciclo.dia : null; // recuerda el ciclo elegido en la inscripción
   toast(`CR generado · ${t.nombre_track} (corte ${fmtDMY(fin)})`); renderCuenta(jid);
@@ -1058,17 +1233,106 @@ window.guardarPromoAlumno = (e, jid) => {
   const t = track(i.track_id);
   const precio = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
   const j = jugador(jid);
+  const cicloDef = DB.ciclosPago.find((c) => c.es_default && c.activo) || DB.ciclosPago.find((c) => c.activo);
+  const diaVenc = cicloDef ? cicloDef.dia_venc : null;
   periodosPromo(ancla, promo).forEach((p) => {
-    DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: i.id, tipo: 'CR',
+    const monto = p.gratis ? 0 : precio;
+    const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: i.id, tipo: 'CR', origen: 'promo',
       concepto: t.nombre_track, descripcion: `Del ${fmtDMY(p.inicio)} al ${fmtDMY(p.fin)}`,
       ciclo_inicio: p.inicio, ciclo_fin: p.fin, periodo: p.inicio.slice(0, 7),
+      fecha_vencimiento: diaVenc ? fechaVencimiento(p.inicio, diaVenc) : null,
       promo: promo.nombre, gratis: !!p.gratis,
-      monto: p.gratis ? 0 : precio, pagado_monto: 0, estado: p.gratis ? 'pagado' : 'por_pagar' });
+      monto, pagado_monto: 0, estado: 'por_pagar' };
+    DB.cargos.push(cargo);
   });
   const periodos = periodosPromo(ancla, promo);
   i.ultima_fecha_corte = periodos[periodos.length - 1].fin;
   closeModal(); toast(`Promoción ${promo.nombre} aplicada · ${periodos.length} CR generados`); renderCuenta(jid);
 };
+// ---------- Generar CR por ciclo (masivo) + log de procesos ----------
+function inscElegiblesCiclo(dia, corteIso, sedeId) {
+  return DB.inscripciones.filter((i) => i.activo && i.ciclo_dia === dia
+    && jugador(i.jugador_id) && jugador(i.jugador_id).sede_id === sedeId
+    && i.ultima_fecha_corte && i.ultima_fecha_corte < corteIso);
+}
+window.formGenerarCR = () => {
+  const ciclos = DB.ciclosPago.filter((c) => c.activo);
+  if (!ciclos.length) { toast('No hay ciclos de pago'); return; }
+  const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
+  openModal('Generar CR por ciclo', `
+    <form onsubmit="guardarGenerarCR(event)">
+      <p class="text-xs text-slate-500 mb-3">Genera las mensualidades del ciclo para los alumnos de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> cuyo último corte sea anterior a la fecha de corte indicada.</p>
+      ${field('Ciclo', select('gen_ciclo', ciclos.map((c) => ({ v: c.id, t: nombreCiclo(c) })), 'onchange="genCRAuto()"'))}
+      <div class="grid grid-cols-2 gap-3">
+        ${field('Fecha de corte (período)', input('gen_corte', 'type="date" onchange="genCRPreview()"'))}
+        ${field('Fecha de vencimiento', input('gen_venc', 'type="date"'))}
+      </div>
+      <div id="genPreview" class="rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 text-sm mb-3"></div>
+      ${submitBar('Generar CR')}
+    </form>`);
+  el('gen_ciclo').value = cicloDef.id;
+  genCRAuto();
+};
+window.genCRAuto = () => {
+  const ciclo = DB.ciclosPago.find((c) => c.id === el('gen_ciclo').value);
+  if (!ciclo) return;
+  const cortes = DB.inscripciones.filter((i) => i.activo && i.ciclo_dia === ciclo.dia
+    && jugador(i.jugador_id) && jugador(i.jugador_id).sede_id === SEDE_ACTUAL && i.ultima_fecha_corte)
+    .map((i) => i.ultima_fecha_corte).sort();
+  const base = cortes.length ? isoAddDays(cortes[cortes.length - 1], 1) : HOY;
+  const corte = proximoCorte(base, ciclo.dia);
+  el('gen_corte').value = corte;
+  el('gen_venc').value = ciclo.dia_venc ? fechaVencimiento(base, ciclo.dia_venc) : corte;
+  genCRPreview();
+};
+window.genCRPreview = () => {
+  const ciclo = DB.ciclosPago.find((c) => c.id === el('gen_ciclo').value);
+  const corte = val('gen_corte');
+  if (!ciclo || !corte) { el('genPreview').innerHTML = ''; return; }
+  const eleg = inscElegiblesCiclo(ciclo.dia, corte, SEDE_ACTUAL);
+  const total = eleg.reduce((s, i) => s + (i.costo_mensual_personalizado ?? track(i.track_id).mensualidad_sugerida), 0);
+  el('genPreview').innerHTML = eleg.length
+    ? `<b>${eleg.length}</b> CR a generar · total <b>${S(total)}</b><div class="text-xs text-slate-400 mt-1">Corte ${fmtDMY(corte)} · vence ${fmtDMY(val('gen_venc'))}</div>`
+    : '<span class="text-slate-400">No hay inscripciones elegibles para este ciclo/corte.</span>';
+};
+window.guardarGenerarCR = (e) => {
+  e.preventDefault();
+  const ciclo = DB.ciclosPago.find((c) => c.id === el('gen_ciclo').value);
+  const corte = val('gen_corte'), venc = val('gen_venc');
+  if (!ciclo || !corte || !venc) { toast('Completa ciclo, corte y vencimiento'); return; }
+  const eleg = inscElegiblesCiclo(ciclo.dia, corte, SEDE_ACTUAL);
+  if (!eleg.length) { toast('No hay inscripciones elegibles'); return; }
+  const procId = uid('proc');
+  const cargoIds = []; let total = 0;
+  eleg.forEach((i) => {
+    const t = track(i.track_id), j = jugador(i.jugador_id);
+    const inicio = isoAddDays(i.ultima_fecha_corte, 1);
+    const monto = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
+    const id = uid('c');
+    const cargo = { id, tutor_id: j.tutor_id, jugador_id: j.id, inscripcion_id: i.id, tipo: 'CR', origen: 'proceso', proceso_id: procId,
+      concepto: t.nombre_track, descripcion: `Del ${fmtDMY(inicio)} al ${fmtDMY(corte)}`,
+      ciclo_inicio: inicio, ciclo_fin: corte, ciclo_dia: ciclo.dia, fecha_vencimiento: venc,
+      periodo: corte.slice(0, 7), monto, pagado_monto: 0, estado: 'por_pagar' };
+    DB.cargos.push(cargo);
+    i.ultima_fecha_corte = corte;
+    cargoIds.push(id); total += monto;
+  });
+  DB.procesosCR.push({ id: procId, fecha: HOY, ciclo_dia: ciclo.dia, corte, vencimiento: venc, sede_id: SEDE_ACTUAL, cargo_ids: cargoIds, total });
+  closeModal(); toast(`${cargoIds.length} CR generados · ${S(total)}`); go('tesoreria');
+};
+window.verProcesoCR = (id) => {
+  const p = DB.procesosCR.find((x) => x.id === id); if (!p) return;
+  openModal('Detalle del proceso de facturación', `
+    <p class="text-xs text-slate-500 mb-3">Ciclo al ${p.ciclo_dia} · corte ${fmtDMY(p.corte)} · vence ${fmtDMY(p.vencimiento)} · generado ${fmtDMY(p.fecha)}</p>
+    ${table(['Alumno', 'Track', 'Periodo', 'Monto'], p.cargo_ids.map((cid) => {
+      const c = DB.cargos.find((x) => x.id === cid);
+      if (!c) return ['—', '—', '—', '—'];
+      const j = jugador(c.jugador_id);
+      return [j ? nom(j) : '—', c.concepto, c.descripcion, S(c.monto)];
+    }))}
+    <div class="mt-2 text-right text-sm">Total: <b>${S(p.total)}</b> · ${p.cargo_ids.length} CR</div>`);
+};
+
 window.agregarCNR = (jid) => {
   const j = jugador(jid);
   const cn = DB.conceptosCNR.find((c) => c.id === el('cnr_concepto').value);
@@ -1082,7 +1346,7 @@ window.agregarCNR = (jid) => {
 // Registrar pago: selecciona CR/CNR pendientes, medio, N° operación y voucher
 window.formPagoAlumno = (jid) => {
   const j = jugador(jid);
-  const pend = DB.cargos.filter((c) => c.jugador_id === jid && (c.monto - (c.pagado_monto || 0)) > 0)
+  const pend = DB.cargos.filter((c) => c.jugador_id === jid && c.estado !== 'pagado')
     .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
   if (!pend.length) { toast('No hay cargos pendientes de pago'); return; }
   const medios = DB.mediosPago.filter((m) => m.activo);
@@ -1132,7 +1396,7 @@ window.guardarPagoAlumno = (e, jid) => {
   const j = jugador(jid);
   const detalle = sel.map((cid) => {
     const c = DB.cargos.find((x) => x.id === cid);
-    return { cargo_id: cid, concepto: descCargo(c), tipo: c.tipo, monto: c.monto - (c.pagado_monto || 0) };
+    return { cargo_id: cid, concepto: descCargo(c), cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), tipo: c.tipo, monto: c.monto - (c.pagado_monto || 0) };
   });
   const total = detalle.reduce((s, d) => s + d.monto, 0);
   // Marcar los cargos como Pagados
@@ -1166,6 +1430,78 @@ function pagosDocsHTML(jid) {
       </div>
     </div>`).join('');
 }
+
+// Documento descargable del estado de cuenta (con cabecera de la sede)
+window.formDocumentoCuenta = (jid) => {
+  const j = jugador(jid);
+  const sd = sede(j.sede_id);
+  const a = DB.academia;
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const pend = DB.cargos.filter((c) => c.jugador_id === jid && saldoC(c) > 0)
+    .sort((x, y) => ((x.periodo || '') < (y.periodo || '') ? -1 : 1));
+  const total = pend.reduce((s, c) => s + saldoC(c), 0);
+  const arch = nom(j).replace(/\s+/g, '_');
+  openModal('Estado de cuenta', `
+    <div id="docCuenta" class="bg-white">
+      ${sd && sd.cabecera_url
+        ? `<img src="${sd.cabecera_url}" class="w-full block object-cover">`
+        : `<div class="bg-indigo-600 text-white px-4 py-5 text-center"><div class="text-lg font-bold">${a.nombre_academia}</div><div class="text-sm opacity-80">${sd ? sd.nombre_sede : ''}</div></div>`}
+      <div class="px-4 py-4">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Alumno</div>
+            <div class="font-semibold text-slate-800">${nom(j)}</div>
+            <div class="text-xs text-slate-400">Categoría ${anio(j.fecha_nacimiento)}${sd ? ' · ' + sd.nombre_sede : ''}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Fecha</div>
+            <div class="text-sm text-slate-700">${fmtDMY(HOY)}</div>
+          </div>
+        </div>
+        <div class="text-sm font-semibold text-slate-700 mb-1">Estado de cuenta — cargos pendientes</div>
+        <table class="w-full text-sm border-t border-slate-200">
+          <thead><tr class="text-left text-slate-500"><th class="py-1.5 font-medium">Concepto</th><th class="py-1.5 font-medium text-center">Vence</th><th class="py-1.5 font-medium text-right">Monto</th></tr></thead>
+          <tbody>
+            ${pend.length ? pend.map((c) => {
+              const vencido = c.fecha_vencimiento && c.fecha_vencimiento < HOY;
+              return `<tr class="border-t border-slate-100">
+                <td class="py-1.5 pr-2">${c.tipo} · ${descCargo(c)}</td>
+                <td class="py-1.5 text-center ${vencido ? 'text-rose-600 font-medium' : 'text-slate-500'}">${c.fecha_vencimiento ? fmtDMY(c.fecha_vencimiento) : '—'}</td>
+                <td class="py-1.5 text-right">${S(saldoC(c))}</td></tr>`;
+            }).join('') : '<tr><td colspan="3" class="py-3 text-center text-slate-400">Sin cargos pendientes.</td></tr>'}
+          </tbody>
+          <tfoot><tr class="border-t-2 border-slate-300 font-bold"><td class="py-2" colspan="2">Total a pagar</td><td class="py-2 text-right text-rose-600">${S(total)}</td></tr></tfoot>
+        </table>
+        ${sd && sd.telefono_coordinador ? `<div class="mt-3 text-xs text-slate-400">Consultas: ${sd.telefono_coordinador}</div>` : ''}
+      </div>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2 mt-3">
+      <button onclick="descargarDocCuenta('${arch}')" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">📥 Descargar</button>
+      <button onclick="compartirDocCuenta('${arch}')" class="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">📲 Compartir</button>
+    </div>`);
+};
+function docCanvas() { return html2canvas(el('docCuenta'), { scale: 2, backgroundColor: '#ffffff', useCORS: true }); }
+window.descargarDocCuenta = async (nombre) => {
+  if (typeof html2canvas === 'undefined') { toast('No se pudo cargar el generador de imagen'); return; }
+  const canvas = await docCanvas();
+  const link = document.createElement('a');
+  link.download = `estado_cuenta_${nombre}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+};
+window.compartirDocCuenta = async (nombre) => {
+  if (typeof html2canvas === 'undefined') { toast('No se pudo cargar el generador de imagen'); return; }
+  const canvas = await docCanvas();
+  canvas.toBlob(async (blob) => {
+    const file = new File([blob], `estado_cuenta_${nombre}.png`, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Estado de cuenta' }); } catch (e) { /* cancelado */ }
+    } else {
+      const link = document.createElement('a'); link.download = file.name; link.href = canvas.toDataURL('image/png'); link.click();
+      toast('Imagen descargada · adjúntala en WhatsApp');
+    }
+  }, 'image/png');
+};
 
 // Ficha / mantenimiento de alumno (editar)
 window.formEditarAlumno = (jid) => {
@@ -1586,7 +1922,7 @@ window.obGuardar = (e, tid) => {
 // =====================================================================
 // CONFIGURACIÓN (Módulo I) — pestañas
 // =====================================================================
-window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; SCREENS.config(); };
+window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; SCREENS.config(); };
 
 const stub = (txt) => `<div class="rounded-xl border-2 border-dashed border-slate-200 p-10 text-center text-slate-400">${txt}<br><span class="text-xs">Próximamente</span></div>`;
 
@@ -1667,6 +2003,17 @@ const CONFIG_TABS = {
             ${field('Teléfono', input('sd_tel', `value="${g('telefono_coordinador')}" placeholder="+51 999 999 999"`))}
             ${field('Google Maps URL', input('sd_maps', `value="${g('google_maps_url')}" placeholder="https://maps.google.com/..."`))}
           </div>
+          <div class="mb-3">
+            <span class="block text-xs font-medium text-slate-500 mb-1">Cabecera del estado de cuenta</span>
+            <div class="flex items-center gap-3">
+              ${SEDE_CABECERA ? `<img src="${SEDE_CABECERA}" class="h-14 rounded ring-1 ring-slate-200 object-cover">` : '<div class="flex h-14 w-28 items-center justify-center rounded border-2 border-dashed border-slate-300 text-xs text-slate-400">sin imagen</div>'}
+              <label class="cursor-pointer text-sm font-medium text-indigo-600 hover:underline">
+                Cambiar cabecera
+                <input type="file" accept="image/*" class="hidden" onchange="cambiarCabeceraSede(this)">
+                <div class="text-xs font-normal text-slate-400">Se muestra arriba del estado de cuenta descargable</div>
+              </label>
+            </div>
+          </div>
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${editing ? 'Guardar cambios' : 'Agregar'}</button>
             ${editing ? `<button type="button" onclick="cancelSedeEdit()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>` : ''}
@@ -1746,7 +2093,10 @@ const CONFIG_TABS = {
       <div class="rounded-xl bg-white ring-1 ring-slate-200 p-5 mb-6">
         <div class="text-sm font-semibold text-slate-700 mb-3">${e ? 'Editar ciclo de pago' : 'Nuevo ciclo de pago'}</div>
         <form onsubmit="guardarCicloPago(event)">
-          ${field('Día del mes (corte) *', input('ci_dia', `type="number" min="1" max="28" required value="${e ? e.dia : ''}" placeholder="Ej: 1"`))}
+          <div class="grid grid-cols-2 gap-3">
+            ${field('Día del mes (corte) *', input('ci_dia', `type="number" min="1" max="28" required value="${e ? e.dia : ''}" placeholder="Ej: 1"`))}
+            ${field('Día de vencimiento *', input('ci_venc', `type="number" min="1" max="28" required value="${e ? (e.dia_venc ?? '') : ''}" placeholder="Ej: 5"`))}
+          </div>
           <label class="flex items-center gap-2 text-sm mb-3">
             <input type="checkbox" id="ci_default" class="h-4 w-4 rounded accent-indigo-600" ${e && e.es_default ? 'checked' : ''}>
             Predeterminado <span class="text-xs text-slate-400">(se usa por defecto al generar CR)</span>
@@ -1757,10 +2107,10 @@ const CONFIG_TABS = {
           </div>
         </form>
       </div>
-      <p class="text-xs text-slate-400 mb-2">El ciclo define el <b>día de corte</b>: al generar un CR, el cargo va desde el inicio hasta el día del ciclo − 1.</p>
-      ${table(['Ciclo', 'Día de corte', 'Predeterminado', 'Estado', ''],
+      <p class="text-xs text-slate-400 mb-2">El <b>día de corte</b> marca el fin del ciclo (día − 1). El <b>vencimiento</b> es ese día dentro del mes del ciclo (ej. ciclo 01/08–31/08 con venc. día 5 → 05/08).</p>
+      ${table(['Ciclo', 'Corte', 'Vencimiento', 'Predeterminado', 'Estado', ''],
         DB.ciclosPago.map((c) => [
-          `<b>${nombreCiclo(c)}</b>`, c.dia,
+          `<b>${nombreCiclo(c)}</b>`, `día ${c.dia}`, `día ${c.dia_venc ?? '—'}`,
           c.es_default ? badge('Por defecto', 'indigo') : '—',
           badge(c.activo ? 'Activo' : 'Inactivo', c.activo ? 'emerald' : 'slate'),
           `<button onclick="editarCicloPago('${c.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
@@ -1845,10 +2195,11 @@ window.eliminarMedioPago = (id) => {
 window.guardarCicloPago = (ev) => {
   ev.preventDefault();
   const dia = parseInt(val('ci_dia'), 10) || 1;
+  const diaVenc = parseInt(val('ci_venc'), 10) || dia;
   const esDefault = el('ci_default').checked;
   if (esDefault) DB.ciclosPago.forEach((c) => { c.es_default = false; });
-  if (CICLO_EDIT) { Object.assign(DB.ciclosPago.find((c) => c.id === CICLO_EDIT), { dia, es_default: esDefault }); CICLO_EDIT = null; toast('Ciclo actualizado'); }
-  else { DB.ciclosPago.push({ id: uid('ci'), dia, es_default: esDefault, activo: true }); toast('Ciclo agregado'); }
+  if (CICLO_EDIT) { Object.assign(DB.ciclosPago.find((c) => c.id === CICLO_EDIT), { dia, dia_venc: diaVenc, es_default: esDefault }); CICLO_EDIT = null; toast('Ciclo actualizado'); }
+  else { DB.ciclosPago.push({ id: uid('ci'), dia, dia_venc: diaVenc, es_default: esDefault, activo: true }); toast('Ciclo agregado'); }
   // Garantiza al menos un predeterminado
   if (!DB.ciclosPago.some((c) => c.es_default) && DB.ciclosPago[0]) DB.ciclosPago[0].es_default = true;
   SCREENS.config();
@@ -1903,22 +2254,29 @@ window.guardarPerfil = (e) => {
   toast('Perfil de la academia guardado');
 };
 
+window.cambiarCabeceraSede = (inp) => {
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { SEDE_CABECERA = r.result; SCREENS.config(); };
+  r.readAsDataURL(f);
+};
 window.guardarSedeInline = (e) => {
   e.preventDefault();
   const data = {
     nombre_sede: val('sd_nombre'), direccion1: val('sd_dir1'), direccion2: val('sd_dir2'),
     ciudad: val('sd_ciudad'), pais: val('sd_pais'), codigo_postal: val('sd_cp'),
-    telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'),
+    telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'), cabecera_url: SEDE_CABECERA,
   };
   if (SEDE_EDIT) {
     Object.assign(sede(SEDE_EDIT), data); SEDE_EDIT = null; toast('Sede actualizada');
   } else {
     DB.sedes.push({ id: uid('s'), activo: true, ...data }); toast('Sede agregada');
   }
+  SEDE_CABECERA = null;
   renderSedeSelect(); SCREENS.config();
 };
-window.editarSede = (id) => { SEDE_EDIT = id; SCREENS.config(); };
-window.cancelSedeEdit = () => { SEDE_EDIT = null; SCREENS.config(); };
+window.editarSede = (id) => { SEDE_EDIT = id; SEDE_CABECERA = (sede(id) && sede(id).cabecera_url) || null; SCREENS.config(); };
+window.cancelSedeEdit = () => { SEDE_EDIT = null; SEDE_CABECERA = null; SCREENS.config(); };
 window.eliminarSede = (id) => {
   const usados = DB.tracks.filter((t) => t.sede_id === id).length;
   if (usados) { toast(`No se puede eliminar: la sede tiene ${usados} track(s)`); return; }
