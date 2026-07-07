@@ -2591,6 +2591,15 @@ async function entrarConectado() {
     Object.assign(DB, data);
     PERFIL = data.perfil || null;
     delete DB.perfil;
+    // Backfill: perfiles creados antes de v3 no tienen email guardado
+    if (PERFIL && !PERFIL.email) {
+      const { data: s } = await AcademiasDB.sb.auth.getSession();
+      const mail = s && s.session ? s.session.user.email : null;
+      if (mail) {
+        PERFIL.email = mail;
+        AcademiasDB.sb.from('perfiles').update({ email: mail }).eq('user_id', PERFIL.user_id).then(() => {});
+      }
+    }
     // Rol real del usuario: manda sobre el selector demo
     if (PERFIL) {
       ROL = PERFIL.rol;
