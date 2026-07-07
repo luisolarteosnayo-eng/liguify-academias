@@ -272,6 +272,7 @@ let CNR_EDIT = null;           // id de concepto CNR en edición (o null)
 let MP_EDIT = null;            // id de medio de pago en edición (o null)
 let CICLO_EDIT = null;         // id de ciclo de pago en edición (o null)
 let PROMO_EDIT = null;         // id de promoción en edición (o null)
+let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
 const nombreCiclo = (c) => c ? `Ciclo al ${c.dia}` : '';
 let SEDE_ACTUAL = 's1';        // sede activa: cada sede se opera de forma independiente
 let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
@@ -413,6 +414,7 @@ const SCREENS = {
     const a = DB.academia;
     const tabs = [
       { id: 'perfil', t: 'Perfil' }, { id: 'sedes', t: 'Sedes' }, { id: 'cnr', t: 'Conceptos CNR' },
+      { id: 'staff', t: 'Profesores' },
       { id: 'pagos', t: 'Medios de pago' }, { id: 'ciclos', t: 'Ciclos de pago' }, { id: 'promos', t: 'Promociones' }, { id: 'publica', t: 'Página pública' }, { id: 'invitaciones', t: 'Invitaciones' },
     ];
     el('content').innerHTML = `
@@ -1784,13 +1786,18 @@ const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 window.formTrack = () => {
   TRACK_HORARIOS = {};
-  const coaches = DB.staff.filter((s) => s.rol === 'profesor' || s.rol === 'coordinador');
+  const coaches = DB.staff.filter((s) => (s.rol === 'profesor' || s.rol === 'coordinador')
+    && s.activo !== false && (!s.sede_id || s.sede_id === SEDE_ACTUAL));
   openModal('Nuevo track', `
     <form onsubmit="guardarTrack(event)">
       <p class="mb-4 text-xs text-slate-500">Sede: <b class="text-slate-700">${sede(SEDE_ACTUAL).nombre_sede}</b></p>
       ${field('Nombre del track', input('f_nombre', 'required placeholder="Ej: Sub-12 Mañana"'))}
       ${field('Coach', select('f_coach', [{ v: '', t: 'Seleccionar coach...' },
         ...coaches.map((c) => ({ v: c.id, t: `${c.nombre} ${c.apellido}` }))]))}
+      <div class="-mt-2 mb-3 flex gap-2">
+        <input id="f_coach_nuevo" placeholder="¿No está? Nombre y apellido del nuevo profesor" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-xs">
+        <button type="button" onclick="coachRapido()" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100">+ Agregar</button>
+      </div>
 
       <div class="mb-3">
         <span class="block text-xs font-medium text-slate-500 mb-1">Días y horarios</span>
@@ -2047,7 +2054,7 @@ window.obGuardar = (e, tid) => {
 // =====================================================================
 // CONFIGURACIÓN (Módulo I) — pestañas
 // =====================================================================
-window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; SCREENS.config(); };
+window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; STAFF_EDIT = null; SCREENS.config(); };
 
 const stub = (txt) => `<div class="rounded-xl border-2 border-dashed border-slate-200 p-10 text-center text-slate-400">${txt}<br><span class="text-xs">Próximamente</span></div>`;
 
@@ -2150,6 +2157,40 @@ const CONFIG_TABS = {
           `<b>${s.nombre_sede}</b>`, s.direccion1 || '—', s.ciudad || '—', s.telefono_coordinador || '—',
           `<button onclick="editarSede('${s.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="eliminarSede('${s.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))}`;
+  },
+
+  staff() {
+    const e = STAFF_EDIT ? staffDe(STAFF_EDIT) : null;
+    const g = (k, def = '') => (e ? (e[k] ?? '') : def);
+    const sedeNom = (id) => { const s = id && sede(id); return s ? s.nombre_sede : 'Todas'; };
+    el('configTab').innerHTML = `
+      <p class="text-xs text-slate-500 mb-4">Catálogo de profesores y coordinadores para asignarlos a los tracks. <b>No necesitan acceso al sistema</b>; si alguno lo requiere, invítalo aparte en la pestaña Invitaciones.</p>
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 p-5 mb-6">
+        <div class="text-sm font-semibold text-slate-700 mb-3">${e ? 'Editar profesor' : 'Nuevo profesor'}</div>
+        <form onsubmit="guardarStaffInline(event)">
+          <div class="grid grid-cols-2 gap-3">
+            ${field('Nombre *', input('st_nombre', `required value="${g('nombre')}"`))}
+            ${field('Apellido *', input('st_apellido', `required value="${g('apellido')}"`))}
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            ${field('Rol', select('st_rol', [{ v: 'profesor', t: 'Profesor' }, { v: 'coordinador', t: 'Coordinador' }], g('rol', 'profesor')))}
+            ${field('Sede', select('st_sede', [{ v: '', t: 'Todas las sedes' }, ...DB.sedes.map((s) => ({ v: s.id, t: s.nombre_sede }))], g('sede_id', '')))}
+          </div>
+          <div class="flex gap-2">
+            <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
+            ${e ? '<button type="button" onclick="cancelStaffEdit()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>' : ''}
+          </div>
+        </form>
+      </div>
+      ${table(['Nombre', 'Rol', 'Sede', 'Estado', ''],
+        DB.staff.map((s) => [
+          `<b>${s.nombre} ${s.apellido}</b>`,
+          s.rol === 'coordinador' ? 'Coordinador' : 'Profesor',
+          sedeNom(s.sede_id),
+          s.activo === false ? '<span class="text-slate-400">Inactivo</span>' : '<span class="text-emerald-600">Activo</span>',
+          `<button onclick="editarStaff('${s.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
+           <button onclick="toggleStaff('${s.id}')" class="text-slate-500 hover:underline text-xs mr-3">${s.activo === false ? 'Activar' : 'Inactivar'}</button>
+           <button onclick="eliminarStaff('${s.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))}`;
   },
 
   cnr() {
@@ -2311,6 +2352,41 @@ window.guardarConceptoCNR = (ev) => {
   }
   SCREENS.config();
 };
+// ---------- Catálogo de profesores / staff ----------
+window.guardarStaffInline = (e) => {
+  e.preventDefault();
+  const data = { nombre: val('st_nombre'), apellido: val('st_apellido'), rol: val('st_rol'), sede_id: val('st_sede') || null };
+  if (STAFF_EDIT) {
+    Object.assign(staffDe(STAFF_EDIT), data); STAFF_EDIT = null; toast('Profesor actualizado');
+  } else {
+    DB.staff.push({ id: uid('st'), activo: true, ...data }); toast('Profesor agregado');
+  }
+  SCREENS.config();
+};
+window.editarStaff = (id) => { STAFF_EDIT = id; SCREENS.config(); };
+window.cancelStaffEdit = () => { STAFF_EDIT = null; SCREENS.config(); };
+window.toggleStaff = (id) => { const s = staffDe(id); if (s) { s.activo = s.activo === false; SCREENS.config(); } };
+window.eliminarStaff = (id) => {
+  const usado = DB.tracks.some((t) => t.coach_id === id) || Object.values(DB.trackStaff).some((ids) => (ids || []).includes(id));
+  if (usado) { toast('No se puede eliminar: está asignado a un track. Inactívalo.'); return; }
+  DB.staff = DB.staff.filter((s) => s.id !== id);
+  if (STAFF_EDIT === id) STAFF_EDIT = null;
+  toast('Profesor eliminado'); SCREENS.config();
+};
+// Alta rápida desde el formulario de track
+window.coachRapido = () => {
+  const nom = (el('f_coach_nuevo').value || '').trim();
+  if (!nom) return;
+  const partes = nom.split(/\s+/);
+  const s = { id: uid('st'), nombre: partes[0], apellido: partes.slice(1).join(' ') || '', rol: 'profesor', sede_id: SEDE_ACTUAL, activo: true };
+  DB.staff.push(s);
+  const selCoach = el('f_coach');
+  selCoach.insertAdjacentHTML('beforeend', `<option value="${s.id}">${s.nombre} ${s.apellido}</option>`);
+  selCoach.value = s.id;
+  el('f_coach_nuevo').value = '';
+  toast(`Profesor ${s.nombre} agregado ✓`);
+};
+
 window.editarConceptoCNR = (id) => { CNR_EDIT = id; SCREENS.config(); };
 window.cancelCNREdit = () => { CNR_EDIT = null; SCREENS.config(); };
 window.toggleConceptoCNR = (id) => { const c = DB.conceptosCNR.find((x) => x.id === id); if (c) { c.activo = !c.activo; SCREENS.config(); } };
