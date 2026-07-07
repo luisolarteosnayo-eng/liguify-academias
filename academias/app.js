@@ -352,6 +352,10 @@ const SCREENS = {
     const ingresosItems = pagosDash.flatMap((p) => (p.detalle || []).map((d) => ({ cat: d.cat || (d.tipo === 'CR' ? 'Mensualidades' : d.concepto || 'Otros'), monto: d.monto })))
       .filter((d) => d.monto > 0);   // los documentos en $0 (beca/promo) no suman al recaudado
     const totalIngresos = ingresosItems.reduce((s, d) => s + d.monto, 0);
+    // Pagos del periodo aún pendientes de aprobación en Tesorería
+    const porAprobar = DB.pagos
+      .filter((p) => p.estado === 'pendiente' && p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
+      .reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
     // Cuentas por cobrar (snapshot): cargos pendientes por tipo, no depende del periodo
     const porCobrarItems = DB.cargos
       .filter((c) => c.jugador_id && inDash(jugador(c.jugador_id).sede_id) && (c.monto - (c.pagado_monto || 0)) > 0)
@@ -376,7 +380,7 @@ const SCREENS = {
 
       <div class="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-6">
         ${card('Alumnos nuevos', nuevos.length, 'en el periodo')}
-        ${card('Recaudado', S(totalIngresos), 'pagos del periodo')}
+        ${card('Recaudado', S(totalIngresos), porAprobar > 0 ? `+ <b class="text-amber-600">${S(porAprobar)}</b> por aprobar` : 'pagos del periodo')}
         ${card('Por cobrar', S(totalPorCobrar), 'pendiente total')}
         ${card('Alumnos activos', activos)}
       </div>
