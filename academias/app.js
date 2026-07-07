@@ -1019,7 +1019,7 @@ function njFormBody(j, tracksJid) {
         ${field('Apellido *', input('nj_apellido', `value="${esc(g.apellido)}"`))}
       </div>
       ${field('Fecha de nacimiento *', input('nj_fnac', `type="date" value="${esc(g.fecha_nacimiento)}"`))}
-      ${field('Sexo', sel('nj_sexo', [{ v: '', t: '—' }, { v: 'M', t: 'Masculino' }, { v: 'F', t: 'Femenino' }], g.sexo))}
+      ${field('Sexo', sel('nj_sexo', [{ v: 'M', t: 'Masculino' }, { v: 'F', t: 'Femenino' }], g.sexo || 'M'))}
       <div class="grid grid-cols-2 gap-3">
         ${field('Tipo documento', sel('nj_tipodoc', [{ v: '', t: 'Sin especificar' }, { v: 'DNI', t: 'DNI' }, { v: 'CE', t: 'Carné de extranjería' }, { v: 'PAS', t: 'Pasaporte' }], g.tipo_documento))}
         ${field('N° documento', input('nj_numdoc', `value="${esc(g.num_documento)}" placeholder="Número"`))}
@@ -1176,14 +1176,17 @@ function estadoCuentaHTML(jid) {
       ${inscAct.length && DB.promociones.some((p) => p.activo) ? `<div><button type="button" onclick="formPromo('${jid}')" class="text-xs text-indigo-600 hover:underline">🎁 Aplicar promoción (genera varios CR)</button></div>` : ''}
       <hr class="border-slate-200 my-2">
       <div class="text-xs font-medium text-slate-500">Agregar cargo no recurrente (CNR)</div>
-      ${cnrCat.length ? `<div class="flex gap-2">
-        <select id="cnr_concepto" onchange="cnrAutoPrecio('cnr_concepto','cnr_monto')" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
-          ${cnrCat.map((c) => `<option value="${c.id}">${c.nombre}</option>`).join('')}
-        </select>
-        <input id="cnr_desc" placeholder="Descripción (opc.)" class="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm">
-        <input id="cnr_monto" type="number" step="0.01" value="${cnrCat[0].precio || ''}" placeholder="Monto" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm">
-        <button type="button" onclick="agregarCNR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
-      </div>` : '<p class="text-xs text-slate-400">No hay conceptos CNR. Créalos en Configuración → Conceptos CNR.</p>'}
+      ${cnrCat.length ? `
+        <div class="flex gap-2">
+          <select id="cnr_concepto" onchange="cnrAutoPrecio('cnr_concepto','cnr_monto')" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            ${cnrCat.map((c) => `<option value="${c.id}">${c.nombre}</option>`).join('')}
+          </select>
+          <input id="cnr_monto" type="number" step="0.01" value="${cnrCat[0].precio || ''}" placeholder="Monto" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right">
+        </div>
+        <div class="flex gap-2">
+          <input id="cnr_desc" placeholder="Descripción (opc.)" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm">
+          <button type="button" onclick="agregarCNR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
+        </div>` : '<p class="text-xs text-slate-400">No hay conceptos CNR. Créalos en Configuración → Conceptos CNR.</p>'}
     </div>`;
 }
 window.renderCuenta = (jid) => { if (el('nj_cuenta')) el('nj_cuenta').innerHTML = estadoCuentaHTML(jid); };
@@ -1492,13 +1495,13 @@ window.gestionarPago = (id) => {
   if (el('ap_medio')) el('ap_medio').value = p.medio || (medios[0] && medios[0].nombre) || '';
 };
 window.aprobarPagoDoc = (id) => {
-  const p = DB.pagos.find((x) => x.id === id); if (!p) return;
+  const p = DB.pagos.find((x) => x.id === id); if (!p || p.estado !== 'pendiente') return; // sin reversión: solo pendientes
   p.medio = val('ap_medio') || p.medio;
   p.estado = 'aprobado'; p.fecha_aprobacion = HOY;
   closeModal(); toast('Pago aprobado'); go('aprobar');
 };
 window.rechazarPagoDoc = (id) => {
-  const p = DB.pagos.find((x) => x.id === id); if (!p) return;
+  const p = DB.pagos.find((x) => x.id === id); if (!p || p.estado !== 'pendiente') return; // sin reversión: solo pendientes
   p.medio = val('ap_medio') || p.medio;
   p.estado = 'rechazado'; p.fecha_rechazo = HOY;
   revertirCargosPago(p);   // los CR/CNR vuelven a Pendiente de Pago
@@ -1627,7 +1630,7 @@ window.formEditarAlumno = (jid) => {
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
         · Estado: ${badge(j.estado_alumno === 'activo' ? 'Activo' : 'Baja', j.estado_alumno === 'activo' ? 'emerald' : 'slate')}</p>
       ${njFormBody(j, jid)}
-      <div class="mt-2 flex items-center justify-between gap-2">
+      <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
         <button type="button" onclick="toggleBajaAlumno('${jid}')"
           class="rounded-lg px-3 py-2 text-sm ${j.estado_alumno === 'activo' ? 'text-rose-600 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}">
           ${j.estado_alumno === 'activo' ? 'Dar de baja' : 'Reactivar'}</button>
@@ -1650,8 +1653,10 @@ window.guardarEdicionAlumno = (e, jid) => {
     alergias: val('nj_alergias') || null, otras_actividades: val('nj_otras') || null,
     numero_camiseta: val('nj_num') ? num('nj_num') : null, nombre_camiseta: val('nj_nomcam') || null, posicion_juego: val('nj_pos') || null,
   });
-  closeModal(); toast('Ficha del alumno actualizada');
-  if (TRACK_SEL) renderTrackRows(); else go(SCREEN);
+  toast('Ficha guardada');
+  njTab('cuenta');                    // tras guardar, muestra la pestaña Cuenta (no cierra)
+  if (TRACK_SEL) renderTrackRows();   // refresca la pantalla detrás
+  else if (SCREEN === 'alumnos') renderAlumnosList();
 };
 window.toggleBajaAlumno = (jid) => {
   const j = jugador(jid);
@@ -1702,7 +1707,9 @@ window.guardarNuevoJugador = (e, tid) => {
     posicion_juego: val('nj_pos') || null, estado_alumno: 'activo', fecha_registro: HOY, atributos: null };
   DB.jugadores.push(j);
   DB.inscripciones.push({ id: uid('i'), jugador_id: j.id, track_id: tid, costo_mensual_personalizado: null, activo: true, fecha_inscripcion: HOY, ultima_fecha_corte: null });
-  closeModal(); toast(`${nom(j)} creado e inscrito en ${t.nombre_track}`); renderTrackRows();
+  renderTrackRows();                                   // refresca el detalle del track detrás
+  toast(`${nom(j)} creado · agrégale sus cargos`);
+  formEditarAlumno(j.id);                              // abre la ficha en la pestaña Cuenta
 };
 
 window.formAgregarExistente = (tid) => {
@@ -1760,7 +1767,7 @@ const select = (id, opts, attrs = '') =>
   `<select id="${id}" ${attrs} class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm bg-white">
      ${opts.map((o) => `<option value="${o.v}">${o.t}</option>`).join('')}</select>`;
 const submitBar = (txt = 'Guardar') => `
-  <div class="mt-3 flex justify-end gap-2">
+  <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex justify-end gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
     <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
     <button type="submit" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">${txt}</button>
   </div>`;
