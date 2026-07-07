@@ -130,6 +130,13 @@ window.AcademiasDB = (() => {
       if (error) throw error; return data;  // data.session puede ser null si exige confirmar email
     },
     async signOut() { await sb.auth.signOut(); },
+    async signInGoogle() {
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: location.origin + location.pathname },
+      });
+      if (error) throw error;
+    },
   };
 
   async function crearAcademia(nombre, sede) {
@@ -137,8 +144,45 @@ window.AcademiasDB = (() => {
     if (error) throw error; return data;
   }
 
+  // ---------- Usuarios e invitaciones (módulo de seguridad) ----------
+  const usuarios = {
+    async aceptarInvitacion() {
+      const { data, error } = await sb.rpc('aceptar_invitacion');
+      if (error) throw error; return data;  // academia_id o null
+    },
+    async invitar(email, rol, sedeId) {
+      const { data, error } = await sb.rpc('invitar_usuario', { p_email: email, p_rol: rol, p_sede: sedeId || null });
+      if (error) throw error; return data;
+    },
+    async revocar(id) {
+      const { error } = await sb.rpc('revocar_invitacion', { p_id: id });
+      if (error) throw error;
+    },
+    async cambiarRol(userId, rol, sedeId) {
+      const { error } = await sb.rpc('cambiar_rol_usuario', { p_user: userId, p_rol: rol, p_sede: sedeId || null });
+      if (error) throw error;
+    },
+    async quitar(userId) {
+      const { error } = await sb.rpc('quitar_usuario', { p_user: userId });
+      if (error) throw error;
+    },
+    async listar() {
+      const [pe, inv] = await Promise.all([
+        sb.from('perfiles').select('*').order('created_at'),
+        sb.from('invitaciones').select('*').order('created_at', { ascending: false }),
+      ]);
+      if (pe.error) throw pe.error;
+      if (inv.error) throw inv.error;
+      return { perfiles: pe.data, invitaciones: inv.data };
+    },
+  };
+
   // ---------- Carga inicial: Supabase -> forma del DB de la app ----------
   async function loadAll() {
+    const { data: sess } = await sb.auth.getSession();
+    const userId = sess && sess.session ? sess.session.user.id : null;
+    const perfilQ = userId ? await sb.from('perfiles').select('*').eq('user_id', userId).maybeSingle() : { data: null };
+    const perfil = perfilQ.data || null;
     const sel = (t) => sb.from(t).select('*');
     const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
@@ -148,7 +192,7 @@ window.AcademiasDB = (() => {
     ]);
     const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis].find((r) => r.error);
     if (err) throw err.error;
-    if (!ac.data.length) return { academia: null };
+    if (!ac.data.length) return { academia: null, perfil };
 
     const a = ac.data[0];
     const academia = { ...a, email: a.email_corporativo, ruc: a.ruc_dni };
@@ -164,6 +208,7 @@ window.AcademiasDB = (() => {
 
     return {
       academia,
+      perfil,
       sedes: se.data.map(T.sedes.fromRow),
       staff: st.data.map(T.staff.fromRow),
       tracks: tr.data.map(T.tracks.fromRow),
@@ -335,5 +380,5 @@ window.AcademiasDB = (() => {
     },
   };
 
-  return { on: true, sb, auth, crearAcademia, loadAll, sync, get academiaId() { return ACADEMIA_ID; } };
+  return { on: true, sb, auth, crearAcademia, usuarios, loadAll, sync, get academiaId() { return ACADEMIA_ID; } };
 })();

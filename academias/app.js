@@ -2269,7 +2269,33 @@ const CONFIG_TABS = {
            <button onclick="eliminarPromo('${p.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))}`;
   },
   publica()      { el('configTab').innerHTML = stub('Página pública de la academia (marca blanca)'); },
-  invitaciones() { el('configTab').innerHTML = stub('Invitaciones a staff y coordinadores'); },
+  invitaciones() {
+    if (!window.AcademiasDB || !AcademiasDB.on) {
+      el('configTab').innerHTML = stub('Invitaciones a staff y coordinadores (requiere modo conectado)');
+      return;
+    }
+    el('configTab').innerHTML = `
+      <div class="max-w-2xl">
+        <h3 class="font-semibold mb-1">Invitar usuario</h3>
+        <p class="text-xs text-slate-500 mb-3">La persona debe registrarse (o entrar con Google) en la app con este correo; al entrar se unirá automáticamente a tu academia con el rol asignado.</p>
+        <form onsubmit="enviarInvitacion(event)" class="mb-6 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+          <input id="inv_email" type="email" required placeholder="correo@ejemplo.com" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select id="inv_rol" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
+            <option value="coordinador">Coordinador</option>
+            <option value="tesorero">Tesorero</option>
+            <option value="profesor">Profesor</option>
+            <option value="admin">Administrador</option>
+          </select>
+          <select id="inv_sede" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
+            <option value="">Todas las sedes</option>
+            ${DB.sedes.map((s) => `<option value="${s.id}">${s.nombre_sede}</option>`).join('')}
+          </select>
+          <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Invitar</button>
+        </form>
+        <div id="usuariosBox" class="text-sm text-slate-400">Cargando usuarios...</div>
+      </div>`;
+    renderUsuarios();
+  },
 };
 
 window.guardarConceptoCNR = (ev) => {
@@ -2297,6 +2323,64 @@ window.eliminarConceptoCNR = (id) => {
 window.cnrAutoPrecio = (selId, montoId) => {
   const c = DB.conceptosCNR.find((x) => x.id === el(selId).value);
   if (c && el(montoId)) el(montoId).value = c.precio || '';
+};
+
+// ---------- Usuarios e invitaciones (módulo de seguridad) ----------
+const ROL_LABEL = { admin: 'Administrador', coordinador: 'Coordinador', tesorero: 'Tesorero', profesor: 'Profesor' };
+async function renderUsuarios() {
+  const box = el('usuariosBox');
+  if (!box) return;
+  try {
+    const { perfiles, invitaciones } = await AcademiasDB.usuarios.listar();
+    const pendientes = invitaciones.filter((i) => i.estado === 'pendiente');
+    const sedeNom = (id) => { const s = id && sede(id); return s ? s.nombre_sede : 'Todas'; };
+    box.innerHTML = `
+      <h3 class="font-semibold text-slate-800 mb-2">Usuarios de la academia (${perfiles.length})</h3>
+      <div class="rounded-xl ring-1 ring-slate-200 divide-y divide-slate-100 mb-6 bg-white">
+        ${perfiles.map((p) => `
+          <div class="flex items-center justify-between gap-2 px-4 py-2.5">
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-slate-800 truncate">${p.email || p.nombre || p.user_id.slice(0, 8)}</div>
+              <div class="text-xs text-slate-400">${ROL_LABEL[p.rol] || p.rol} · ${sedeNom(p.sede_id)}</div>
+            </div>
+            ${PERFIL && p.user_id === PERFIL.user_id
+              ? '<span class="text-[11px] rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 shrink-0">Tú</span>'
+              : `<button onclick="quitarUsuarioUI('${p.user_id}','${(p.email || '').replace(/'/g, '')}')" class="text-xs text-rose-500 hover:text-rose-700 shrink-0">Quitar</button>`}
+          </div>`).join('')}
+      </div>
+      <h3 class="font-semibold text-slate-800 mb-2">Invitaciones pendientes (${pendientes.length})</h3>
+      ${pendientes.length ? `
+      <div class="rounded-xl ring-1 ring-slate-200 divide-y divide-slate-100 bg-white">
+        ${pendientes.map((i) => `
+          <div class="flex items-center justify-between gap-2 px-4 py-2.5">
+            <div class="min-w-0">
+              <div class="text-sm text-slate-800 truncate">${i.email}</div>
+              <div class="text-xs text-slate-400">${ROL_LABEL[i.rol] || i.rol} · ${sedeNom(i.sede_id)} · ${fmtDMY(i.created_at.slice(0, 10))}</div>
+            </div>
+            <button onclick="revocarInvitacionUI('${i.id}')" class="text-xs text-rose-500 hover:text-rose-700 shrink-0">Revocar</button>
+          </div>`).join('')}
+      </div>` : '<p class="text-sm text-slate-400">Sin invitaciones pendientes.</p>'}`;
+  } catch (e) {
+    box.innerHTML = `<p class="text-sm text-rose-500">No se pudieron cargar los usuarios: ${(e && e.message) || e}</p>`;
+  }
+}
+window.enviarInvitacion = async (ev) => {
+  ev.preventDefault();
+  try {
+    await AcademiasDB.usuarios.invitar(el('inv_email').value.trim(), el('inv_rol').value, el('inv_sede').value || null);
+    el('inv_email').value = '';
+    toast('Invitación registrada ✓ Pídele que entre a la app con ese correo');
+    renderUsuarios();
+  } catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
+};
+window.revocarInvitacionUI = async (id) => {
+  try { await AcademiasDB.usuarios.revocar(id); toast('Invitación revocada'); renderUsuarios(); }
+  catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
+};
+window.quitarUsuarioUI = async (userId, email) => {
+  if (!confirm(`¿Quitar a ${email || 'este usuario'} de la academia? Perderá el acceso.`)) return;
+  try { await AcademiasDB.usuarios.quitar(userId); toast('Usuario quitado'); renderUsuarios(); }
+  catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
 };
 
 // ---------- Medios de pago (config) ----------
@@ -2484,18 +2568,44 @@ window.authCrear = async (ev) => {
     await entrarConectado();
   } catch (e) { authMsg(traducirAuthError(e)); }
 };
+window.authGoogle = async () => {
+  try { await AcademiasDB.auth.signInGoogle(); }   // redirige a Google y vuelve con sesión
+  catch (e) { authMsg(traducirAuthError(e)); }
+};
 window.doLogoutAcademias = async () => {
   if (window.AcademiasDB && AcademiasDB.on) await AcademiasDB.auth.signOut();
   location.reload();
 };
 
 // ---------- Arranque conectado: hidratar DB y activar sincronización ----------
+let PERFIL = null;   // perfil del usuario autenticado (rol, sede, email)
 async function entrarConectado() {
   try {
-    const data = await AcademiasDB.loadAll();
-    if (!data.academia) { showAuthScreen('crear'); return; }
+    let data = await AcademiasDB.loadAll();
+    if (!data.academia) {
+      // ¿Tiene una invitación pendiente? Únete a esa academia con su rol.
+      const unido = await AcademiasDB.usuarios.aceptarInvitacion().catch(() => null);
+      if (unido) data = await AcademiasDB.loadAll();
+      if (!data.academia) { showAuthScreen('crear'); return; }
+    }
     Object.assign(DB, data);
-    SEDE_ACTUAL = DB.sedes[0] ? DB.sedes[0].id : null;
+    PERFIL = data.perfil || null;
+    delete DB.perfil;
+    // Rol real del usuario: manda sobre el selector demo
+    if (PERFIL) {
+      ROL = PERFIL.rol;
+      const rolBox = el('rolBox'), idBox = el('identBox');
+      if (rolBox) rolBox.classList.add('hidden');
+      if (idBox) {
+        idBox.classList.remove('hidden');
+        idBox.innerHTML = `
+          <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-0.5">${({admin:'Administrador / Director',coordinador:'Coordinador / Recepción',tesorero:'Tesorero / Caja',profesor:'Profesor'})[PERFIL.rol] || PERFIL.rol}</div>
+          <div class="text-xs text-slate-300 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
+      }
+    }
+    SEDE_ACTUAL = (PERFIL && PERFIL.sede_id && DB.sedes.some((s) => s.id === PERFIL.sede_id))
+      ? PERFIL.sede_id
+      : (DB.sedes[0] ? DB.sedes[0].id : null);
     AcademiasDB.sync.onStatus((st, err) => {
       const d = el('syncDot');
       if (!d) return;
@@ -2509,6 +2619,11 @@ async function entrarConectado() {
     el('btnLogout').classList.remove('hidden');
     el('authScreen').classList.add('hidden');
     bootApp();
+    // Rol local con sede asignada: opera solo su sede
+    if (PERFIL && PERFIL.sede_id && PERFIL.rol !== 'admin') {
+      el('sedeSelect').disabled = true;
+      el('sedeSelect').classList.add('opacity-70');
+    }
   } catch (e) {
     console.error(e);
     showAuthScreen('login');
