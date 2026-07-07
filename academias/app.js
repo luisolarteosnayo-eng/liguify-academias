@@ -91,7 +91,7 @@ const DB = {
     { id: 'c1',  tutor_id: 'tu1', jugador_id: 'j1', inscripcion_id: 'i1',  tipo: 'CR', origen: 'proceso', concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 220, pagado_monto: 0,  estado: 'por_pagar' },
     { id: 'c1b', tutor_id: 'tu1', jugador_id: 'j1', inscripcion_id: 'i1b', tipo: 'CR', origen: 'proceso', concepto: 'ARQUEROS 5pm', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 250, pagado_monto: 0,  estado: 'por_pagar' },
     { id: 'c2',  tutor_id: 'tu1', jugador_id: 'j2', inscripcion_id: 'i2',  tipo: 'CR', origen: 'proceso', concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 80,  pagado_monto: 80, estado: 'pagado' },
-    { id: 'c3',  tutor_id: 'tu2', jugador_id: 'j3', inscripcion_id: 'i3',  tipo: 'CR', origen: 'proceso', concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 220, pagado_monto: 0,  estado: 'por_pagar' },
+    { id: 'c3',  tutor_id: 'tu2', jugador_id: 'j3', inscripcion_id: 'i3',  tipo: 'CR', origen: 'proceso', concepto: '2015 - 2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 220, pagado_monto: 220, estado: 'pagado' },
     { id: 'c4',  tutor_id: 'tu2', jugador_id: 'j4', tipo: 'CNR', concepto: 'Matrícula anual', descripcion: '', fecha_vencimiento: '2026-06-15', periodo: PERIODO, monto: 150, pagado_monto: 0,  estado: 'por_pagar' },
     { id: 'c5',  tutor_id: 'tu3', jugador_id: 'j5', inscripcion_id: 'i5',  tipo: 'CR', origen: 'proceso', concepto: '2016', descripcion: 'Del 01/07/2026 al 31/07/2026', ciclo_inicio: '2026-07-01', ciclo_fin: '2026-07-31', fecha_vencimiento: '2026-07-05', periodo: PERIODO, monto: 200, pagado_monto: 0,  estado: 'por_pagar' },
     { id: 'c6',  tutor_id: 'tu1', jugador_id: 'j1', tipo: 'CNR', concepto: 'Uniforme', descripcion: '', periodo: PERIODO, monto: 120, pagado_monto: 0,  estado: 'por_pagar' },
@@ -100,15 +100,15 @@ const DB = {
   // Documentos de pago: cada pago cubre uno o más cargos (CR/CNR) y los marca Pagados.
   // detalle.cat = categoría de ingreso (Mensualidades para CR; nombre del concepto para CNR)
   pagos: [
-    { id: 'pg1', tutor_id: 'tu1', jugador_id: 'j2', sede_id: 's1', fecha: '2026-07-01', medio: 'Yape', num_operacion: '00012345', voucher_url: 'mock.jpg', total: 80, estado: 'registrado',
+    { id: 'pg1', tutor_id: 'tu1', jugador_id: 'j2', sede_id: 's1', fecha: '2026-07-01', medio: 'Yape', num_operacion: '00012345', voucher_url: 'mock.jpg', total: 80, estado: 'aprobado',
       detalle: [{ cargo_id: 'c2', concepto: '2015 - 2016 Del 01/07/2026 al 31/07/2026', cat: 'Mensualidades', tipo: 'CR', monto: 80 }] },
-    { id: 'pg2', tutor_id: 'tu1', jugador_id: 'j2', sede_id: 's1', fecha: '2026-07-02', medio: 'Efectivo', num_operacion: '', voucher_url: null, total: 120, estado: 'registrado',
-      detalle: [{ cargo_id: 'h1', concepto: 'Uniforme', cat: 'Uniforme', tipo: 'CNR', monto: 120 }] },
-    { id: 'pg3', tutor_id: 'tu3', jugador_id: 'j5', sede_id: 's2', fecha: '2026-07-03', medio: 'Transferencia', num_operacion: 'OP-778', voucher_url: 'mock.jpg', total: 300, estado: 'registrado',
+    { id: 'pg2', tutor_id: 'tu2', jugador_id: 'j3', sede_id: 's1', fecha: '2026-07-02', medio: 'Efectivo', num_operacion: '', voucher_url: 'mock.jpg', total: 220, estado: 'pendiente',
+      detalle: [{ cargo_id: 'c3', concepto: '2015 - 2016 Del 01/07/2026 al 31/07/2026', cat: 'Mensualidades', tipo: 'CR', monto: 220 }] },
+    { id: 'pg3', tutor_id: 'tu3', jugador_id: 'j5', sede_id: 's2', fecha: '2026-07-03', medio: 'Transferencia', num_operacion: 'OP-778', voucher_url: 'mock.jpg', total: 300, estado: 'aprobado',
       detalle: [{ cargo_id: 'h2', concepto: 'Mensualidad', cat: 'Mensualidades', tipo: 'CR', monto: 200 }, { cargo_id: 'h3', concepto: 'Inscripción torneo', cat: 'Inscripción torneo', tipo: 'CNR', monto: 100 }] },
-    { id: 'pg4', tutor_id: 'tu2', jugador_id: 'j3', sede_id: 's1', fecha: '2026-06-28', medio: 'Yape', num_operacion: 'OP-551', voucher_url: 'mock.jpg', total: 220, estado: 'registrado',
+    { id: 'pg4', tutor_id: 'tu2', jugador_id: 'j3', sede_id: 's1', fecha: '2026-06-28', medio: 'Yape', num_operacion: 'OP-551', voucher_url: 'mock.jpg', total: 220, estado: 'aprobado',
       detalle: [{ cargo_id: 'h4', concepto: 'Mensualidad', cat: 'Mensualidades', tipo: 'CR', monto: 220 }] },
-    { id: 'pg5', tutor_id: 'tu2', jugador_id: 'j3', sede_id: 's1', fecha: '2026-06-20', medio: 'Efectivo', num_operacion: '', voucher_url: null, total: 150, estado: 'registrado',
+    { id: 'pg5', tutor_id: 'tu2', jugador_id: 'j3', sede_id: 's1', fecha: '2026-06-20', medio: 'Efectivo', num_operacion: '', voucher_url: null, total: 150, estado: 'aprobado',
       detalle: [{ cargo_id: 'h5', concepto: 'Matrícula anual', cat: 'Matrícula anual', tipo: 'CNR', monto: 150 }] },
   ],
 
@@ -122,7 +122,7 @@ const DB = {
   ],
 
   // Ciclos de pago: día del mes de corte para generar los CR
-  // dia = día de corte · dia_venc = día de vencimiento (próxima ocurrencia tras el corte)
+  // dia = día de corte · dia_venc = día de vencimiento (día del mes del ciclo)
   ciclosPago: [
     { id: 'ci1', dia: 1, dia_venc: 5, es_default: true, activo: true },
     { id: 'ci2', dia: 6, dia_venc: 10, es_default: false, activo: true },
@@ -250,6 +250,7 @@ const MENU = [
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero'] },
+  { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
   { id: 'asistencia',  label: 'Asistencia',    icon: '✅', roles: ['admin','profesor'] },
   { id: 'cromos',      label: 'Cromos',        icon: '🃏', roles: ['admin','profesor'] },
   { id: 'config',      label: 'Configuración', icon: '⚙️', roles: ['admin'] },
@@ -273,6 +274,10 @@ let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (1–fin) | 'ciclo' (día N–1)
 let DASH_CICLO = 6;            // día del ciclo para el modo 'ciclo'
 const HOY = '2026-07-02';
+let PAGO_VOUCHER = null;   // dataURL del voucher del pago en registro
+// Imagen de comprobante de ejemplo (para los pagos mock que no tienen imagen real)
+const VOUCHER_DEMO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="440"><rect width="320" height="440" fill="#f1f5f9"/><rect x="20" y="20" width="280" height="400" rx="8" fill="#fff" stroke="#cbd5e1"/><text x="160" y="200" font-family="sans-serif" font-size="22" fill="#64748b" text-anchor="middle">Comprobante</text><text x="160" y="228" font-family="sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">(imagen de ejemplo)</text></svg>');
 const fmtFecha = (iso) => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 // Filtros por sede activa (aislamiento operativo)
@@ -338,7 +343,7 @@ const SCREENS = {
     const tracksDash = DB.tracks.filter((t) => t.activo !== false && inDash(t.sede_id));
     const nuevos = alumnosDash.filter((j) => j.fecha_registro && j.fecha_registro >= win.inicio && j.fecha_registro <= win.fin);
     const activos = alumnosDash.filter((j) => j.estado_alumno === 'activo').length;
-    const pagosDash = DB.pagos.filter((p) => p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin);
+    const pagosDash = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin);
     const ingresosItems = pagosDash.flatMap((p) => (p.detalle || []).map((d) => ({ cat: d.cat || (d.tipo === 'CR' ? 'Mensualidades' : d.concepto || 'Otros'), monto: d.monto })))
       .filter((d) => d.monto > 0);   // los documentos en $0 (beca/promo) no suman al recaudado
     const totalIngresos = ingresosItems.reduce((s, d) => s + d.monto, 0);
@@ -472,7 +477,7 @@ const SCREENS = {
       </div>
       <div class="grid gap-4 md:grid-cols-3 mb-6">
         ${card('Por cobrar', S(porCobrar.reduce((s, c) => s + saldoC(c), 0)), `${porCobrar.length} cargos`)}
-        ${card('Documentos de pago', pagosS.length, `${S(pagosS.reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0))} recaudado`)}
+        ${card('Documentos de pago', pagosS.length, `${S(pagosS.filter((p) => p.estado === 'aprobado').reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0))} recaudado`)}
         ${card('Periodo', 'Julio 2026')}
       </div>
 
@@ -560,6 +565,34 @@ const SCREENS = {
       <h3 class="mb-2 text-sm font-semibold text-amber-600">🟡 Por vencer (${porVencer.length})</h3>
       <div class="grid gap-2 md:grid-cols-2">
         ${porVencer.length ? porVencer.map((a) => pcCard(a, false)).join('') : '<p class="text-sm text-slate-400">Sin cuentas por vencer.</p>'}
+      </div>`;
+  },
+
+  aprobar() {
+    const pagosDeSede = DB.pagos.filter((p) => p.sede_id === SEDE_ACTUAL);
+    const pendientes = pagosDeSede.filter((p) => p.estado === 'pendiente');
+    const aprobadosHoy = pagosDeSede.filter((p) => p.estado === 'aprobado' && (p.fecha_aprobacion || p.fecha) === HOY);
+    const rechazadosHoy = pagosDeSede.filter((p) => p.estado === 'rechazado' && (p.fecha_rechazo === HOY || p.fecha === HOY));
+    const sum = (arr) => arr.reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+    const porMedio = {};
+    aprobadosHoy.forEach((p) => { const m = p.medio || '—'; porMedio[m] = (porMedio[m] || 0) + (p.total ?? p.monto ?? 0); });
+    const medios = Object.keys(porMedio).sort((a, b) => porMedio[b] - porMedio[a]);
+    const kpi = (label, val, color) => `<div class="rounded-xl bg-${color}-50 ring-1 ring-${color}-100 p-4"><div class="text-xs uppercase tracking-wide text-${color}-500">${label}</div><div class="mt-1 text-2xl font-bold text-${color}-600">${val}</div></div>`;
+
+    el('content').innerHTML = `
+      <p class="text-sm text-slate-500 mb-3">Aprobación de pagos · <b>${sede(SEDE_ACTUAL).nombre_sede}</b></p>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Pagos del día por medio de pago</h3>
+      <div class="grid gap-3 grid-cols-2 sm:grid-cols-4 mb-5">
+        ${medios.length ? medios.map((m) => `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-4"><div class="text-xs text-slate-400">${m}</div><div class="mt-1 text-xl font-bold text-slate-800">${S(porMedio[m])}</div></div>`).join('') : '<p class="text-sm text-slate-400 col-span-full">Sin pagos aprobados hoy.</p>'}
+      </div>
+      <div class="grid gap-3 grid-cols-3 mb-6">
+        ${kpi('Pendientes', S(sum(pendientes)), 'amber')}
+        ${kpi('Aprobados hoy', S(sum(aprobadosHoy)), 'emerald')}
+        ${kpi('Rechazados hoy', S(sum(rechazadosHoy)), 'rose')}
+      </div>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Pendientes de aprobación (${pendientes.length})</h3>
+      <div class="grid gap-2 md:grid-cols-2">
+        ${pendientes.length ? pendientes.map(pagoAprobCard).join('') : '<p class="text-sm text-slate-400">No hay pagos pendientes de aprobación. 🎉</p>'}
       </div>`;
   },
 
@@ -1345,6 +1378,7 @@ window.agregarCNR = (jid) => {
 };
 // Registrar pago: selecciona CR/CNR pendientes, medio, N° operación y voucher
 window.formPagoAlumno = (jid) => {
+  PAGO_VOUCHER = null;
   const j = jugador(jid);
   const pend = DB.cargos.filter((c) => c.jugador_id === jid && c.estado !== 'pagado')
     .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
@@ -1369,7 +1403,7 @@ window.formPagoAlumno = (jid) => {
         ${field('Medio de pago', select('pg_medio', medios.map((m) => ({ v: m.id, t: m.nombre })), 'onchange="pgVoucher()"'))}
         ${field('N° de operación', input('pg_op', 'placeholder="Ej: 000123456"'))}
       </div>
-      <div id="pgVoucherBox">${field('Voucher del pago', input('pg_voucher', 'type="file" accept="image/*"'))}</div>
+      <div id="pgVoucherBox">${field('Voucher del pago', input('pg_voucher', 'type="file" accept="image/*" onchange="pgVoucherFile(this)"'))}</div>
       ${submitBar('Registrar pago')}
     </form>`);
   pagoTotal();
@@ -1386,13 +1420,20 @@ window.pgVoucher = () => {
   const efectivo = m && m.nombre.toLowerCase() === 'efectivo';
   if (el('pgVoucherBox')) el('pgVoucherBox').style.display = efectivo ? 'none' : '';
 };
+window.pgVoucherFile = (inp) => {
+  const f = inp.files && inp.files[0];
+  if (!f) { PAGO_VOUCHER = null; return; }
+  const r = new FileReader();
+  r.onload = () => { PAGO_VOUCHER = r.result; };
+  r.readAsDataURL(f);
+};
 window.guardarPagoAlumno = (e, jid) => {
   e.preventDefault();
   const sel = [...document.querySelectorAll('.pgChk:checked')].map((c) => c.value);
   if (!sel.length) { toast('Selecciona al menos un cargo'); return; }
   const medio = DB.mediosPago.find((m) => m.id === val('pg_medio'));
   const efectivo = medio && medio.nombre.toLowerCase() === 'efectivo';
-  if (!efectivo && !val('pg_voucher')) { toast('Sube el voucher del pago'); return; }
+  if (!efectivo && !PAGO_VOUCHER) { toast('Sube el voucher del pago'); return; }
   const j = jugador(jid);
   const detalle = sel.map((cid) => {
     const c = DB.cargos.find((x) => x.id === cid);
@@ -1402,12 +1443,85 @@ window.guardarPagoAlumno = (e, jid) => {
   // Marcar los cargos como Pagados
   sel.forEach((cid) => { const c = DB.cargos.find((x) => x.id === cid); c.pagado_monto = c.monto; c.estado = 'pagado'; });
   DB.pagos.push({ id: uid('pg'), jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL, fecha: HOY,
-    medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: val('pg_voucher') ? 'mock.jpg' : null,
-    total, detalle, estado: 'registrado' });
+    medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: PAGO_VOUCHER,
+    total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
   closeModal();
   toast(`✓ Pago registrado · ${S(total)}`);
   formEditarAlumno(jid);   // reabre la ficha del alumno...
   njTab('pagos');          // ...en la pestaña Pagos, con el documento recién creado
+};
+
+// ---------- Aprobación de pagos (Tesorería) ----------
+function pagoAprobCard(p) {
+  const j = p.jugador_id ? jugador(p.jugador_id) : null;
+  return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-3">
+    <div class="flex items-start justify-between gap-2">
+      <div class="min-w-0">
+        <div class="font-medium truncate">${j ? nom(j) : 'DNI ' + ((tutor(p.tutor_id) || {}).dni_tutor || '—')}</div>
+        <div class="text-xs text-slate-400">${p.medio || '—'}${p.num_operacion ? ' · Op. ' + p.num_operacion : ''} · ${fmtDMY(p.fecha)}${p.voucher_url ? ' · voucher ✔' : ''}</div>
+      </div>
+      <div class="text-lg font-bold text-slate-800">${S(p.total ?? p.monto ?? 0)}</div>
+    </div>
+    <div class="mt-2 border-t border-slate-100 pt-2 space-y-1">
+      ${(p.detalle || []).map((d) => `<div class="flex justify-between text-xs"><span>${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span><span>${S(d.monto)}</span></div>`).join('')}
+    </div>
+    <div class="mt-2 flex justify-end gap-3 items-center">
+      ${p.voucher_url ? `<button onclick="verComprobante('${p.id}')" class="text-indigo-600 hover:underline text-sm">🖼️ Ver comprobante</button>` : '<span class="text-xs text-amber-600">sin comprobante</span>'}
+      <button onclick="gestionarPago('${p.id}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Aprobar / Rechazar</button>
+    </div>
+  </div>`;
+}
+window.gestionarPago = (id) => {
+  const p = DB.pagos.find((x) => x.id === id); if (!p) return;
+  const j = p.jugador_id ? jugador(p.jugador_id) : null;
+  const medios = DB.mediosPago.filter((m) => m.activo);
+  openModal('Aprobar / Rechazar pago', `
+    <p class="text-sm mb-1">${j ? nom(j) : ''} · <b>${S(p.total ?? p.monto ?? 0)}</b></p>
+    <p class="text-xs text-slate-400 mb-3">${p.num_operacion ? 'Op. ' + p.num_operacion + ' · ' : ''}${fmtDMY(p.fecha)}${p.voucher_url ? ' · voucher adjunto' : ' · sin voucher'}</p>
+    <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3">
+      ${(p.detalle || []).map((d) => `<div class="flex justify-between px-3 py-2 text-sm"><span>${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span><span>${S(d.monto)}</span></div>`).join('')}
+    </div>
+    ${voucherSrc(p)
+      ? `<div class="mb-3"><div class="text-xs font-medium text-slate-500 mb-1">Comprobante</div><img src="${voucherSrc(p)}" onclick="verComprobante('${id}')" class="w-full max-h-52 object-contain rounded-lg ring-1 ring-slate-200 cursor-zoom-in" title="Clic para ampliar"></div>`
+      : '<p class="text-xs text-amber-600 mb-3">⚠️ Este pago no tiene comprobante adjunto.</p>'}
+    ${field('Medio de pago', select('ap_medio', medios.map((m) => ({ v: m.nombre, t: m.nombre })), ''))}
+    <div class="mt-3 flex items-center justify-between gap-2">
+      <button type="button" onclick="rechazarPagoDoc('${id}')" class="rounded-lg px-4 py-2.5 text-sm font-medium text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">Rechazar</button>
+      <button type="button" onclick="aprobarPagoDoc('${id}')" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">Aprobar</button>
+    </div>`);
+  if (el('ap_medio')) el('ap_medio').value = p.medio || (medios[0] && medios[0].nombre) || '';
+};
+window.aprobarPagoDoc = (id) => {
+  const p = DB.pagos.find((x) => x.id === id); if (!p) return;
+  p.medio = val('ap_medio') || p.medio;
+  p.estado = 'aprobado'; p.fecha_aprobacion = HOY;
+  closeModal(); toast('Pago aprobado'); go('aprobar');
+};
+window.rechazarPagoDoc = (id) => {
+  const p = DB.pagos.find((x) => x.id === id); if (!p) return;
+  p.medio = val('ap_medio') || p.medio;
+  p.estado = 'rechazado'; p.fecha_rechazo = HOY;
+  revertirCargosPago(p);   // los CR/CNR vuelven a Pendiente de Pago
+  closeModal(); toast('Pago rechazado · cargos vueltos a pendientes'); go('aprobar');
+};
+function revertirCargosPago(p) {
+  (p.detalle || []).forEach((d) => {
+    const c = DB.cargos.find((x) => x.id === d.cargo_id);
+    if (!c) return;
+    c.pagado_monto = Math.max(0, (c.pagado_monto || 0) - d.monto);
+    c.estado = (c.monto > 0 && c.pagado_monto >= c.monto) ? 'pagado' : (c.pagado_monto > 0 ? 'parcial' : 'por_pagar');
+  });
+}
+const voucherSrc = (p) => p && p.voucher_url ? (String(p.voucher_url).startsWith('data:') ? p.voucher_url : VOUCHER_DEMO) : null;
+window.verComprobante = (id) => {
+  const p = DB.pagos.find((x) => x.id === id); if (!p) return;
+  const src = voucherSrc(p);
+  if (!src) { toast('Este pago no tiene comprobante'); return; }
+  openModal('Comprobante de pago', `
+    <div class="text-center">
+      <img src="${src}" class="mx-auto max-h-[70vh] rounded-lg ring-1 ring-slate-200">
+      <div class="mt-2 text-xs text-slate-400">${p.medio || ''}${p.num_operacion ? ' · Op. ' + p.num_operacion : ''} · ${fmtDMY(p.fecha)}</div>
+    </div>`);
 };
 
 // Documentos de pago del alumno
@@ -2300,24 +2414,6 @@ function renderSedeSelect() {
     .map((s) => `<option value="${s.id}" ${s.id === SEDE_ACTUAL ? 'selected' : ''}>${s.nombre_sede}</option>`)
     .join('');
 }
-
-// ---------- Acciones mock ----------
-// Aplica un pago aprobado a los cargos del alumno (más antiguos primero)
-function aplicarPagoACargos(p) {
-  if (!p.jugador_id) return;
-  let resto = p.monto;
-  const pend = DB.cargos.filter((c) => c.jugador_id === p.jugador_id && (c.monto - (c.pagado_monto || 0)) > 0);
-  for (const c of pend) {
-    if (resto <= 0) break;
-    const saldoC = c.monto - (c.pagado_monto || 0);
-    const aplica = Math.min(resto, saldoC);
-    c.pagado_monto = (c.pagado_monto || 0) + aplica;
-    resto -= aplica;
-    c.estado = c.pagado_monto >= c.monto ? 'pagado' : 'parcial';
-  }
-}
-window.aprobarPago = (id) => { const p = DB.pagos.find((x) => x.id === id); if (p) { p.estado = 'aprobado'; aplicarPagoACargos(p); go('tesoreria'); } };
-window.rechazarPago = (id) => { const p = DB.pagos.find((x) => x.id === id); if (p) { p.estado = 'rechazado'; go('tesoreria'); } };
 
 // ---------- Init ----------
 el('rolSelect').addEventListener('change', (e) => { ROL = e.target.value; TRACK_SEL = null; go(SCREEN); });
