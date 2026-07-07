@@ -185,6 +185,12 @@ function mesActualWindow(hoyIso) {
   return { inicio: isoDate(new Date(h.getFullYear(), h.getMonth(), 1)),
            fin: isoDate(new Date(h.getFullYear(), h.getMonth() + 1, 0)) };
 }
+// Ventana del mes anterior completo (1 al último día)
+function mesAnteriorWindow(hoyIso) {
+  const h = new Date(hoyIso + 'T00:00:00');
+  return { inicio: isoDate(new Date(h.getFullYear(), h.getMonth() - 1, 1)),
+           fin: isoDate(new Date(h.getFullYear(), h.getMonth(), 0)) };
+}
 // Ventana del ciclo (día N al día N−1 del mes siguiente) que contiene 'hoy'
 function cicloWindow(dia, hoyIso) {
   const h = new Date(hoyIso + 'T00:00:00');
@@ -271,8 +277,7 @@ let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
 let ASIS_TRACK = null;         // track activo en Asistencia
 let ASIS_FECHA = null;         // fecha activa en Asistencia
 let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
-let DASH_PERIODO = 'mes';      // 'mes' (1–fin) | 'ciclo' (día N–1)
-let DASH_CICLO = 6;            // día del ciclo para el modo 'ciclo'
+let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
 const HOY = '2026-07-02';
 let PAGO_VOUCHER = null;   // dataURL del voucher del pago en registro
 // Imagen de comprobante de ejemplo (para los pagos mock que no tienen imagen real)
@@ -336,7 +341,7 @@ const estadoColor = { pagado: 'emerald', por_pagar: 'amber', vencido: 'rose', pa
 // ---------- Pantallas ----------
 const SCREENS = {
   dashboard() {
-    const win = DASH_PERIODO === 'ciclo' ? cicloWindow(DASH_CICLO, HOY) : mesActualWindow(HOY);
+    const win = DASH_PERIODO === 'anterior' ? mesAnteriorWindow(HOY) : mesActualWindow(HOY);
     const inDash = (sedeId) => !DASH_SEDE || sedeId === DASH_SEDE;
     const sedesDash = DB.sedes.filter((s) => inDash(s.id));
     const alumnosDash = DB.jugadores.filter((j) => inDash(j.sede_id));
@@ -352,9 +357,6 @@ const SCREENS = {
       .filter((c) => c.jugador_id && inDash(jugador(c.jugador_id).sede_id) && (c.monto - (c.pagado_monto || 0)) > 0)
       .map((c) => ({ cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), monto: c.monto - (c.pagado_monto || 0) }));
     const totalPorCobrar = porCobrarItems.reduce((s, d) => s + d.monto, 0);
-    const utilidadTotal = tracksDash.reduce((s, t) => s + statsTrack(t).utilidad, 0);
-    const rentables = tracksDash.filter((t) => statsTrack(t).rentable).length;
-    const ciclos = DB.ciclosPago.filter((c) => c.activo);
 
     el('content').innerHTML = `
       <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -365,14 +367,9 @@ const SCREENS = {
             ${DB.sedes.map((s) => `<option value="${s.id}" ${DASH_SEDE === s.id ? 'selected' : ''}>${s.nombre_sede}</option>`).join('')}
           </select>
         </label>
-        <div class="flex items-center gap-2">
-          <div class="inline-flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-sm">
-            <button onclick="dashSet('periodo','mes')" class="px-3 py-2 ${DASH_PERIODO === 'mes' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Mes actual</button>
-            <button onclick="dashSet('periodo','ciclo')" class="px-3 py-2 ${DASH_PERIODO === 'ciclo' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Ciclo</button>
-          </div>
-          ${DASH_PERIODO === 'ciclo' ? `<select id="dashCiclo" onchange="dashSet('ciclo', this.value)" class="rounded-lg border border-slate-300 px-2 py-2 bg-white text-sm">
-            ${ciclos.map((c) => `<option value="${c.dia}" ${DASH_CICLO === c.dia ? 'selected' : ''}>Ciclo al ${c.dia}</option>`).join('')}
-          </select>` : ''}
+        <div class="inline-flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-sm">
+          <button onclick="dashSet('periodo','mes')" class="px-3 py-2 ${DASH_PERIODO === 'mes' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Mes actual</button>
+          <button onclick="dashSet('periodo','anterior')" class="px-3 py-2 ${DASH_PERIODO === 'anterior' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Mes anterior</button>
         </div>
       </div>
       <p class="text-xs text-slate-400 mb-4">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'}</p>
@@ -711,7 +708,6 @@ function renderAlumnosList() {
 window.dashSet = (key, val) => {
   if (key === 'sede') DASH_SEDE = val;
   else if (key === 'periodo') DASH_PERIODO = val;
-  else if (key === 'ciclo') DASH_CICLO = parseInt(val, 10);
   SCREENS.dashboard();
 };
 function chartNuevosPorDia(nuevos) {
