@@ -43,7 +43,7 @@
     <nav id="nav" class="flex-1 px-3 py-3 space-y-1 text-sm overflow-y-auto"></nav>
 
     <div class="px-5 py-3 border-t border-slate-700/60 flex items-center justify-between">
-      <a href="../../proyecto-torneos/index.html" class="text-xs text-slate-400 hover:text-slate-200">← Liguify · otras soluciones</a>
+      <a href="../../proyecto-torneos/index.html" data-app-liguify class="text-xs text-slate-400 hover:text-slate-200">← Liguify · otras soluciones</a>
       <button id="btnLogout" onclick="doLogoutAcademias()" class="hidden text-xs text-slate-400 hover:text-rose-300">Salir</button>
     </div>
   </aside>
@@ -135,10 +135,18 @@
       <p id="authMsg" class="hidden mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600"></p>
     </div>
     <p class="mt-4 text-center text-xs text-slate-500">
-      <a href="../../proyecto-torneos/index.html" class="hover:text-slate-300">← Liguify · otras soluciones</a></p>
+      <a href="../../proyecto-torneos/index.html" data-app-liguify class="hover:text-slate-300">← Liguify · otras soluciones</a></p>
   </div>
 </div>
 
+<script>
+// Enlaces de retorno a Liguify: ruta relativa en local, liguify.com en producción.
+(function () {
+  var hosted = /^https?:$/.test(location.protocol) && !['localhost', '127.0.0.1'].includes(location.hostname);
+  if (!hosted) return;
+  document.querySelectorAll('[data-app-liguify]').forEach(function (a) { a.href = 'https://liguify.com'; });
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../shared/supabase-config.js"></script>
 <script src="supabase-api.js"></script>
