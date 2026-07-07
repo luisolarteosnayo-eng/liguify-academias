@@ -12,7 +12,8 @@ const ceil = Math.ceil;
 const PERIODO = '2026-07';
 const anio = (fecha) => new Date(fecha).getFullYear();
 let _seq = 100;
-const uid = (p) => `${p}${_seq++}`;
+// Conectado a Supabase: ids UUID reales · demo: ids legibles (j101, c102...)
+const uid = (p) => (window.AcademiasDB && window.AcademiasDB.on) ? crypto.randomUUID() : `${p}${_seq++}`;
 // Años de categoría contenidos en el nombre del track (ej "2020 - 2019" -> [2020,2019])
 const aniosTrack = (t) => (t.nombre_track.match(/\b(19|20)\d{2}\b/g) || []).map(Number);
 
@@ -278,7 +279,10 @@ let ASIS_TRACK = null;         // track activo en Asistencia
 let ASIS_FECHA = null;         // fecha activa en Asistencia
 let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
-const HOY = '2026-07-02';
+// Conectado: fecha real del dispositivo · demo: fecha fija de los datos mock
+const HOY = (window.AcademiasDB && window.AcademiasDB.on)
+  ? isoDate(new Date())
+  : '2026-07-02';
 let PAGO_VOUCHER = null;   // dataURL del voucher del pago en registro
 // Imagen de comprobante de ejemplo (para los pagos mock que no tienen imagen real)
 const VOUCHER_DEMO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
@@ -2422,9 +2426,100 @@ function renderSedeSelect() {
     .join('');
 }
 
-// ---------- Init ----------
-el('rolSelect').addEventListener('change', (e) => { ROL = e.target.value; TRACK_SEL = null; go(SCREEN); });
-el('sedeSelect').addEventListener('change', (e) => { SEDE_ACTUAL = e.target.value; TRACK_SEL = null; go(SCREEN); });
-renderSedeSelect();
-renderNav();
-go('dashboard');
+// =====================================================================
+// INIT — arranque demo o conectado (Supabase)
+// =====================================================================
+function bootApp() {
+  el('rolSelect').addEventListener('change', (e) => { ROL = e.target.value; TRACK_SEL = null; go(SCREEN); });
+  el('sedeSelect').addEventListener('change', (e) => { SEDE_ACTUAL = e.target.value; TRACK_SEL = null; go(SCREEN); });
+  renderSedeSelect();
+  renderNav();
+  go('dashboard');
+}
+
+// ---------- Auth UI ----------
+window.showAuthScreen = (view) => {
+  el('authScreen').classList.remove('hidden');
+  ['authLogin', 'authSignup', 'authCrear'].forEach((id) => el(id).classList.add('hidden'));
+  el('auth' + view[0].toUpperCase() + view.slice(1)).classList.remove('hidden');
+  authMsg('');
+};
+function authMsg(txt, ok) {
+  const m = el('authMsg');
+  m.textContent = txt || '';
+  m.classList.toggle('hidden', !txt);
+  m.className = `mt-3 rounded-lg px-3 py-2 text-xs ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'} ${txt ? '' : 'hidden'}`;
+}
+window.authSubmit = async (ev, mode) => {
+  ev.preventDefault();
+  const A = window.AcademiasDB;
+  try {
+    if (mode === 'login') {
+      await A.auth.signIn(el('au_email').value.trim(), el('au_pass').value);
+      await entrarConectado();
+    } else {
+      const r = await A.auth.signUp(el('as_email').value.trim(), el('as_pass').value);
+      if (!r.session) { authMsg('Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.', true); showAuthScreenKeepMsg('login'); return; }
+      showAuthScreen('crear');
+    }
+  } catch (e) { authMsg(traducirAuthError(e)); }
+};
+function showAuthScreenKeepMsg(view) {
+  const m = el('authMsg').textContent;
+  const cls = el('authMsg').className;
+  showAuthScreen(view);
+  el('authMsg').textContent = m; el('authMsg').className = cls;
+}
+function traducirAuthError(e) {
+  const m = (e && e.message) || String(e);
+  if (/invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
+  if (/already registered/i.test(m)) return 'Ese correo ya está registrado. Inicia sesión.';
+  if (/email not confirmed/i.test(m)) return 'Debes confirmar tu correo antes de entrar.';
+  return m;
+}
+window.authCrear = async (ev) => {
+  ev.preventDefault();
+  try {
+    await AcademiasDB.crearAcademia(el('ac_nombre').value.trim(), el('ac_sede').value.trim());
+    await entrarConectado();
+  } catch (e) { authMsg(traducirAuthError(e)); }
+};
+window.doLogoutAcademias = async () => {
+  if (window.AcademiasDB && AcademiasDB.on) await AcademiasDB.auth.signOut();
+  location.reload();
+};
+
+// ---------- Arranque conectado: hidratar DB y activar sincronización ----------
+async function entrarConectado() {
+  try {
+    const data = await AcademiasDB.loadAll();
+    if (!data.academia) { showAuthScreen('crear'); return; }
+    Object.assign(DB, data);
+    SEDE_ACTUAL = DB.sedes[0] ? DB.sedes[0].id : null;
+    AcademiasDB.sync.onStatus((st, err) => {
+      const d = el('syncDot');
+      if (!d) return;
+      d.classList.remove('hidden', 'bg-emerald-400', 'bg-amber-400', 'bg-rose-500', 'animate-pulse');
+      if (st === 'saving') { d.classList.add('bg-amber-400', 'animate-pulse'); d.title = 'Guardando...'; }
+      else if (st === 'error') { d.classList.add('bg-rose-500'); d.title = 'Error al guardar: ' + ((err && err.message) || ''); toast('⚠ Error al sincronizar: ' + ((err && err.message) || '')); }
+      else { d.classList.add('bg-emerald-400'); d.title = 'Sincronizado'; }
+    });
+    AcademiasDB.sync.start(DB);
+    el('syncDot').classList.remove('hidden');
+    el('btnLogout').classList.remove('hidden');
+    el('authScreen').classList.add('hidden');
+    bootApp();
+  } catch (e) {
+    console.error(e);
+    showAuthScreen('login');
+    authMsg('No se pudo cargar la información: ' + ((e && e.message) || e));
+  }
+}
+
+(async function init() {
+  const A = window.AcademiasDB;
+  if (!A || !A.on) { bootApp(); return; }               // modo demo (?demo=1 o sin config)
+  const session = await A.auth.getSession();
+  if (!session) { showAuthScreen('login'); return; }
+  await entrarConectado();
+})();

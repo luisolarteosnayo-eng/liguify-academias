@@ -42,8 +42,9 @@
     <!-- Menú (se rellena por JS según rol) -->
     <nav id="nav" class="flex-1 px-3 py-3 space-y-1 text-sm overflow-y-auto"></nav>
 
-    <div class="px-5 py-3 border-t border-slate-700/60">
+    <div class="px-5 py-3 border-t border-slate-700/60 flex items-center justify-between">
       <a href="../../proyecto-torneos/index.html" class="text-xs text-slate-400 hover:text-slate-200">← Liguify · otras soluciones</a>
+      <button id="btnLogout" onclick="doLogoutAcademias()" class="hidden text-xs text-slate-400 hover:text-rose-300">Salir</button>
     </div>
   </aside>
 
@@ -59,6 +60,7 @@
         <h1 id="pageTitle" class="text-base md:text-lg font-semibold truncate">Dashboard</h1>
       </div>
       <label class="flex items-center gap-1.5 text-sm shrink-0">
+        <span id="syncDot" class="hidden h-2.5 w-2.5 rounded-full bg-emerald-400" title="Sincronizado"></span>
         <span class="text-slate-400">📍</span>
         <select id="sedeSelect" class="rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white font-medium max-w-[8.5rem]"></select>
       </label>
@@ -84,6 +86,62 @@
 <!-- Toast -->
 <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 z-[60] rounded-lg bg-slate-900 text-white text-sm px-4 py-3 shadow-lg text-center"></div>
 
+<!-- ===================== AUTH (Supabase) ===================== -->
+<div id="authScreen" class="hidden fixed inset-0 z-[100] bg-slate-900 flex items-center justify-center p-4">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-6">
+      <div class="text-4xl mb-2">🎓</div>
+      <h1 class="text-white text-xl font-bold">Liguify Academias</h1>
+      <p class="text-slate-400 text-sm">Gestión de academias deportivas</p>
+    </div>
+    <div class="rounded-2xl bg-white p-6 shadow-xl">
+
+      <!-- Iniciar sesión -->
+      <form id="authLogin" onsubmit="authSubmit(event,'login')">
+        <h2 class="font-semibold mb-4">Iniciar sesión</h2>
+        <input id="au_email" type="email" required placeholder="Correo"
+          class="w-full mb-2 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+        <input id="au_pass" type="password" required placeholder="Contraseña"
+          class="w-full mb-4 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+        <button type="submit" class="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Entrar</button>
+        <p class="mt-3 text-center text-xs text-slate-500">¿No tienes cuenta?
+          <a href="#" onclick="showAuthScreen('signup');return false" class="text-indigo-600 font-medium">Crear cuenta</a></p>
+      </form>
+
+      <!-- Crear cuenta -->
+      <form id="authSignup" class="hidden" onsubmit="authSubmit(event,'signup')">
+        <h2 class="font-semibold mb-4">Crear cuenta</h2>
+        <input id="as_email" type="email" required placeholder="Correo"
+          class="w-full mb-2 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+        <input id="as_pass" type="password" required minlength="6" placeholder="Contraseña (mín. 6)"
+          class="w-full mb-4 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+        <button type="submit" class="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Registrarme</button>
+        <p class="mt-3 text-center text-xs text-slate-500">¿Ya tienes cuenta?
+          <a href="#" onclick="showAuthScreen('login');return false" class="text-indigo-600 font-medium">Iniciar sesión</a></p>
+      </form>
+
+      <!-- Crear academia (primer ingreso) -->
+      <form id="authCrear" class="hidden" onsubmit="authCrear(event)">
+        <h2 class="font-semibold mb-1">Crea tu academia</h2>
+        <p class="text-xs text-slate-500 mb-4">Un solo paso: el nombre de tu academia y de tu primera sede.</p>
+        <input id="ac_nombre" required placeholder="Nombre de la academia"
+          class="w-full mb-2 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+        <input id="ac_sede" placeholder="Primera sede (ej. San Miguel)"
+          class="w-full mb-4 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+        <button type="submit" class="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Crear academia →</button>
+        <p class="mt-3 text-center text-xs text-slate-400"><a href="#" onclick="doLogoutAcademias();return false" class="hover:text-slate-600">Salir</a></p>
+      </form>
+
+      <p id="authMsg" class="hidden mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600"></p>
+    </div>
+    <p class="mt-4 text-center text-xs text-slate-500">
+      <a href="../../proyecto-torneos/index.html" class="hover:text-slate-300">← Liguify · otras soluciones</a></p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../shared/supabase-config.js"></script>
+<script src="supabase-api.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
