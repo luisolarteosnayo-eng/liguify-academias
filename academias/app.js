@@ -179,7 +179,11 @@ function fechaVencimiento(inicioIso, diaVenc) {
   return isoDate(v);
 }
 // Inicio del CR: día siguiente a la última fecha de corte, o hoy si no hay
-const inicioCR = (ultimaCorteIso) => (ultimaCorteIso ? isoAddDays(ultimaCorteIso, 1) : HOY);
+// Inicio sugerido del próximo CR: continúa tras el último corte; si no hay
+// CR previo, usa la fecha de inicio en el track (fecha_inscripcion).
+const inicioCR = (i) => (i.ultima_fecha_corte ? isoAddDays(i.ultima_fecha_corte, 1) : (i.fecha_inscripcion || HOY));
+// Fecha de corte del CR: mismo día + 1 mes (exclusivo) => inicio + 1 mes − 1 día
+const finCR = (inicioIso) => isoAddDays(addMonths(inicioIso, 1), -1);
 // Ventana del mes actual (1 al último día) que contiene 'hoy'
 function mesActualWindow(hoyIso) {
   const h = new Date(hoyIso + 'T00:00:00');
@@ -1031,6 +1035,7 @@ function njFormBody(j, tracksJid) {
         ${field('N° documento', input('nj_numdoc', `value="${esc(g.num_documento)}" placeholder="Número"`))}
       </div>
       ${field('Teléfono', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
+      ${!showTracks ? field('Fecha de inicio en el track', input('nj_iniciotrack', `type="date" value="${HOY}"`)) : ''}
     </div>
     <div id="nj_deportiva" class="hidden">
       ${field('Tipo de sangre', sel('nj_sangre', [{ v: '', t: '—' }, ...['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((x) => ({ v: x, t: x }))], g.tipo_sangre))}
@@ -1059,7 +1064,7 @@ function fichaTracksHTML(jid) {
     return `<div class="flex items-center justify-between rounded-lg ring-1 ring-slate-200 px-3 py-2 text-sm">
       <div>
         <b>${t.nombre_track}</b> <span class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</span>
-        <div class="text-xs text-slate-400">Últ. fecha de corte: ${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)'}</div>
+        <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)'}</div>
       </div>
       <div class="flex items-center gap-2">
         <span class="text-xs text-slate-400">S/</span>
@@ -1076,11 +1081,15 @@ function fichaTracksHTML(jid) {
   const addForm = disp.length
     ? `<div class="mt-3 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
          <div class="text-xs font-medium text-slate-500 mb-2">Agregar a un nuevo track</div>
-         <div class="flex gap-2">
-           <select id="nj_addtrack" class="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+         <div class="flex gap-2 mb-2">
+           <select id="nj_addtrack" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
              ${disp.map((t) => `<option value="${t.id}">${t.nombre_track} · ${S(t.mensualidad_sugerida)}</option>`).join('')}
            </select>
            <input id="nj_addcosto" type="number" step="0.01" placeholder="Costo (opc.)" class="w-28 rounded border border-slate-300 px-2 py-1.5 text-sm">
+         </div>
+         <div class="flex items-center gap-2">
+           <label class="text-xs text-slate-500 shrink-0">Fecha de inicio</label>
+           <input id="nj_addfecha" type="date" value="${HOY}" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
            <button type="button" onclick="agregarInscripcion('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
          </div>
        </div>`
@@ -1090,7 +1099,7 @@ function fichaTracksHTML(jid) {
 window.renderFichaTracks = (jid) => { if (el('nj_tracks')) el('nj_tracks').innerHTML = fichaTracksHTML(jid); };
 window.quitarInscripcion = (iid, jid) => {
   const i = DB.inscripciones.find((x) => x.id === iid);
-  if (i) { i.activo = false; toast('Track quitado'); renderFichaTracks(jid); }
+  if (i) { i.activo = false; toast('Track quitado'); renderFichaTracks(jid); renderCuenta(jid); }
 };
 window.editarCostoTrack = (iid, jid, valor) => {
   const i = DB.inscripciones.find((x) => x.id === iid);
@@ -1105,10 +1114,15 @@ window.agregarInscripcion = (jid) => {
   const tid = val('nj_addtrack'); if (!tid) return;
   const t = track(tid); const j = jugador(jid);
   const costo = val('nj_addcosto') ? num('nj_addcosto') : null;
+  const inicio = val('nj_addfecha') || HOY;   // fecha de inicio en el track (base del primer CR)
   let insc = DB.inscripciones.find((x) => x.jugador_id === jid && x.track_id === tid);
-  if (insc) { insc.activo = true; insc.costo_mensual_personalizado = costo; }
-  else DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: HOY, ultima_fecha_corte: null });
-  toast(`Agregado a ${t.nombre_track} (genera su CR desde Estado de cuenta)`); renderFichaTracks(jid);
+  if (insc) {
+    insc.activo = true; insc.costo_mensual_personalizado = costo;
+    if (!insc.ultima_fecha_corte) insc.fecha_inscripcion = inicio;
+  } else {
+    DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: inicio, ultima_fecha_corte: null });
+  }
+  toast(`Agregado a ${t.nombre_track} (genera su CR desde Estado de cuenta)`); renderFichaTracks(jid); renderCuenta(jid);
 };
 
 // Estado de cuenta del alumno (CR = recurrentes, CNR = no recurrentes)
@@ -1142,8 +1156,8 @@ function estadoCuentaHTML(jid) {
   const firstMonto = firstI ? (firstI.costo_mensual_personalizado ?? track(firstI.track_id).mensualidad_sugerida) : 0;
   const ciclos = DB.ciclosPago.filter((c) => c.activo);
   const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
-  const firstInicio = firstI ? inicioCR(firstI.ultima_fecha_corte) : '';
-  const firstFin = (firstI && cicloDef) ? proximoCorte(firstInicio, cicloDef.dia) : '';
+  const firstInicio = firstI ? inicioCR(firstI) : '';
+  const firstFin = firstInicio ? finCR(firstInicio) : '';
   const firstVenc = (firstInicio && cicloDef && cicloDef.dia_venc) ? fechaVencimiento(firstInicio, cicloDef.dia_venc) : '';
 
   return `
@@ -1161,19 +1175,22 @@ function estadoCuentaHTML(jid) {
       <div class="text-xs font-medium text-slate-500">Agregar cargo recurrente (CR) — manual</div>
       ${inscAct.length && ciclos.length ? `
         <div class="flex gap-2">
-          <select id="cr_track" onchange="crAutoDatos()" class="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          <select id="cr_track" onchange="crAutoDatos(true)" class="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
             ${inscAct.map((i) => `<option value="${i.id}">${track(i.track_id).nombre_track}</option>`).join('')}
           </select>
           <input id="cr_monto" readonly value="${firstMonto}" title="Monto fijo del track (no editable)"
             class="w-24 rounded border border-slate-300 bg-slate-100 px-2 py-1.5 text-sm text-right text-slate-600">
         </div>
         <div class="flex items-center gap-2">
-          <select id="cr_ciclo" onchange="crAutoDatos()" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
-            ${ciclos.map((c) => `<option value="${c.id}" ${c === cicloDef ? 'selected' : ''}>${nombreCiclo(c)}</option>`).join('')}
+          <label class="text-xs text-slate-500 shrink-0">Inicio</label>
+          <input id="cr_inicio" type="date" value="${firstInicio}" onchange="crAutoDatos()"
+            class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          <select id="cr_ciclo" onchange="crAutoDatos()" title="Define el día de vencimiento" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            ${ciclos.map((c) => `<option value="${c.id}" ${c === cicloDef ? 'selected' : ''}>${nombreCiclo(c)}${c.dia_venc ? ` · vence ${c.dia_venc}` : ''}</option>`).join('')}
           </select>
-          <span class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(firstInicio)} al ${fmtDMY(firstFin)}${firstVenc ? ` · vence ${fmtDMY(firstVenc)}` : ''}</b></span>
         </div>
-        <input type="hidden" id="cr_inicio" value="${firstInicio}"><input type="hidden" id="cr_fin" value="${firstFin}">
+        <div class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(firstInicio)} al ${fmtDMY(firstFin)}${firstVenc ? ` · vence ${fmtDMY(firstVenc)}` : ''}</b></div>
+        <input type="hidden" id="cr_fin" value="${firstFin}">
         <div class="flex gap-2">
           <input id="cr_desc" placeholder="Descripción (opc.)" class="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm">
           <button type="button" onclick="agregarCR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
@@ -1196,17 +1213,18 @@ function estadoCuentaHTML(jid) {
     </div>`;
 }
 window.renderCuenta = (jid) => { if (el('nj_cuenta')) el('nj_cuenta').innerHTML = estadoCuentaHTML(jid); };
-// Al cambiar el track del CR manual: fija el monto y sugiere el ciclo siguiente
-window.crAutoDatos = () => {
+// CR manual: al cambiar track resetea la fecha de inicio sugerida; al cambiar
+// fecha o ciclo recalcula el periodo (corte = inicio + 1 mes − 1 día).
+window.crAutoDatos = (resetInicio) => {
   const i = DB.inscripciones.find((x) => x.id === el('cr_track').value);
   if (!i) return;
   const t = track(i.track_id);
   el('cr_monto').value = (i.costo_mensual_personalizado ?? t.mensualidad_sugerida);
+  if (resetInicio || !el('cr_inicio').value) el('cr_inicio').value = inicioCR(i);
+  const inicio = el('cr_inicio').value;
+  const fin = finCR(inicio);
   const ciclo = DB.ciclosPago.find((c) => c.id === el('cr_ciclo').value);
-  const inicio = inicioCR(i.ultima_fecha_corte);
-  const fin = proximoCorte(inicio, ciclo ? ciclo.dia : 1);
   const venc = ciclo && ciclo.dia_venc ? fechaVencimiento(inicio, ciclo.dia_venc) : null;
-  el('cr_inicio').value = inicio;
   el('cr_fin').value = fin;
   el('cr_ciclotxt').textContent = `Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${venc ? ` · vence ${fmtDMY(venc)}` : ''}`;
 };
@@ -1712,7 +1730,8 @@ window.guardarNuevoJugador = (e, tid) => {
     numero_camiseta: val('nj_num') ? num('nj_num') : null, nombre_camiseta: val('nj_nomcam') || null,
     posicion_juego: val('nj_pos') || null, estado_alumno: 'activo', fecha_registro: HOY, atributos: null };
   DB.jugadores.push(j);
-  DB.inscripciones.push({ id: uid('i'), jugador_id: j.id, track_id: tid, costo_mensual_personalizado: null, activo: true, fecha_inscripcion: HOY, ultima_fecha_corte: null });
+  DB.inscripciones.push({ id: uid('i'), jugador_id: j.id, track_id: tid, costo_mensual_personalizado: null, activo: true,
+    fecha_inscripcion: (el('nj_iniciotrack') && val('nj_iniciotrack')) || HOY, ultima_fecha_corte: null });
   renderTrackRows();                                   // refresca el detalle del track detrás
   toast(`${nom(j)} creado · agrégale sus cargos`);
   formEditarAlumno(j.id);                              // abre la ficha en la pestaña Cuenta
@@ -1729,6 +1748,7 @@ window.formAgregarExistente = (tid) => {
         ? field('Alumno', select('f_al', disp.map((j) => ({ v: j.id, t: `${nom(j)} · Cat. ${anio(j.fecha_nacimiento)}` }))))
         : '<p class="text-sm text-rose-500 mb-3">No hay alumnos disponibles en la sede. Usa “Registro cero fricción” en Alumnos.</p>'}
       ${field('Costo mensual personalizado (opcional)', input('f_costo', 'type="number" step="0.01" placeholder="vacío = usa la mensualidad sugerida"'))}
+      ${field('Fecha de inicio en el track', input('f_inicio', `type="date" value="${HOY}"`))}
       ${disp.length ? submitBar('Agregar')
         : `<div class="flex justify-end"><button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cerrar</button></div>`}
     </form>`);
@@ -1739,7 +1759,7 @@ window.guardarAgregarAlumno = (e, tid) => {
   const t = track(tid);
   const j = jugador(jid);
   const costo = val('f_costo') ? num('f_costo') : null;
-  DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: HOY, ultima_fecha_corte: null });
+  DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: val('f_inicio') || HOY, ultima_fecha_corte: null });
   closeModal(); toast(`${nom(j)} agregado al track`); renderTrackRows();
 };
 
