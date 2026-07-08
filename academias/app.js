@@ -1715,7 +1715,9 @@ window.guardarNuevoJugador = (e, tid) => {
   // Tutor responsable: reusar por documento o crear uno nuevo
   const doc = val('nj_numdoc');
   const tel = `${val('nj_paistel')} ${val('nj_tel')}`.trim();
-  let tut = doc ? DB.tutores.find((x) => x.dni_tutor === doc && tutoresSede().has(x.id)) : null;
+  // Reusar el tutor por DNI en TODA la academia (la restricción única es academia_id+dni_tutor,
+  // no por sede). Filtrar por sede aquí creaba tutores duplicados con el mismo DNI.
+  let tut = doc ? DB.tutores.find((x) => x.dni_tutor === doc) : null;
   if (!tut) {
     tut = { id: uid('tu'), dni_tutor: doc || `S/D-${_seq}`, telefono_celular: tel, email_tutor: null, perfil_reclamado: false };
     DB.tutores.push(tut);
