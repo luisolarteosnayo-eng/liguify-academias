@@ -277,6 +277,7 @@ let MP_EDIT = null;            // id de medio de pago en edición (o null)
 let CICLO_EDIT = null;         // id de ciclo de pago en edición (o null)
 let PROMO_EDIT = null;         // id de promoción en edición (o null)
 let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
+let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (o null)
 const nombreCiclo = (c) => c ? `Ciclo al ${c.dia}` : '';
 let SEDE_ACTUAL = 's1';        // sede activa: cada sede se opera de forma independiente
 let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
@@ -1137,10 +1138,12 @@ function estadoCuentaHTML(jid) {
   const totCNR = mostrar.filter((c) => c.tipo === 'CNR').reduce((s, c) => s + saldoC(c), 0);
   const saldo = totCR + totCNR;
   const hayPagables = mostrar.length > 0;
+  // Modificar CR (vencimiento y monto): solo coordinadores y administradores
+  const puedeEditarCR = ROL === 'coordinador' || ROL === 'admin';
   const rows = mostrar.map((c) => {
     const vencido = c.fecha_vencimiento && c.fecha_vencimiento < HOY && saldoC(c) > 0;
     return [
-      `${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${descCargo(c)}${c.promo ? ` <span class="text-xs text-emerald-600">· Promo ${c.promo}</span>` : ''}${origenTag(c)}`,
+      `${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${descCargo(c)}${c.promo ? ` <span class="text-xs text-emerald-600">· Promo ${c.promo}</span>` : ''}${origenTag(c)}${puedeEditarCR && c.tipo === 'CR' ? ` <button type="button" onclick="editarCRForm('${c.id}','${jid}')" class="align-middle text-slate-300 hover:text-indigo-600" title="Modificar vencimiento y monto">✏️</button>` : ''}`,
       c.fecha_vencimiento
         ? `<span class="${vencido ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(c.fecha_vencimiento)}</span>${vencido ? ' <span class="text-xs text-rose-500">(vencido)</span>' : ''}`
         : '—',
@@ -1171,6 +1174,24 @@ function estadoCuentaHTML(jid) {
       <button type="button" onclick="formPagoAlumno('${jid}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Registrar pago</button>
     </div>` : ''}
     ${rows.length ? table(['Concepto', 'Vence', 'Pendiente'], rows) : '<p class="text-sm text-slate-400 px-1">Sin cargos pendientes de pago. 🎉</p>'}
+    ${(() => {
+      const c = puedeEditarCR && CR_EDIT_ID ? mostrar.find((x) => x.id === CR_EDIT_ID) : null;
+      if (!c) return '';
+      return `
+      <div class="mt-2 rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 space-y-2">
+        <div class="text-xs font-medium text-amber-700">✏️ Modificar CR · ${descCargo(c)}</div>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="text-xs text-slate-500 shrink-0">Vence</label>
+          <input id="crEd_venc" type="date" value="${c.fecha_vencimiento || ''}" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          <label class="text-xs text-slate-500 shrink-0">Monto</label>
+          <input id="crEd_monto" type="number" step="0.01" value="${c.monto}" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right bg-white">
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="cancelarEdicionCR('${jid}')" class="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
+          <button type="button" onclick="guardarEdicionCR('${c.id}','${jid}')" class="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700">Guardar cambios</button>
+        </div>
+      </div>`;
+    })()}
     <div class="mt-3 space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
       <div class="text-xs font-medium text-slate-500">Agregar cargo recurrente (CR) — manual</div>
       ${inscAct.length && ciclos.length ? `
@@ -1213,6 +1234,23 @@ function estadoCuentaHTML(jid) {
     </div>`;
 }
 window.renderCuenta = (jid) => { if (el('nj_cuenta')) el('nj_cuenta').innerHTML = estadoCuentaHTML(jid); };
+// ---------- Modificar CR (solo coordinador/admin): vencimiento y monto ----------
+window.editarCRForm = (cid, jid) => { CR_EDIT_ID = cid; renderCuenta(jid); };
+window.cancelarEdicionCR = (jid) => { CR_EDIT_ID = null; renderCuenta(jid); };
+window.guardarEdicionCR = (cid, jid) => {
+  const c = DB.cargos.find((x) => x.id === cid); if (!c) return;
+  const monto = parseFloat(el('crEd_monto').value);
+  const venc = el('crEd_venc').value || null;
+  if (isNaN(monto) || monto < 0) { toast('Monto inválido'); return; }
+  if ((c.pagado_monto || 0) > monto) { toast('El monto no puede ser menor a lo ya abonado (' + S(c.pagado_monto) + ')'); return; }
+  c.monto = monto;
+  c.fecha_vencimiento = venc;
+  if (monto > 0) c.gratis = false;   // dejó de ser mes gratis si ahora tiene monto
+  c.estado = (c.pagado_monto || 0) <= 0 ? 'por_pagar' : (c.pagado_monto >= monto && monto > 0 ? 'pagado' : 'parcial');
+  CR_EDIT_ID = null;
+  toast('CR actualizado ✓');
+  renderCuenta(jid);
+};
 // CR manual: al cambiar track resetea la fecha de inicio sugerida; al cambiar
 // fecha o ciclo recalcula el periodo (corte = inicio + 1 mes − 1 día).
 window.crAutoDatos = (resetInicio) => {
@@ -1649,6 +1687,7 @@ window.formEditarAlumno = (jid) => {
   const j = jugador(jid);
   if (!j) return;
   NJ_FOTO = j.foto_url || null;
+  CR_EDIT_ID = null;
   openModal(nom(j), `
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
