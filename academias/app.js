@@ -2736,9 +2736,24 @@ async function entrarConectado() {
   }
 }
 
+// SSO entre apps Liguify: si llegamos desde Torneos con la sesión en el fragmento
+// (#sso=...), la aplicamos antes de decidir login. Mismo proyecto Supabase.
+async function _consumeSSO(A) {
+  const m = (location.hash || '').match(/[#&]sso=([^&]+)/);
+  if (!m) return;
+  try {
+    const payload = JSON.parse(atob(decodeURIComponent(m[1])));
+    if (payload.at && payload.rt) {
+      await A.sb.auth.setSession({ access_token: payload.at, refresh_token: payload.rt });
+    }
+  } catch (e) { console.warn('[SSO] no se pudo aplicar la sesión entrante:', e); }
+  history.replaceState(null, '', location.pathname + location.search);   // limpiar tokens de la URL
+}
+
 (async function init() {
   const A = window.AcademiasDB;
   if (!A || !A.on) { bootApp(); return; }               // modo demo (?demo=1 o sin config)
+  await _consumeSSO(A);
   const session = await A.auth.getSession();
   if (!session) { showAuthScreen('login'); return; }
   await entrarConectado();

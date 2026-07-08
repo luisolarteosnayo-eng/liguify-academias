@@ -150,11 +150,28 @@
 </div>
 
 <script>
-// Enlaces de retorno a Liguify: ruta relativa en local, liguify.com en producción.
+// Enlaces de retorno a Liguify (Torneos): ruta relativa en local, liguify.com en producción.
+// SSO: al hacer clic adjuntamos la sesión en el fragmento para no volver a pedir login en Torneos.
 (function () {
   var hosted = /^https?:$/.test(location.protocol) && !['localhost', '127.0.0.1'].includes(location.hostname);
-  if (!hosted) return;
-  document.querySelectorAll('[data-app-liguify]').forEach(function (a) { a.href = 'https://liguify.com'; });
+  if (hosted) {
+    document.querySelectorAll('[data-app-liguify]').forEach(function (a) { a.href = 'https://liguify.com'; });
+  }
+  document.querySelectorAll('[data-app-liguify]').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      var A = window.AcademiasDB;
+      if (!A || !A.on) return;   // modo demo: navegación normal
+      ev.preventDefault();
+      var dest = a.href;
+      Promise.resolve(A.sb.auth.getSession()).then(function (r) {
+        var s = r && r.data ? r.data.session : null;
+        if (s && s.access_token && s.refresh_token) {
+          var payload = btoa(JSON.stringify({ at: s.access_token, rt: s.refresh_token }));
+          dest += (dest.indexOf('#') === -1 ? '#' : '&') + 'sso=' + encodeURIComponent(payload);
+        }
+      }).catch(function () {}).then(function () { window.location.href = dest; });
+    });
+  });
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
