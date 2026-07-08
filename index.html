@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <title>Liguify Academias</title>
-  <meta http-equiv="refresh" content="0; url=academias/index.html">
-  <script>location.replace('academias/index.html');</script>
+  <script>
+    // Redirigir a la app preservando el fragmento (#sso=...) para no romper el SSO.
+    location.replace('academias/index.html' + location.search + location.hash);
+  </script>
+  <noscript><meta http-equiv="refresh" content="0; url=academias/index.html"></noscript>
 </head>
 <body>
   <p><a href="academias/index.html">Ir a Liguify Academias →</a></p>
