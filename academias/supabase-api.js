@@ -109,6 +109,23 @@ window.AcademiasDB = (() => {
         es_torneo: !!c.es_torneo, activo: c.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, precio: N(r.precio) }),
     },
+    torneos: {
+      table: 'torneos',
+      toRow: (t) => ({ ...pick(t, ['id', 'nombre', 'fecha_inicio', 'descripcion']),
+        activo: t.activo !== false, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => r,
+    },
+    torneoCategorias: {
+      table: 'torneo_categorias',
+      toRow: (c) => ({ ...pick(c, ['id', 'torneo_id', 'nombre']), costo_inscripcion: N(c.costo_inscripcion) || 0 }),
+      fromRow: (r) => ({ ...r, costo_inscripcion: N(r.costo_inscripcion) }),
+    },
+    torneoJugadores: {
+      table: 'torneo_jugadores',
+      toRow: (x) => ({ ...pick(x, ['id', 'torneo_id', 'categoria_id', 'jugador_id', 'cargo_id', 'fecha_agregado']),
+        precio_inscripcion: N(x.precio_inscripcion) || 0 }),
+      fromRow: (r) => ({ ...r, precio_inscripcion: N(r.precio_inscripcion) }),
+    },
     invPedidos: {
       table: 'inv_pedidos',
       toRow: (p) => ({ ...pick(p, ['id', 'sede_id', 'concepto_cnr_id', 'talla', 'proveedor', 'estado', 'fecha', 'recibido_fecha']),
@@ -196,13 +213,14 @@ window.AcademiasDB = (() => {
     const perfilQ = userId ? await sb.from('perfiles').select('*').eq('user_id', userId).maybeSingle() : { data: null };
     const perfil = perfilQ.data || null;
     const sel = (t) => sb.from(t).select('*');
-    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im] = await Promise.all([
+    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
       sel('medios_pago'), sel('ciclos_pago'), sel('promociones'), sel('conceptos_cnr'),
       sel('procesos_facturacion'), sel('asistencias'), sel('inv_pedidos'), sel('inv_movimientos'),
+      sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'),
     ]);
-    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im].find((r) => r.error);
+    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug].find((r) => r.error);
     if (err) throw err.error;
     if (!ac.data.length) return { academia: null, perfil };
 
@@ -238,6 +256,9 @@ window.AcademiasDB = (() => {
       asistencias: asis.data.map((r) => ({ track_id: r.track_id, jugador_id: r.jugador_id, fecha: r.fecha, estado: r.estado })),
       invPedidos: ip.data.map(T.invPedidos.fromRow),
       invMovimientos: im.data.map(T.invMovimientos.fromRow),
+      torneos: to.data.map(T.torneos.fromRow),
+      torneoCategorias: tcat.data.map(T.torneoCategorias.fromRow),
+      torneoJugadores: tjug.data.map(T.torneoJugadores.fromRow),
     };
   }
 

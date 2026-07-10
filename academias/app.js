@@ -138,6 +138,19 @@ const DB = {
 
   asistencias: [],   // { track_id, jugador_id, fecha, estado }
 
+  // Torneos en los que participan los alumnos
+  torneos: [
+    { id: 'to1', nombre: 'INTI CUP', fecha_inicio: '2026-07-15', descripcion: 'Torneo interacademias de menores', activo: true },
+  ],
+  torneoCategorias: [   // { id, torneo_id, nombre, costo_inscripcion (lo que paga la academia por categoría) }
+    { id: 'tc1', torneo_id: 'to1', nombre: '2015', costo_inscripcion: 300 },
+    { id: 'tc2', torneo_id: 'to1', nombre: '2016', costo_inscripcion: 250 },
+  ],
+  torneoJugadores: [    // { id, torneo_id, categoria_id, jugador_id, precio_inscripcion, cargo_id (CNR generado o null), fecha_agregado }
+    { id: 'tj1', torneo_id: 'to1', categoria_id: 'tc1', jugador_id: 'j1', precio_inscripcion: 100, cargo_id: null, fecha_agregado: '2026-07-01' },
+    { id: 'tj2', torneo_id: 'to1', categoria_id: 'tc2', jugador_id: 'j2', precio_inscripcion: 100, cargo_id: null, fecha_agregado: '2026-07-01' },
+  ],
+
   // Almacén (CNRs inventariables): pedidos y kardex de movimientos por sede
   invPedidos: [],    // { id, sede_id, concepto_cnr_id, talla, cantidad, proveedor, estado: pendiente|recibido|anulado, fecha, recibido_fecha }
   invMovimientos: [  // { id, sede_id, concepto_cnr_id, talla, tipo: ingreso|salida, cantidad, motivo, jugador_id?, cargo_id?, pedido_id?, fecha }
@@ -290,6 +303,26 @@ function tallaSelectHTML(conceptoId, selId) {
     </select>`;
 }
 
+// ---------- Torneos: KPIs y rentabilidad ----------
+const MESES_UP = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+// Glosa del CNR: "Inscripción a torneo INTI CUP JULIO 2026"
+const glosaTorneo = (t) => {
+  const d = new Date((t.fecha_inicio || HOY) + 'T00:00:00');
+  return `${t.nombre.toUpperCase()} ${MESES_UP[d.getMonth()]} ${d.getFullYear()}`;
+};
+function statsTorneo(t) {
+  const cats = DB.torneoCategorias.filter((c) => c.torneo_id === t.id);
+  const jugs = DB.torneoJugadores.filter((x) => x.torneo_id === t.id);
+  // auto-sanea: si el CNR vinculado fue eliminado, el alumno vuelve a "pendiente"
+  jugs.forEach((x) => { if (x.cargo_id && !DB.cargos.find((c) => c.id === x.cargo_id)) x.cargo_id = null; });
+  const costoTotal = cats.reduce((s, c) => s + (+c.costo_inscripcion || 0), 0);
+  const totalInsc = jugs.reduce((s, x) => s + (+x.precio_inscripcion || 0), 0);
+  const conCNR = jugs.filter((x) => x.cargo_id);
+  const montoCNR = conCNR.reduce((s, x) => s + (+x.precio_inscripcion || 0), 0);
+  return { cats, jugs, costoTotal, totalInsc, nConCNR: conCNR.length, montoCNR,
+    pendientes: jugs.length - conCNR.length, rentabilidad: montoCNR - costoTotal };
+}
+
 // ---------- Menú por rol ----------
 const MENU = [
   { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor'] },
@@ -297,6 +330,7 @@ const MENU = [
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador'] },
   { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
   { id: 'almacen',     label: 'Almacén',       icon: '📦', roles: ['admin','coordinador'] },
+  { id: 'torneos',     label: 'Torneos',       icon: '🏆', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
@@ -320,6 +354,7 @@ let CAL_MES = null;            // mes visible del calendario de clases ('2026-07
 const nombreCiclo = (c) => c ? `Ciclo al ${c.dia}` : '';
 let SEDE_ACTUAL = 's1';        // sede activa: cada sede se opera de forma independiente
 let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
+let TORNEO_SEL = null;         // torneo abierto en el detalle (o null = lista)
 let ASIS_TRACK = null;         // track activo en Asistencia
 let ASIS_FECHA = null;         // fecha activa en Asistencia
 let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
@@ -350,7 +385,7 @@ function renderNav() {
       <span>${m.icon}</span><span>${m.label}</span>
     </button>`).join('');
   el('nav').querySelectorAll('button').forEach((b) =>
-    b.addEventListener('click', () => { TRACK_SEL = null; go(b.dataset.screen); toggleNav(false); }));
+    b.addEventListener('click', () => { TRACK_SEL = null; TORNEO_SEL = null; go(b.dataset.screen); toggleNav(false); }));
 }
 
 function go(screen) {
@@ -498,6 +533,33 @@ const SCREENS = {
       <div class="grid grid-cols-7 gap-1">${celdas.join('')}</div>
       <div class="mt-3 flex justify-end">
         <button onclick="calLimpiarMes()" class="text-xs text-rose-500 hover:underline">Limpiar mes</button>
+      </div>`;
+  },
+
+  torneos() {
+    if (TORNEO_SEL) { renderTorneoDetalle(); return; }
+    const lista = DB.torneos.filter((t) => t.activo !== false);
+    el('content').innerHTML = `
+      <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-slate-500">Torneos y competencias en los que participan los alumnos de la academia</p>
+        <button onclick="formTorneo()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Nuevo torneo</button>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        ${lista.length ? lista.map((t) => {
+          const st = statsTorneo(t);
+          return `<div onclick="abrirTorneo('${t.id}')" class="cursor-pointer rounded-xl bg-white ring-1 ring-slate-200 p-4 hover:ring-indigo-300 hover:shadow-sm transition">
+            <div class="flex items-start justify-between gap-2">
+              <div class="font-semibold text-slate-800">🏆 ${t.nombre}</div>
+              ${st.pendientes ? badge(`${st.pendientes} CNR pend.`, 'amber') : (st.jugs.length ? badge('CNRs al día', 'emerald') : '')}
+            </div>
+            <div class="mt-0.5 text-xs text-slate-400">${fmtFecha(t.fecha_inicio)}${t.descripcion ? ' · ' + t.descripcion : ''}</div>
+            <div class="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+              <div><div class="text-slate-400">Categorías</div><b>${st.cats.length}</b></div>
+              <div><div class="text-slate-400">Alumnos</div><b>${st.jugs.length}</b></div>
+              <div><div class="text-slate-400">Rentab.</div><b class="${st.rentabilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${S(st.rentabilidad)}</b></div>
+            </div>
+          </div>`;
+        }).join('') : '<p class="text-sm text-slate-400 col-span-full">Aún no hay torneos. Crea el primero.</p>'}
       </div>`;
   },
 
@@ -1164,8 +1226,8 @@ function njFormBody(j, tracksJid) {
       </label>
     </div>
     <div class="flex flex-wrap gap-1 border-b border-slate-200 mb-4 text-xs">
-      ${['cuenta', 'tracks', 'pagos'].filter(() => showTracks).map((id) => {
-        const lbl = { cuenta: '💳 Cuenta', tracks: '🎯 Tracks', pagos: '🧾 Pagos' }[id];
+      ${['cuenta', 'tracks', 'pagos', 'torneos'].filter(() => showTracks).map((id) => {
+        const lbl = { cuenta: '💳 Cuenta', tracks: '🎯 Tracks', pagos: '🧾 Pagos', torneos: '🏆 Torneos' }[id];
         return `<button type="button" id="njt_${id}" onclick="njTab('${id}')" class="px-2.5 py-2 -mb-px border-b-2 ${id === act ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">${lbl}</button>`;
       }).join('')}
       <button type="button" id="njt_personal" onclick="njTab('personal')" class="px-2.5 py-2 -mb-px border-b-2 ${act === 'personal' ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">👤 Personal</button>
@@ -1175,6 +1237,7 @@ function njFormBody(j, tracksJid) {
     ${showTracks ? `<div id="nj_cuenta" class="${hide('cuenta')}">${estadoCuentaHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_tracks" class="${hide('tracks')}">${fichaTracksHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_pagos" class="${hide('pagos')}">${pagosDocsHTML(tracksJid)}</div>` : ''}
+    ${showTracks ? `<div id="nj_torneos" class="${hide('torneos')}">${torneosAlumnoHTML(tracksJid)}</div>` : ''}
     <div id="nj_personal" class="${hide('personal')}">
       <div class="grid grid-cols-2 gap-3">
         ${field('Nombre *', input('nj_nombre', `value="${esc(g.nombre)}"`))}
@@ -1206,6 +1269,24 @@ function njFormBody(j, tracksJid) {
         ${field('Posición', sel('nj_pos', [{ v: '', t: '—' }, ...['Arquero', 'Defensa', 'Mediocampista', 'Delantero'].map((x) => ({ v: x, t: x }))], g.posicion_juego))}
       </div>
     </div>`;
+}
+
+// Historial de torneos del alumno (pestaña 🏆 Torneos de la ficha)
+function torneosAlumnoHTML(jid) {
+  const parts = DB.torneoJugadores.filter((x) => x.jugador_id === jid)
+    .map((x) => ({ x, t: DB.torneos.find((tt) => tt.id === x.torneo_id), c: DB.torneoCategorias.find((cc) => cc.id === x.categoria_id) }))
+    .filter((p) => p.t)
+    .sort((a, b) => ((a.t.fecha_inicio || '') < (b.t.fecha_inicio || '') ? 1 : -1));
+  if (!parts.length) return '<p class="text-sm text-slate-400">Aún no participa en ningún torneo.</p>';
+  return table(['Torneo', 'Categoría', 'Fecha', 'Inscripción', 'Estado'],
+    parts.map(({ x, t, c }) => {
+      const cargo = x.cargo_id ? DB.cargos.find((cc) => cc.id === x.cargo_id) : null;
+      const estado = !x.cargo_id ? badge('CNR pendiente', 'amber')
+        : cargo && cargo.estado === 'pagado' ? badge('Pagado', 'emerald')
+        : cargo && cargo.estado === 'parcial' ? badge('Parcial', 'amber')
+        : badge('Por pagar', 'indigo');
+      return [`<b>${t.nombre}</b>`, c ? c.nombre : '—', fmtDMY(t.fecha_inicio), S(x.precio_inscripcion), estado];
+    }));
 }
 
 // Contenido de la pestaña Tracks de la ficha (lista + agregar a nuevo track)
@@ -1925,7 +2006,7 @@ window.toggleBajaAlumno = (jid) => {
 };
 
 window.njTab = (name) => {
-  ['tracks', 'cuenta', 'pagos', 'personal', 'deportiva', 'academia'].forEach((s) => {
+  ['tracks', 'cuenta', 'pagos', 'torneos', 'personal', 'deportiva', 'academia'].forEach((s) => {
     const sec = el('nj_' + s);
     if (sec) sec.classList.toggle('hidden', s !== name);
     const btn = el('njt_' + s);
@@ -2849,6 +2930,197 @@ window.eliminarSede = (id) => {
   DB.sedes = DB.sedes.filter((s) => s.id !== id);
   if (SEDE_EDIT === id) SEDE_EDIT = null;
   renderSedeSelect(); toast('Sede eliminada'); SCREENS.config();
+};
+
+// =====================================================================
+// TORNEOS
+// =====================================================================
+window.abrirTorneo = (id) => { TORNEO_SEL = id; go('torneos'); };
+window.cerrarTorneo = () => { TORNEO_SEL = null; go('torneos'); };
+
+function renderTorneoDetalle() {
+  const t = DB.torneos.find((x) => x.id === TORNEO_SEL);
+  if (!t) { TORNEO_SEL = null; SCREENS.torneos(); return; }
+  const st = statsTorneo(t);
+  const rentCls = st.rentabilidad > 0 ? 'text-emerald-600' : st.rentabilidad < 0 ? 'text-rose-600' : 'text-slate-700';
+  const catHTML = (c) => {
+    const jugs = DB.torneoJugadores.filter((x) => x.categoria_id === c.id);
+    return `
+    <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="font-semibold text-slate-800">Categoría ${c.nombre}</span>
+          <span class="text-xs text-slate-400">· ${jugs.length} alumno(s)</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-slate-500">Costo inscripción</span>
+          <span class="text-slate-400">S/</span>
+          <input type="number" step="0.01" value="${c.costo_inscripcion}" onchange="editarCostoCatTorneo('${c.id}', this.value)"
+            class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">
+          <button onclick="formAgregarJugTorneo('${c.id}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ Agregar jugadores</button>
+          ${jugs.length ? '' : `<button onclick="eliminarCatTorneo('${c.id}')" class="text-rose-500 hover:underline">Eliminar</button>`}
+        </div>
+      </div>
+      ${jugs.length ? table(['Alumno', 'Inscripción S/', 'CNR', ''],
+        jugs.map((x) => {
+          const j = jugador(x.jugador_id);
+          const cargo = x.cargo_id ? DB.cargos.find((cc) => cc.id === x.cargo_id) : null;
+          const estadoCNR = !x.cargo_id
+            ? badge('Pendiente', 'amber')
+            : (cargo && cargo.estado === 'pagado' ? badge('Generado · Pagado', 'emerald') : badge('Generado · Por pagar', 'indigo'));
+          return [
+            `<span class="cursor-pointer hover:text-indigo-600" onclick="formEditarAlumno('${x.jugador_id}')">${j ? nom(j) : '?'}</span>`,
+            x.cargo_id ? S(x.precio_inscripcion) : `<input type="number" step="0.01" value="${x.precio_inscripcion || ''}" placeholder="0.00"
+              onchange="editarPrecioTorneoJug('${x.id}', this.value)" class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">`,
+            estadoCNR,
+            x.cargo_id ? '' : `<button onclick="quitarJugadorTorneo('${x.id}')" class="text-rose-500 hover:underline text-xs">Quitar</button>`,
+          ];
+        }))
+        : '<p class="text-sm text-slate-400">Sin alumnos en esta categoría.</p>'}
+    </div>`;
+  };
+  el('content').innerHTML = `
+    <button onclick="cerrarTorneo()" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver a torneos</button>
+    <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div class="flex items-center gap-2">
+          <h2 class="text-xl font-bold">🏆 ${t.nombre}</h2>
+          <button onclick="formTorneo('${t.id}')" class="text-xs text-indigo-600 hover:underline">Editar</button>
+        </div>
+        <div class="text-xs text-slate-400">${fmtFecha(t.fecha_inicio)}${t.descripcion ? ' · ' + t.descripcion : ''}</div>
+      </div>
+      <button onclick="generarCNRsTorneo('${t.id}')" ${st.pendientes ? '' : 'disabled'}
+        class="rounded-lg px-4 py-2.5 text-sm font-medium ${st.pendientes ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">
+        GENERAR CNRs PENDIENTES${st.pendientes ? ` (${st.pendientes})` : ''}</button>
+    </div>
+    <div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      ${card('Alumnos', st.jugs.length, `en ${st.cats.length} categoría(s)`)}
+      ${card('Total inscripciones', S(st.totalInsc), 'asignado a alumnos')}
+      ${card('CNRs generados', S(st.montoCNR), `${st.nConCNR} de ${st.jugs.length} alumnos`)}
+      ${card('Costo del torneo', S(st.costoTotal), 'suma de categorías')}
+      ${card('Rentabilidad', `<span class="${rentCls}">${st.rentabilidad < 0 ? '−' : ''}${S(Math.abs(st.rentabilidad))}</span>`, 'CNRs − costo del torneo')}
+    </div>
+    <div class="space-y-3">${st.cats.map(catHTML).join('') || '<p class="text-sm text-slate-400">Agrega la primera categoría.</p>'}</div>
+    <div class="mt-4 rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4">
+      <div class="text-xs font-medium text-slate-500 mb-2">Agregar categoría al torneo</div>
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="tcat_nombre" placeholder="Ej: 2019" class="w-28 rounded border border-slate-300 px-2 py-1.5 text-sm">
+        <span class="text-xs text-slate-500">Costo inscripción S/</span>
+        <input id="tcat_costo" type="number" step="0.01" placeholder="0.00" class="w-28 rounded border border-slate-300 px-2 py-1.5 text-sm text-right">
+        <button onclick="agregarCatTorneo('${t.id}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
+      </div>
+    </div>`;
+}
+
+// Crear / editar torneo (nombre, fecha de inicio, descripción)
+window.formTorneo = (id) => {
+  const t = id ? DB.torneos.find((x) => x.id === id) : null;
+  openModal(t ? 'Editar torneo' : 'Nuevo torneo', `
+    <form onsubmit="guardarTorneo(event, ${t ? `'${t.id}'` : 'null'})">
+      ${field('Nombre del torneo *', input('tor_nombre', `required value="${t ? (t.nombre || '').replace(/"/g, '&quot;') : ''}" placeholder="Ej: INTI CUP"`))}
+      ${field('Fecha de inicio *', input('tor_fecha', `type="date" required value="${t ? t.fecha_inicio : HOY}"`))}
+      ${field('Breve descripción', input('tor_desc', `value="${t ? (t.descripcion || '').replace(/"/g, '&quot;') : ''}" placeholder="Opcional"`))}
+      ${submitBar(t ? 'Guardar cambios' : 'Crear torneo')}
+    </form>`);
+};
+window.guardarTorneo = (e, id) => {
+  e.preventDefault();
+  if (id) {
+    Object.assign(DB.torneos.find((x) => x.id === id), { nombre: val('tor_nombre'), fecha_inicio: val('tor_fecha'), descripcion: val('tor_desc') });
+    closeModal(); toast('Torneo actualizado'); go('torneos');
+  } else {
+    const t = { id: uid('to'), nombre: val('tor_nombre'), fecha_inicio: val('tor_fecha'), descripcion: val('tor_desc'), activo: true };
+    DB.torneos.push(t);
+    closeModal(); toast('Torneo creado · agrega sus categorías'); TORNEO_SEL = t.id; go('torneos');
+  }
+};
+window.agregarCatTorneo = (tid) => {
+  const nombre = val('tcat_nombre').trim();
+  if (!nombre) { toast('Ingresa el nombre de la categoría'); return; }
+  DB.torneoCategorias.push({ id: uid('tc'), torneo_id: tid, nombre, costo_inscripcion: num('tcat_costo') || 0 });
+  toast(`Categoría ${nombre} agregada`); renderTorneoDetalle();
+};
+window.editarCostoCatTorneo = (cid, v) => {
+  const c = DB.torneoCategorias.find((x) => x.id === cid);
+  if (c) { c.costo_inscripcion = parseFloat(v) || 0; renderTorneoDetalle(); }
+};
+window.eliminarCatTorneo = (cid) => {
+  if (DB.torneoJugadores.some((x) => x.categoria_id === cid)) { toast('La categoría tiene alumnos'); return; }
+  DB.torneoCategorias = DB.torneoCategorias.filter((x) => x.id !== cid);
+  toast('Categoría eliminada'); renderTorneoDetalle();
+};
+
+// Agregar jugadores a una categoría: por track, selección múltiple, sin repetir en la misma categoría
+window.formAgregarJugTorneo = (catId) => {
+  const c = DB.torneoCategorias.find((x) => x.id === catId);
+  const tks = tracksSede();
+  openModal(`Agregar jugadores · Categoría ${c.nombre}`, `
+    <form onsubmit="guardarJugadoresTorneo(event,'${catId}')">
+      ${field('Track', select('tj_track', tks.map((tk) => ({ v: tk.id, t: tk.nombre_track })), `onchange="tjListaJugadores('${catId}')"`))}
+      <div id="tj_lista" class="mb-3 max-h-64 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100"></div>
+      ${submitBar('Agregar seleccionados')}
+    </form>`);
+  tjListaJugadores(catId);
+};
+window.tjListaJugadores = (catId) => {
+  const tid = val('tj_track');
+  const yaIds = new Set(DB.torneoJugadores.filter((x) => x.categoria_id === catId).map((x) => x.jugador_id));
+  const jugs = DB.inscripciones.filter((i) => i.track_id === tid && i.activo)
+    .map((i) => jugador(i.jugador_id)).filter((j) => j && !yaIds.has(j.id));
+  el('tj_lista').innerHTML = jugs.length
+    ? jugs.map((j) => `<label class="flex items-center gap-2.5 px-3 py-2.5 text-sm cursor-pointer hover:bg-slate-50">
+        <input type="checkbox" class="tjChk h-4 w-4 accent-indigo-600" value="${j.id}">
+        <span>${nom(j)} <span class="text-xs text-slate-400">· Cat. ${anio(j.fecha_nacimiento)}</span></span>
+      </label>`).join('')
+    : '<p class="p-3 text-sm text-slate-400">No hay jugadores disponibles en este track (o ya están en la categoría).</p>';
+};
+window.guardarJugadoresTorneo = (e, catId) => {
+  e.preventDefault();
+  const c = DB.torneoCategorias.find((x) => x.id === catId);
+  const sel = [...document.querySelectorAll('.tjChk:checked')].map((x) => x.value);
+  if (!sel.length) { toast('Selecciona al menos un jugador'); return; }
+  const cnTorneo = DB.conceptosCNR.find((x) => x.es_torneo && x.activo);
+  const precioDef = cnTorneo ? (+cnTorneo.precio || 0) : 0;
+  sel.forEach((jid) => {
+    if (DB.torneoJugadores.some((x) => x.categoria_id === catId && x.jugador_id === jid)) return;
+    DB.torneoJugadores.push({ id: uid('tj'), torneo_id: c.torneo_id, categoria_id: catId, jugador_id: jid,
+      precio_inscripcion: precioDef, cargo_id: null, fecha_agregado: HOY });
+  });
+  closeModal(); toast(`${sel.length} jugador(es) agregados · asigna sus precios`); renderTorneoDetalle();
+};
+window.editarPrecioTorneoJug = (id, v) => {
+  const x = DB.torneoJugadores.find((y) => y.id === id);
+  if (x && !x.cargo_id) { x.precio_inscripcion = parseFloat(v) || 0; renderTorneoDetalle(); }
+};
+window.quitarJugadorTorneo = (id) => {
+  const x = DB.torneoJugadores.find((y) => y.id === id);
+  if (!x) return;
+  if (x.cargo_id) { toast('Ya tiene CNR generado; elimina primero el cargo desde su estado de cuenta'); return; }
+  DB.torneoJugadores = DB.torneoJugadores.filter((y) => y.id !== id);
+  toast('Jugador quitado del torneo'); renderTorneoDetalle();
+};
+
+// Genera los CNR de inscripción SOLO para los alumnos que aún no lo tienen
+window.generarCNRsTorneo = (tid) => {
+  const t = DB.torneos.find((x) => x.id === tid);
+  const pend = DB.torneoJugadores.filter((x) => x.torneo_id === tid && !x.cargo_id);
+  if (!pend.length) { toast('No hay CNRs pendientes de generar'); return; }
+  const sinPrecio = pend.filter((x) => !(+x.precio_inscripcion > 0));
+  if (sinPrecio.length) { toast(`⚠ ${sinPrecio.length} alumno(s) sin precio de inscripción; asígnalo primero`); return; }
+  const cnTorneo = DB.conceptosCNR.find((x) => x.es_torneo && x.activo);
+  const glosa = glosaTorneo(t);
+  pend.forEach((x) => {
+    const j = jugador(x.jugador_id);
+    const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR',
+      concepto_cnr_id: cnTorneo ? cnTorneo.id : null,
+      concepto: 'Inscripción a torneo', descripcion: glosa,
+      periodo: HOY.slice(0, 7), fecha_vencimiento: HOY,
+      monto: +x.precio_inscripcion, pagado_monto: 0, estado: 'por_pagar' };
+    DB.cargos.push(cargo);
+    x.cargo_id = cargo.id;
+  });
+  toast(`✓ ${pend.length} CNR generados · "Inscripción a torneo ${glosa}"`);
+  renderTorneoDetalle();
 };
 
 // ---------- Almacén: ingresos, pedidos y recepción ----------
