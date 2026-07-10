@@ -965,7 +965,9 @@ function renderTrackRows() {
   const cat = el('fltCat') ? el('fltCat').value : '';
   const pago = el('fltPago') ? el('fltPago').value : '';
   const q = (el('fltQ') ? el('fltQ').value : '').toLowerCase();
-  const debeDe = (jid) => cargosSede().filter((c) => c.jugador_id === jid).reduce((s, c) => s + (c.monto - (c.pagado_monto || 0)), 0);
+  // Deuda del alumno: TODOS sus cargos (mismo criterio que su estado de cuenta),
+  // sin filtrar por sede — j.sede_id podría diferir de la sede del track.
+  const debeDe = (jid) => DB.cargos.filter((c) => c.jugador_id === jid).reduce((s, c) => s + (c.monto - (c.pagado_monto || 0)), 0);
   let insc = DB.inscripciones.filter((i) => i.track_id === t.id);
   if (estado === 'inscritos') insc = insc.filter((i) => i.activo);
   if (cat) insc = insc.filter((i) => String(anio(jugador(i.jugador_id).fecha_nacimiento)) === cat);
@@ -977,7 +979,7 @@ function renderTrackRows() {
     const j = jugador(i.jugador_id);
     const efect = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
     const beca = i.costo_mensual_personalizado != null && i.costo_mensual_personalizado !== t.mensualidad_sugerida;
-    const debe = cargosSede().filter((c) => c.jugador_id === j.id).reduce((s, c) => s + (c.monto - (c.pagado_monto || 0)), 0);
+    const debe = debeDe(j.id);
     const asis = DB.asistencias.filter((a) => a.track_id === t.id && a.jugador_id === j.id && a.estado !== 'ausente').length;
     const ini = ((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase();
     return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-3 ${i.activo ? '' : 'opacity-60'}">
