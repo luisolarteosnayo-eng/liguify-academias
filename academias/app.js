@@ -259,6 +259,7 @@ const MENU = [
   { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor'] },
   { id: 'tracks',      label: 'Tracks · Rentabilidad', icon: '🎯', roles: ['admin','coordinador'] },
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador'] },
+  { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
@@ -278,6 +279,7 @@ let CICLO_EDIT = null;         // id de ciclo de pago en edición (o null)
 let PROMO_EDIT = null;         // id de promoción en edición (o null)
 let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
 let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (o null)
+let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 const nombreCiclo = (c) => c ? `Ciclo al ${c.dia}` : '';
 let SEDE_ACTUAL = 's1';        // sede activa: cada sede se opera de forma independiente
 let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
@@ -412,6 +414,53 @@ const SCREENS = {
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Salud de tracks (break-even)</h3>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         ${tracksDash.length ? tracksDash.map(trackCard).join('') : '<p class="text-sm text-slate-400">Sin tracks.</p>'}
+      </div>`;
+  },
+
+  calendario() {
+    const s = sede(SEDE_ACTUAL);
+    if (!s) { el('content').innerHTML = '<p class="text-sm text-slate-400">No hay sede activa.</p>'; return; }
+    if (!Array.isArray(s.dias_clase)) s.dias_clase = [];
+    if (!CAL_MES) CAL_MES = HOY.slice(0, 7);
+    const [y, m] = CAL_MES.split('-').map(Number);
+    const primero = new Date(y, m - 1, 1);
+    const nDias = new Date(y, m, 0).getDate();
+    const offset = primero.getDay();                       // 0 = domingo
+    const enMes = s.dias_clase.filter((d) => d.startsWith(CAL_MES)).sort();
+    const mesLabel = primero.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+    const DOW = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const celdas = [];
+    for (let i = 0; i < offset; i++) celdas.push('<div></div>');
+    for (let d = 1; d <= nDias; d++) {
+      const iso = `${CAL_MES}-${String(d).padStart(2, '0')}`;
+      const clase = enMes.includes(iso);
+      celdas.push(`
+        <button onclick="calToggleDia('${iso}')"
+          class="flex h-16 flex-col items-center justify-between rounded-lg p-1 ring-1 transition
+                 ${clase ? 'bg-indigo-50 ring-indigo-300' : 'bg-white ring-slate-200 hover:ring-indigo-200'}">
+          <span class="self-start text-xs ${clase ? 'font-medium text-indigo-500' : 'text-slate-400'}">${d}</span>
+          ${clase
+            ? `<span class="rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">CLASE ${enMes.indexOf(iso) + 1}</span>`
+            : '<span class="text-[10px] text-slate-300">—</span>'}
+        </button>`);
+    }
+    el('content').innerHTML = `
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <button onclick="calMes(-1)" class="rounded-lg px-3 py-1.5 text-sm ring-1 ring-slate-300 hover:bg-slate-100">◀</button>
+          <div class="w-44 text-center text-base font-semibold capitalize">${mesLabel}</div>
+          <button onclick="calMes(1)" class="rounded-lg px-3 py-1.5 text-sm ring-1 ring-slate-300 hover:bg-slate-100">▶</button>
+        </div>
+        <div class="text-sm text-slate-500"><b class="text-indigo-600">${enMes.length}</b> clases en el mes · <b>${s.nombre_sede}</b></div>
+      </div>
+      <p class="mb-3 text-xs text-slate-400">Toca un día para marcar o quitar clase. Toca un día de la semana en la cabecera para marcar/quitar todo el mes (útil para Lun/Mié, Mar/Jue...). Feriados, vacaciones y fechas especiales: simplemente déjalos sin marcar. Este calendario se usará para prorratear los CR según las clases del mes.</p>
+      <div class="mb-1 grid grid-cols-7 gap-1">
+        ${DOW.map((dw, i) => `<button onclick="calToggleDOW(${i})" title="Marcar/quitar todos los ${dw} del mes"
+            class="rounded py-1.5 text-center text-xs font-semibold text-slate-500 hover:bg-indigo-50 hover:text-indigo-600">${dw}</button>`).join('')}
+      </div>
+      <div class="grid grid-cols-7 gap-1">${celdas.join('')}</div>
+      <div class="mt-3 flex justify-end">
+        <button onclick="calLimpiarMes()" class="text-xs text-rose-500 hover:underline">Limpiar mes</button>
       </div>`;
   },
 
@@ -2629,6 +2678,35 @@ window.eliminarSede = (id) => {
   DB.sedes = DB.sedes.filter((s) => s.id !== id);
   if (SEDE_EDIT === id) SEDE_EDIT = null;
   renderSedeSelect(); toast('Sede eliminada'); SCREENS.config();
+};
+
+// ---------- Calendario de clases por sede ----------
+window.calMes = (delta) => {
+  const [y, m] = CAL_MES.split('-').map(Number);
+  CAL_MES = isoDate(new Date(y, m - 1 + delta, 1)).slice(0, 7);
+  SCREENS.calendario();
+};
+window.calToggleDia = (iso) => {
+  const s = sede(SEDE_ACTUAL);
+  const i = s.dias_clase.indexOf(iso);
+  if (i >= 0) s.dias_clase.splice(i, 1); else s.dias_clase.push(iso);
+  SCREENS.calendario();
+};
+window.calToggleDOW = (dow) => {
+  const s = sede(SEDE_ACTUAL);
+  const [y, m] = CAL_MES.split('-').map(Number);
+  const n = new Date(y, m, 0).getDate();
+  const dias = [];
+  for (let d = 1; d <= n; d++) { const dt = new Date(y, m - 1, d); if (dt.getDay() === dow) dias.push(isoDate(dt)); }
+  const todosMarcados = dias.every((x) => s.dias_clase.includes(x));
+  if (todosMarcados) s.dias_clase = s.dias_clase.filter((x) => !dias.includes(x));
+  else dias.forEach((x) => { if (!s.dias_clase.includes(x)) s.dias_clase.push(x); });
+  SCREENS.calendario();
+};
+window.calLimpiarMes = () => {
+  const s = sede(SEDE_ACTUAL);
+  s.dias_clase = s.dias_clase.filter((x) => !x.startsWith(CAL_MES));
+  SCREENS.calendario();
 };
 
 // ---------- Navegación móvil (drawer) ----------

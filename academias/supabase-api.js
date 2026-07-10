@@ -26,7 +26,7 @@ window.AcademiasDB = (() => {
   const T = {
     sedes: {
       table: 'sedes',
-      toRow: (s) => ({ ...pick(s, ['id', 'nombre_sede', 'ciudad', 'pais', 'codigo_postal', 'telefono_coordinador', 'google_maps_url', 'cabecera_url']),
+      toRow: (s) => ({ ...pick(s, ['id', 'nombre_sede', 'ciudad', 'pais', 'codigo_postal', 'telefono_coordinador', 'google_maps_url', 'cabecera_url', 'dias_clase']),
         direccion_linea1: s.direccion1 ?? null, direccion_linea2: s.direccion2 ?? null,
         activo: s.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, direccion1: r.direccion_linea1, direccion2: r.direccion_linea2 }),
