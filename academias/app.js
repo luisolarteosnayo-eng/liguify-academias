@@ -1280,6 +1280,10 @@ function estadoCuentaHTML(jid) {
           </select>
           <input id="cnr_monto" type="number" step="0.01" value="${cnrCat[0].precio || ''}" placeholder="Monto" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right">
         </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-slate-500 shrink-0">Vence</label>
+          <input id="cnr_venc" type="date" value="${HOY}" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+        </div>
         <div class="flex gap-2">
           <input id="cnr_desc" placeholder="Descripción (opc.)" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm">
           <button type="button" onclick="agregarCNR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
@@ -1490,7 +1494,8 @@ window.agregarCNR = (jid) => {
   const monto = parseFloat(el('cnr_monto').value) || 0;
   if (monto <= 0) { toast('Ingresa un monto'); return; }
   const desc = el('cnr_desc').value.trim();
-  DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo', descripcion: desc, periodo: PERIODO,
+  DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo', descripcion: desc,
+    periodo: HOY.slice(0, 7), fecha_vencimiento: (el('cnr_venc') && el('cnr_venc').value) || HOY,
     monto, pagado_monto: 0, estado: 'por_pagar' });
   toast('Cargo CNR agregado'); renderCuenta(jid);
 };
@@ -2094,6 +2099,7 @@ window.formCargo = () => {
         : '<p class="mb-3 text-sm text-rose-500">No hay conceptos CNR. Créalos en Configuración → Conceptos CNR.</p>'}
       ${field('Descripción (opcional)', input('f_desc'))}
       ${field('Monto (S/)', input('f_monto', `type="number" step="0.01" required value="${cnrCat[0] ? cnrCat[0].precio : ''}"`))}
+      ${field('Fecha de vencimiento', input('f_venc', `type="date" required value="${HOY}"`))}
       ${submitBar('Generar cargo')}
     </form>`);
 };
@@ -2101,7 +2107,8 @@ window.guardarCargo = (e) => {
   e.preventDefault();
   const j = jugador(val('f_alumno'));
   const cn = DB.conceptosCNR.find((c) => c.id === val('f_concepto'));
-  DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo', descripcion: val('f_desc'), periodo: PERIODO,
+  DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo', descripcion: val('f_desc'),
+    periodo: HOY.slice(0, 7), fecha_vencimiento: val('f_venc') || HOY,
     monto: num('f_monto'), pagado_monto: 0, estado: 'por_pagar' });
   closeModal(); toast('Cargo no recurrente generado'); go('tesoreria');
 };
