@@ -928,6 +928,10 @@ function renderTrackDetalle() {
   const insc = DB.inscripciones.filter((i) => i.track_id === t.id && i.activo);
   const cats = [...new Set(DB.inscripciones.filter((i) => i.track_id === t.id)
     .map((i) => anio(jugador(i.jugador_id).fecha_nacimiento)))].sort();
+  const st = statsTrack(t);
+  const coachId = t.coach_id || (DB.trackStaff[t.id] && DB.trackStaff[t.id][0]) || null;
+  const coach = coachId ? staffDe(coachId) : null;
+  const utilCls = st.utilidad > 0 ? 'text-emerald-600' : st.utilidad < 0 ? 'text-rose-600' : 'text-slate-700';
   el('content').innerHTML = `
     <button onclick="cerrarTrack()" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver a tracks</button>
     <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -935,10 +939,18 @@ function renderTrackDetalle() {
         <div class="flex items-center gap-2">
           <h2 class="text-xl font-bold">${t.nombre_track}</h2>
           <span id="trkCount" class="text-sm text-emerald-600 font-medium">${insc.length}/${t.capacidad_maxima}</span>
+          ${badge(st.etiqueta, st.color)}
         </div>
         <div class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</div>
       </div>
       <button onclick="formAgregarAlumno('${t.id}')" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Agregar alumno</button>
+    </div>
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      ${card('Profesor', coach ? `<span class="text-lg">${coach.nombre} ${coach.apellido}</span>` : '<span class="text-lg text-slate-400">Sin asignar</span>', coach ? (coach.rol === 'coordinador' ? 'Coordinador' : 'Profesor') : '')}
+      ${card('Alumnos', `${insc.length} <span class="text-sm font-normal text-slate-400">/ ${t.capacidad_maxima}</span>`, `equilibrio: ${st.puntoEquilibrio} alumnos`)}
+      ${card('Rentabilidad', `<span class="${utilCls}">${st.utilidad >= 0 ? '' : '−'}${S(Math.abs(st.utilidad))}</span>`, `ingresos ${S(st.ingresos)} − costos ${S(st.costoOperacion)}`)}
+      ${card('Costo profesores', S(t.costo_mensual_profesores), 'mensual')}
+      ${card('Costo cancha', S(t.costo_mensual_cancha), 'mensual')}
     </div>
     <div class="mb-4 space-y-2">
       <input id="fltQ" oninput="renderTrackRows()" placeholder="Filtrar jugadores por nombre..."
