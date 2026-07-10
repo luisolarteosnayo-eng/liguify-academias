@@ -1087,6 +1087,8 @@ function njFormBody(j, tracksJid) {
         ${field('N° documento', input('nj_numdoc', `value="${esc(g.num_documento)}" placeholder="Número"`))}
       </div>
       ${field('Teléfono', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
+      ${showTracks ? field('Sede del alumno', `${sel('nj_sede', DB.sedes.map((s) => ({ v: s.id, t: s.nombre_sede })), g.sede_id)}
+        <p class="mt-1 text-xs text-slate-400">Cambiar la sede mueve al alumno (Alumnos y Por cobrar de esa sede); sus tracks actuales no se modifican.</p>`) : ''}
       ${!showTracks ? field('Fecha de inicio en el track', input('nj_iniciotrack', `type="date" value="${HOY}"`)) : ''}
     </div>
     <div id="nj_deportiva" class="hidden">
@@ -1761,6 +1763,7 @@ window.guardarEdicionAlumno = (e, jid) => {
   const j = jugador(jid);
   Object.assign(j, {
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
+    sede_id: (el('nj_sede') && val('nj_sede')) || j.sede_id,
     sexo: val('nj_sexo') || null, tipo_documento: val('nj_tipodoc') || null, num_documento: val('nj_numdoc') || null,
     telefono: `${val('nj_paistel')} ${val('nj_tel')}`.trim(), foto_url: NJ_FOTO,
     tipo_sangre: val('nj_sangre') || null, notas_medicas: val('nj_notas') || null, historial_lesiones: val('nj_lesiones') || null,
