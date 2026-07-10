@@ -1239,7 +1239,8 @@ function estadoCuentaHTML(jid) {
           <label class="text-xs text-slate-500 shrink-0">Monto</label>
           <input id="crEd_monto" type="number" step="0.01" value="${c.monto}" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right bg-white">
         </div>
-        <div class="flex justify-end gap-2">
+        <div class="flex items-center justify-end gap-2">
+          ${c.tipo === 'CNR' ? `<button type="button" onclick="eliminarCargoCNR('${c.id}','${jid}')" class="mr-auto text-sm text-rose-600 hover:underline">Eliminar cargo</button>` : ''}
           <button type="button" onclick="cancelarEdicionCR('${jid}')" class="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
           <button type="button" onclick="guardarEdicionCR('${c.id}','${jid}')" class="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700">Guardar cambios</button>
         </div>
@@ -1293,6 +1294,18 @@ function estadoCuentaHTML(jid) {
 window.renderCuenta = (jid) => { if (el('nj_cuenta')) el('nj_cuenta').innerHTML = estadoCuentaHTML(jid); };
 // ---------- Modificar CR (solo coordinador/admin): vencimiento y monto ----------
 window.editarCRForm = (cid, jid) => { CR_EDIT_ID = cid; renderCuenta(jid); };
+// Eliminar un CNR asignado por error (solo si no tiene ningún pago asociado)
+window.eliminarCargoCNR = (cid, jid) => {
+  const c = DB.cargos.find((x) => x.id === cid);
+  if (!c || c.tipo !== 'CNR') return;
+  const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => (p.detalle || []).some((d) => d.cargo_id === cid));
+  if (tienePagos) { toast('No se puede eliminar: tiene pagos asociados'); return; }
+  if (!confirm(`¿Eliminar el cargo "${descCargo(c)}" de ${S(c.monto)}? Esta acción no se puede deshacer.`)) return;
+  DB.cargos = DB.cargos.filter((x) => x.id !== cid);
+  CR_EDIT_ID = null;
+  toast('Cargo eliminado');
+  renderCuenta(jid);
+};
 window.cancelarEdicionCR = (jid) => { CR_EDIT_ID = null; renderCuenta(jid); };
 window.guardarEdicionCR = (cid, jid) => {
   const c = DB.cargos.find((x) => x.id === cid); if (!c) return;
