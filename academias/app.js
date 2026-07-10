@@ -1196,7 +1196,7 @@ function estadoCuentaHTML(jid) {
   const rows = mostrar.map((c) => {
     const vencido = c.fecha_vencimiento && c.fecha_vencimiento < HOY && saldoC(c) > 0;
     return [
-      `${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${descCargo(c)}${c.promo ? ` <span class="text-xs text-emerald-600">· Promo ${c.promo}</span>` : ''}${origenTag(c)}${puedeEditarCR && c.tipo === 'CR' ? ` <button type="button" onclick="editarCRForm('${c.id}','${jid}')" class="align-middle text-slate-300 hover:text-indigo-600" title="Modificar vencimiento y monto">✏️</button>` : ''}`,
+      `${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${descCargo(c)}${c.promo ? ` <span class="text-xs text-emerald-600">· Promo ${c.promo}</span>` : ''}${origenTag(c)}${puedeEditarCR ? ` <button type="button" onclick="editarCRForm('${c.id}','${jid}')" class="align-middle text-slate-300 hover:text-indigo-600" title="Modificar vencimiento y monto">✏️</button>` : ''}`,
       c.fecha_vencimiento
         ? `<span class="${vencido ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(c.fecha_vencimiento)}</span>${vencido ? ' <span class="text-xs text-rose-500">(vencido)</span>' : ''}`
         : '—',
@@ -1232,7 +1232,7 @@ function estadoCuentaHTML(jid) {
       if (!c) return '';
       return `
       <div class="mt-2 rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 space-y-2">
-        <div class="text-xs font-medium text-amber-700">✏️ Modificar CR · ${descCargo(c)}</div>
+        <div class="text-xs font-medium text-amber-700">✏️ Modificar ${c.tipo} · ${descCargo(c)}</div>
         <div class="flex flex-wrap items-center gap-2">
           <label class="text-xs text-slate-500 shrink-0">Vence</label>
           <input id="crEd_venc" type="date" value="${c.fecha_vencimiento || ''}" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
