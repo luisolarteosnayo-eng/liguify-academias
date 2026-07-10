@@ -109,6 +109,18 @@ window.AcademiasDB = (() => {
         es_torneo: !!c.es_torneo, activo: c.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, precio: N(r.precio) }),
     },
+    invPedidos: {
+      table: 'inv_pedidos',
+      toRow: (p) => ({ ...pick(p, ['id', 'sede_id', 'concepto_cnr_id', 'talla', 'proveedor', 'estado', 'fecha', 'recibido_fecha']),
+        cantidad: N(p.cantidad) || 0, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, cantidad: N(r.cantidad) }),
+    },
+    invMovimientos: {
+      table: 'inv_movimientos',
+      toRow: (m) => ({ ...pick(m, ['id', 'sede_id', 'concepto_cnr_id', 'talla', 'tipo', 'motivo', 'jugador_id', 'cargo_id', 'pedido_id', 'fecha']),
+        cantidad: N(m.cantidad) || 0, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, cantidad: N(r.cantidad) }),
+    },
     procesosCR: {
       table: 'procesos_facturacion',
       toRow: (p) => ({ ...pick(p, ['id', 'sede_id', 'corte', 'vencimiento', 'fecha', 'cargo_ids']),
@@ -184,13 +196,13 @@ window.AcademiasDB = (() => {
     const perfilQ = userId ? await sb.from('perfiles').select('*').eq('user_id', userId).maybeSingle() : { data: null };
     const perfil = perfilQ.data || null;
     const sel = (t) => sb.from(t).select('*');
-    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis] = await Promise.all([
+    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
       sel('medios_pago'), sel('ciclos_pago'), sel('promociones'), sel('conceptos_cnr'),
-      sel('procesos_facturacion'), sel('asistencias'),
+      sel('procesos_facturacion'), sel('asistencias'), sel('inv_pedidos'), sel('inv_movimientos'),
     ]);
-    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis].find((r) => r.error);
+    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im].find((r) => r.error);
     if (err) throw err.error;
     if (!ac.data.length) return { academia: null, perfil };
 
@@ -224,6 +236,8 @@ window.AcademiasDB = (() => {
       conceptosCNR: cn.data.map(T.conceptosCNR.fromRow),
       procesosCR: pf.data.map(T.procesosCR.fromRow),
       asistencias: asis.data.map((r) => ({ track_id: r.track_id, jugador_id: r.jugador_id, fecha: r.fecha, estado: r.estado })),
+      invPedidos: ip.data.map(T.invPedidos.fromRow),
+      invMovimientos: im.data.map(T.invMovimientos.fromRow),
     };
   }
 

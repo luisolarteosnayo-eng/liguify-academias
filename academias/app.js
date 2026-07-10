@@ -138,6 +138,15 @@ const DB = {
 
   asistencias: [],   // { track_id, jugador_id, fecha, estado }
 
+  // Almacén (CNRs inventariables): pedidos y kardex de movimientos por sede
+  invPedidos: [],    // { id, sede_id, concepto_cnr_id, talla, cantidad, proveedor, estado: pendiente|recibido|anulado, fecha, recibido_fecha }
+  invMovimientos: [  // { id, sede_id, concepto_cnr_id, talla, tipo: ingreso|salida, cantidad, motivo, jugador_id?, cargo_id?, pedido_id?, fecha }
+    { id: 'im1', sede_id: 's1', concepto_cnr_id: 'cn1', talla: 'S', tipo: 'ingreso', cantidad: 10, motivo: 'Compra inicial', fecha: '2026-06-20' },
+    { id: 'im2', sede_id: 's1', concepto_cnr_id: 'cn1', talla: 'M', tipo: 'ingreso', cantidad: 8,  motivo: 'Compra inicial', fecha: '2026-06-20' },
+    { id: 'im3', sede_id: 's1', concepto_cnr_id: 'cn1', talla: 'L', tipo: 'ingreso', cantidad: 4,  motivo: 'Compra inicial', fecha: '2026-06-20' },
+    { id: 'im4', sede_id: 's1', concepto_cnr_id: 'cn1', talla: 'S', tipo: 'salida',  cantidad: 1,  motivo: 'Asignación a alumno', jugador_id: 'j2', fecha: '2026-06-28' },
+  ],
+
   // Procesos de generación masiva de CR por ciclo (log)
   procesosCR: [],    // { id, fecha, ciclo_dia, corte, vencimiento, sede_id, cargo_ids:[], total }
 
@@ -254,12 +263,40 @@ function statsTrack(t) {
   return { insc, costoOperacion, puntoEquilibrio, ingresos, utilidad, rentable, color, etiqueta };
 }
 
+// ---------- Almacén: stock derivado del kardex (ingresos − salidas) ----------
+const movsInvSede = (sedeId = SEDE_ACTUAL) => DB.invMovimientos.filter((m) => m.sede_id === sedeId);
+const stockDe = (conceptoId, talla, sedeId = SEDE_ACTUAL) => movsInvSede(sedeId)
+  .filter((m) => m.concepto_cnr_id === conceptoId && (m.talla || '') === (talla || ''))
+  .reduce((s, m) => s + (m.tipo === 'salida' ? -m.cantidad : m.cantidad), 0);
+// Mapa talla -> stock de un concepto en la sede
+function stockTallas(conceptoId, sedeId = SEDE_ACTUAL) {
+  const st = {};
+  movsInvSede(sedeId).filter((m) => m.concepto_cnr_id === conceptoId).forEach((m) => {
+    const t = m.talla || '—';
+    st[t] = (st[t] || 0) + (m.tipo === 'salida' ? -m.cantidad : m.cantidad);
+  });
+  return st;
+}
+// Selector de talla para un CNR inventariable (solo tallas con stock > 0)
+function tallaSelectHTML(conceptoId, selId) {
+  const cn = DB.conceptosCNR.find((c) => c.id === conceptoId);
+  if (!cn || !cn.maneja_stock) return '';
+  const st = stockTallas(conceptoId);
+  const tallas = Object.keys(st).filter((t) => st[t] > 0).sort();
+  if (!tallas.length) return `<span class="text-xs text-rose-500">⚠ Sin stock de ${cn.nombre} en el almacén de esta sede</span>`;
+  return `<label class="text-xs text-slate-500 shrink-0">Talla</label>
+    <select id="${selId}" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+      ${tallas.map((t) => `<option value="${t}">${t} · stock ${st[t]}</option>`).join('')}
+    </select>`;
+}
+
 // ---------- Menú por rol ----------
 const MENU = [
   { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor'] },
   { id: 'tracks',      label: 'Tracks · Rentabilidad', icon: '🎯', roles: ['admin','coordinador'] },
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador'] },
   { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
+  { id: 'almacen',     label: 'Almacén',       icon: '📦', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
@@ -462,6 +499,57 @@ const SCREENS = {
       <div class="mt-3 flex justify-end">
         <button onclick="calLimpiarMes()" class="text-xs text-rose-500 hover:underline">Limpiar mes</button>
       </div>`;
+  },
+
+  almacen() {
+    const conceptosInv = DB.conceptosCNR.filter((c) => c.maneja_stock && c.activo);
+    const movs = movsInvSede();
+    const cnNom = (id) => { const c = DB.conceptosCNR.find((x) => x.id === id); return c ? c.nombre : '?'; };
+    // Stock actual por concepto y talla
+    const stockRows = [];
+    conceptosInv.forEach((cn) => {
+      const ins = {}, outs = {};
+      movs.filter((m) => m.concepto_cnr_id === cn.id).forEach((m) => {
+        const t = m.talla || '—';
+        if (m.tipo === 'salida') outs[t] = (outs[t] || 0) + m.cantidad;
+        else ins[t] = (ins[t] || 0) + m.cantidad;
+      });
+      [...new Set([...Object.keys(ins), ...Object.keys(outs)])].sort().forEach((t) => {
+        const st = (ins[t] || 0) - (outs[t] || 0);
+        stockRows.push([`<b>${cn.nombre}</b>`, t, ins[t] || 0, outs[t] || 0,
+          st <= 0 ? `<span class="font-bold text-rose-600">${st}</span>` : `<b class="text-emerald-700">${st}</b>`]);
+      });
+    });
+    const pend = DB.invPedidos.filter((p) => p.sede_id === SEDE_ACTUAL && p.estado === 'pendiente');
+    const kardex = movs.slice().sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0)).slice(0, 60);
+    el('content').innerHTML = `
+      <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-slate-500">Inventario de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> · stock = ingresos − salidas</p>
+        <div class="flex gap-2">
+          <button onclick="formPedidoInv()" class="rounded-lg ring-1 ring-indigo-300 text-indigo-600 px-4 py-2.5 text-sm font-medium hover:bg-indigo-50">+ Pedido</button>
+          <button onclick="formIngresoInv()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Ingreso directo</button>
+        </div>
+      </div>
+      ${conceptosInv.length ? '' : '<p class="mb-4 text-sm text-amber-600">No hay conceptos CNR inventariables. Marca "maneja stock" en Configuración → Conceptos CNR (ej. Uniforme).</p>'}
+
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Stock actual</h3>
+      ${stockRows.length ? table(['Concepto', 'Talla', 'Ingresos', 'Salidas', 'Stock'], stockRows)
+        : '<p class="text-sm text-slate-400 mb-2">Sin movimientos de inventario en esta sede.</p>'}
+
+      <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Pedidos pendientes (${pend.length})</h3>
+      ${pend.length ? table(['Fecha', 'Concepto', 'Talla', 'Cant.', 'Proveedor', ''],
+        pend.map((p) => [fmtDMY(p.fecha), cnNom(p.concepto_cnr_id), p.talla || '—', p.cantidad, p.proveedor || '—',
+          `<button onclick="recibirPedido('${p.id}')" class="text-emerald-600 hover:underline text-xs mr-3">Recibir</button>
+           <button onclick="anularPedido('${p.id}')" class="text-rose-600 hover:underline text-xs">Anular</button>`]))
+        : '<p class="text-sm text-slate-400">Sin pedidos pendientes.</p>'}
+
+      <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Reporte de movimientos (últimos ${kardex.length})</h3>
+      ${kardex.length ? table(['Fecha', 'Tipo', 'Concepto', 'Talla', 'Cant.', 'Detalle'],
+        kardex.map((m) => [fmtDMY(m.fecha),
+          m.tipo === 'salida' ? badge('Salida', 'rose') : badge('Ingreso', 'emerald'),
+          cnNom(m.concepto_cnr_id), m.talla || '—', m.cantidad,
+          `${m.motivo || ''}${m.jugador_id && jugador(m.jugador_id) ? ' · ' + nom(jugador(m.jugador_id)) : ''}`]))
+        : '<p class="text-sm text-slate-400">Sin movimientos.</p>'}`;
   },
 
   config() {
@@ -1288,11 +1376,12 @@ function estadoCuentaHTML(jid) {
       <div class="text-xs font-medium text-slate-500">Agregar cargo no recurrente (CNR)</div>
       ${cnrCat.length ? `
         <div class="flex gap-2">
-          <select id="cnr_concepto" onchange="cnrAutoPrecio('cnr_concepto','cnr_monto')" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          <select id="cnr_concepto" onchange="cnrAutoPrecio('cnr_concepto','cnr_monto');cnrTallaBox()" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
             ${cnrCat.map((c) => `<option value="${c.id}">${c.nombre}</option>`).join('')}
           </select>
           <input id="cnr_monto" type="number" step="0.01" value="${cnrCat[0].precio || ''}" placeholder="Monto" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right">
         </div>
+        <div id="cnr_tallaBox" class="flex items-center gap-2 empty:hidden">${tallaSelectHTML(cnrCat[0].id, 'cnr_talla')}</div>
         <div class="flex items-center gap-2">
           <label class="text-xs text-slate-500 shrink-0">Vence</label>
           <input id="cnr_venc" type="date" value="${HOY}" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
@@ -1314,8 +1403,15 @@ window.eliminarCargoCNR = (cid, jid) => {
   if (tienePagos) { toast('No se puede eliminar: tiene pagos asociados'); return; }
   if (!confirm(`¿Eliminar el cargo "${descCargo(c)}" de ${S(c.monto)}? Esta acción no se puede deshacer.`)) return;
   DB.cargos = DB.cargos.filter((x) => x.id !== cid);
+  // Si el cargo generó salida de almacén, devuelve el stock (ingreso por devolución)
+  const salida = DB.invMovimientos.find((m) => m.cargo_id === cid && m.tipo === 'salida');
+  if (salida) {
+    DB.invMovimientos.push({ id: uid('im'), sede_id: salida.sede_id, concepto_cnr_id: salida.concepto_cnr_id,
+      talla: salida.talla, tipo: 'ingreso', cantidad: salida.cantidad,
+      motivo: 'Devolución (cargo eliminado)', jugador_id: salida.jugador_id, fecha: HOY });
+  }
   CR_EDIT_ID = null;
-  toast('Cargo eliminado');
+  toast(salida ? 'Cargo eliminado · stock devuelto al almacén' : 'Cargo eliminado');
   renderCuenta(jid);
 };
 window.cancelarEdicionCR = (jid) => { CR_EDIT_ID = null; renderCuenta(jid); };
@@ -1518,11 +1614,27 @@ window.agregarCNR = (jid) => {
   const cn = DB.conceptosCNR.find((c) => c.id === el('cnr_concepto').value);
   const monto = parseFloat(el('cnr_monto').value) || 0;
   if (monto <= 0) { toast('Ingresa un monto'); return; }
+  // Inventariable: exige talla con stock disponible y registra la salida
+  let talla = null;
+  if (cn && cn.maneja_stock) {
+    if (!el('cnr_talla')) { toast(`⚠ Sin stock de ${cn.nombre} en el almacén de esta sede`); return; }
+    talla = el('cnr_talla').value;
+    if (stockDe(cn.id, talla) < 1) { toast(`⚠ Sin stock de talla ${talla}`); cnrTallaBox(); return; }
+  }
   const desc = el('cnr_desc').value.trim();
-  DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo', descripcion: desc,
+  const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo',
+    descripcion: [talla ? `Talla ${talla}` : null, desc].filter(Boolean).join(' · '),
     periodo: HOY.slice(0, 7), fecha_vencimiento: (el('cnr_venc') && el('cnr_venc').value) || HOY,
-    monto, pagado_monto: 0, estado: 'por_pagar' });
-  toast('Cargo CNR agregado'); renderCuenta(jid);
+    monto, pagado_monto: 0, estado: 'por_pagar' };
+  DB.cargos.push(cargo);
+  if (talla !== null) {
+    DB.invMovimientos.push({ id: uid('im'), sede_id: SEDE_ACTUAL, concepto_cnr_id: cn.id, talla,
+      tipo: 'salida', cantidad: 1, motivo: 'Asignación a alumno', jugador_id: jid, cargo_id: cargo.id, fecha: HOY });
+    toast(`Cargo agregado · salida de almacén: ${cn.nombre} talla ${talla} (quedan ${stockDe(cn.id, talla)})`);
+  } else {
+    toast('Cargo CNR agregado');
+  }
+  renderCuenta(jid);
 };
 // Registrar pago: selecciona CR/CNR pendientes, medio, N° operación y voucher
 window.formPagoAlumno = (jid) => {
@@ -2120,8 +2232,9 @@ window.formCargo = () => {
     <form onsubmit="guardarCargo(event)">
       ${field('Alumno', select('f_alumno', alumnosSede().map((j) => ({ v: j.id, t: `${nom(j)} · Cat. ${anio(j.fecha_nacimiento)}` }))))}
       ${cnrCat.length
-        ? field('Concepto', select('f_concepto', cnrCat.map((c) => ({ v: c.id, t: c.nombre })), 'onchange="cnrAutoPrecio(\'f_concepto\',\'f_monto\')"'))
+        ? field('Concepto', select('f_concepto', cnrCat.map((c) => ({ v: c.id, t: c.nombre })), 'onchange="cnrAutoPrecio(\'f_concepto\',\'f_monto\');fTallaBox()"'))
         : '<p class="mb-3 text-sm text-rose-500">No hay conceptos CNR. Créalos en Configuración → Conceptos CNR.</p>'}
+      ${cnrCat.length ? `<div id="f_tallaBox" class="mb-3 flex items-center gap-2 empty:hidden">${tallaSelectHTML(cnrCat[0].id, 'f_talla')}</div>` : ''}
       ${field('Descripción (opcional)', input('f_desc'))}
       ${field('Monto (S/)', input('f_monto', `type="number" step="0.01" required value="${cnrCat[0] ? cnrCat[0].precio : ''}"`))}
       ${field('Fecha de vencimiento', input('f_venc', `type="date" required value="${HOY}"`))}
@@ -2132,10 +2245,22 @@ window.guardarCargo = (e) => {
   e.preventDefault();
   const j = jugador(val('f_alumno'));
   const cn = DB.conceptosCNR.find((c) => c.id === val('f_concepto'));
-  DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo', descripcion: val('f_desc'),
+  let talla = null;
+  if (cn && cn.maneja_stock) {
+    if (!el('f_talla')) { toast(`⚠ Sin stock de ${cn.nombre} en el almacén de esta sede`); return; }
+    talla = el('f_talla').value;
+    if (stockDe(cn.id, talla) < 1) { toast(`⚠ Sin stock de talla ${talla}`); fTallaBox(); return; }
+  }
+  const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo',
+    descripcion: [talla ? `Talla ${talla}` : null, val('f_desc')].filter(Boolean).join(' · '),
     periodo: HOY.slice(0, 7), fecha_vencimiento: val('f_venc') || HOY,
-    monto: num('f_monto'), pagado_monto: 0, estado: 'por_pagar' });
-  closeModal(); toast('Cargo no recurrente generado'); go('tesoreria');
+    monto: num('f_monto'), pagado_monto: 0, estado: 'por_pagar' };
+  DB.cargos.push(cargo);
+  if (talla !== null) {
+    DB.invMovimientos.push({ id: uid('im'), sede_id: SEDE_ACTUAL, concepto_cnr_id: cn.id, talla,
+      tipo: 'salida', cantidad: 1, motivo: 'Asignación a alumno', jugador_id: j.id, cargo_id: cargo.id, fecha: HOY });
+  }
+  closeModal(); toast(talla ? `Cargo generado · salida de almacén talla ${talla}` : 'Cargo no recurrente generado'); go('tesoreria');
 };
 
 // ---------- Evaluar cromo (6 atributos) ----------
@@ -2547,6 +2672,15 @@ window.cnrAutoPrecio = (selId, montoId) => {
   const c = DB.conceptosCNR.find((x) => x.id === el(selId).value);
   if (c && el(montoId)) el(montoId).value = c.precio || '';
 };
+// Muestra/oculta el selector de talla según si el concepto maneja stock
+window.cnrTallaBox = () => {
+  const b = el('cnr_tallaBox');
+  if (b) b.innerHTML = tallaSelectHTML(el('cnr_concepto').value, 'cnr_talla');
+};
+window.fTallaBox = () => {
+  const b = el('f_tallaBox');
+  if (b) b.innerHTML = tallaSelectHTML(el('f_concepto').value, 'f_talla');
+};
 
 // ---------- Usuarios e invitaciones (módulo de seguridad) ----------
 const ROL_LABEL = { admin: 'Administrador', coordinador: 'Coordinador', tesorero: 'Tesorero', profesor: 'Profesor' };
@@ -2715,6 +2849,71 @@ window.eliminarSede = (id) => {
   DB.sedes = DB.sedes.filter((s) => s.id !== id);
   if (SEDE_EDIT === id) SEDE_EDIT = null;
   renderSedeSelect(); toast('Sede eliminada'); SCREENS.config();
+};
+
+// ---------- Almacén: ingresos, pedidos y recepción ----------
+const TALLAS_SUGERIDAS = ['4', '6', '8', '10', '12', '14', '16', 'XS', 'S', 'M', 'L', 'XL'];
+function invFormCampos(pfx, conProveedor) {
+  const conceptosInv = DB.conceptosCNR.filter((c) => c.maneja_stock && c.activo);
+  return `
+    ${field('Concepto', select(pfx + '_concepto', conceptosInv.map((c) => ({ v: c.id, t: c.nombre }))))}
+    <div class="grid grid-cols-2 gap-3">
+      ${field('Talla', `<input id="${pfx}_talla" list="tallasList" placeholder="S, M, 12..." class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <datalist id="tallasList">${TALLAS_SUGERIDAS.map((t) => `<option value="${t}">`).join('')}</datalist>`)}
+      ${field('Cantidad', input(pfx + '_cant', 'type="number" min="1" value="1" required'))}
+    </div>
+    ${conProveedor ? field('Proveedor (opcional)', input(pfx + '_prov', 'placeholder="Confecciones XYZ"')) : ''}
+    ${field(conProveedor ? 'Fecha del pedido' : 'Fecha del ingreso', input(pfx + '_fecha', `type="date" value="${HOY}" required`))}`;
+}
+window.formIngresoInv = () => {
+  if (!DB.conceptosCNR.some((c) => c.maneja_stock && c.activo)) { toast('No hay conceptos inventariables'); return; }
+  openModal('Ingreso a almacén', `
+    <form onsubmit="guardarIngresoInv(event)">
+      <p class="mb-3 text-xs text-slate-500">Registra unidades que entran al almacén de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> (compra, donación, devolución...).</p>
+      ${invFormCampos('inv', false)}
+      ${field('Motivo', input('inv_motivo', 'value="Compra" required'))}
+      ${submitBar('Registrar ingreso')}
+    </form>`);
+};
+window.guardarIngresoInv = (e) => {
+  e.preventDefault();
+  const cant = num('inv_cant');
+  if (!cant || cant < 1) { toast('Cantidad inválida'); return; }
+  DB.invMovimientos.push({ id: uid('im'), sede_id: SEDE_ACTUAL, concepto_cnr_id: val('inv_concepto'),
+    talla: val('inv_talla').trim().toUpperCase() || null, tipo: 'ingreso', cantidad: cant,
+    motivo: val('inv_motivo'), fecha: val('inv_fecha') || HOY });
+  closeModal(); toast('Ingreso registrado ✓'); go('almacen');
+};
+window.formPedidoInv = () => {
+  if (!DB.conceptosCNR.some((c) => c.maneja_stock && c.activo)) { toast('No hay conceptos inventariables'); return; }
+  openModal('Nuevo pedido', `
+    <form onsubmit="guardarPedidoInv(event)">
+      <p class="mb-3 text-xs text-slate-500">El pedido queda <b>pendiente</b>; al recibirlo se genera el ingreso al almacén automáticamente.</p>
+      ${invFormCampos('ped', true)}
+      ${submitBar('Crear pedido')}
+    </form>`);
+};
+window.guardarPedidoInv = (e) => {
+  e.preventDefault();
+  const cant = num('ped_cant');
+  if (!cant || cant < 1) { toast('Cantidad inválida'); return; }
+  DB.invPedidos.push({ id: uid('ip'), sede_id: SEDE_ACTUAL, concepto_cnr_id: val('ped_concepto'),
+    talla: val('ped_talla').trim().toUpperCase() || null, cantidad: cant, proveedor: val('ped_prov') || null,
+    estado: 'pendiente', fecha: val('ped_fecha') || HOY, recibido_fecha: null });
+  closeModal(); toast('Pedido creado ✓'); go('almacen');
+};
+window.recibirPedido = (id) => {
+  const p = DB.invPedidos.find((x) => x.id === id);
+  if (!p || p.estado !== 'pendiente') return;
+  p.estado = 'recibido'; p.recibido_fecha = HOY;
+  DB.invMovimientos.push({ id: uid('im'), sede_id: p.sede_id, concepto_cnr_id: p.concepto_cnr_id,
+    talla: p.talla, tipo: 'ingreso', cantidad: p.cantidad,
+    motivo: `Pedido recibido${p.proveedor ? ' · ' + p.proveedor : ''}`, pedido_id: p.id, fecha: HOY });
+  toast('Pedido recibido · stock actualizado ✓'); go('almacen');
+};
+window.anularPedido = (id) => {
+  const p = DB.invPedidos.find((x) => x.id === id);
+  if (p && p.estado === 'pendiente') { p.estado = 'anulado'; toast('Pedido anulado'); go('almacen'); }
 };
 
 // ---------- Calendario de clases por sede ----------
