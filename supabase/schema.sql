@@ -129,6 +129,17 @@ create table if not exists academias.jugadores (
   categoria_inmutable int not null,                     -- año extraído; NO editable
   fecha_registro      date not null default current_date,
   foto_url            text,
+  -- Identidad del ALUMNO (sincronización con Liguify Competencias: la llave
+  -- del maestro es país+documento; opcional en el alta, obligatorio para
+  -- inscribirlo en torneos) — patch_sync_competencias_a.sql
+  tipo_documento      text,                             -- DNI / CE / PAS
+  num_documento       text,
+  pais_documento      text not null default 'PE',
+  telefono            text,
+  doc_scan_frente_url  text,                            -- RUTA en bucket privado 'documentos' (jugadores/)
+  doc_scan_reverso_url text,
+  consentimiento_imagen boolean not null default false, -- en torneos: foto a color solo con consentimiento
+  consentimiento_fecha  timestamptz,
   -- Indumentaria / ficha deportiva (opcionales)
   talla_camiseta      text,
   talla_short         text,

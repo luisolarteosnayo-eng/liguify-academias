@@ -1245,10 +1245,30 @@ function njFormBody(j, tracksJid) {
       </div>
       ${field('Fecha de nacimiento *', input('nj_fnac', `type="date" value="${esc(g.fecha_nacimiento)}"`))}
       ${field('Sexo', sel('nj_sexo', [{ v: 'M', t: 'Masculino' }, { v: 'F', t: 'Femenino' }], g.sexo || 'M'))}
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-3 gap-3">
         ${field('Tipo documento', sel('nj_tipodoc', [{ v: '', t: 'Sin especificar' }, { v: 'DNI', t: 'DNI' }, { v: 'CE', t: 'Carné de extranjería' }, { v: 'PAS', t: 'Pasaporte' }], g.tipo_documento))}
         ${field('N° documento', input('nj_numdoc', `value="${esc(g.num_documento)}" placeholder="Número"`))}
+        ${field('País doc.', sel('nj_paisdoc', ['PE', 'AR', 'BO', 'BR', 'CL', 'CO', 'EC', 'UY', 'VE'].map((x) => ({ v: x, t: x })), g.pais_documento || 'PE'))}
       </div>
+      <p class="-mt-2 mb-3 text-xs text-slate-400">El documento del alumno es opcional aquí, pero <b>obligatorio para inscribirlo en torneos</b> (Liguify Competencias).</p>
+      <div class="mb-3 rounded-lg ring-1 ring-slate-200 p-3">
+        <div class="mb-2 text-xs font-medium text-slate-500">Fotos del documento (almacenamiento privado)</div>
+        ${g.id ? ['frente', 'reverso'].map((cara) => {
+          const ruta = cara === 'frente' ? g.doc_scan_frente_url : g.doc_scan_reverso_url;
+          return `<div class="mb-1.5 flex items-center gap-2 text-sm last:mb-0">
+            <span class="w-14 text-xs capitalize text-slate-500">${cara}</span>
+            <label class="cursor-pointer rounded-lg px-2 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">📷 Subir
+              <input type="file" accept="image/*" class="hidden" onchange="njDocAlumno('${g.id}','${cara}',this)"></label>
+            <span id="njdoc_${cara}" class="text-xs ${ruta ? 'text-emerald-600' : 'text-slate-400'}">${ruta ? '✔ cargado' : '— sin foto'}</span>
+            ${ruta ? `<button type="button" onclick="njVerDoc('${esc(ruta)}')" class="text-xs text-slate-400 underline">Ver</button>` : ''}
+          </div>`;
+        }).join('') : '<p class="text-xs text-slate-400">💡 Guarda al alumno primero; luego sube las fotos desde su ficha.</p>'}
+      </div>
+      <label class="mb-3 flex items-start justify-between gap-3 rounded-lg p-3 text-sm ring-1 ring-slate-200">
+        <span><b>Consentimiento de imagen</b><br>
+          <span class="text-xs text-slate-400">Autorizado por el tutor. En torneos la foto del alumno sale a color; sin consentimiento, en blanco y negro.</span></span>
+        <input type="checkbox" id="nj_consent" ${g.consentimiento_imagen ? 'checked' : ''} class="mt-1 h-4 w-4 accent-indigo-600">
+      </label>
       ${field('Teléfono', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
       ${showTracks ? field('Sede del alumno', `${sel('nj_sede', DB.sedes.map((s) => ({ v: s.id, t: s.nombre_sede })), g.sede_id)}
         <p class="mt-1 text-xs text-slate-400">Cambiar la sede mueve al alumno (Alumnos y Por cobrar de esa sede); sus tracks actuales no se modifican.</p>`) : ''}
@@ -1984,10 +2004,14 @@ window.guardarEdicionAlumno = (e, jid) => {
   e.preventDefault();
   if (!val('nj_nombre') || !val('nj_apellido') || !val('nj_fnac')) { toast('Completa nombre, apellido y fecha'); njTab('personal'); return; }
   const j = jugador(jid);
+  const consEd = el('nj_consent') ? el('nj_consent').checked : !!j.consentimiento_imagen;
   Object.assign(j, {
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
     sede_id: (el('nj_sede') && val('nj_sede')) || j.sede_id,
     sexo: val('nj_sexo') || null, tipo_documento: val('nj_tipodoc') || null, num_documento: val('nj_numdoc') || null,
+    pais_documento: (el('nj_paisdoc') && val('nj_paisdoc')) || 'PE',
+    consentimiento_imagen: consEd,
+    consentimiento_fecha: consEd ? (j.consentimiento_fecha || new Date().toISOString()) : null,
     telefono: `${val('nj_paistel')} ${val('nj_tel')}`.trim(), foto_url: NJ_FOTO,
     tipo_sangre: val('nj_sangre') || null, notas_medicas: val('nj_notas') || null, historial_lesiones: val('nj_lesiones') || null,
     alergias: val('nj_alergias') || null, otras_actividades: val('nj_otras') || null,
@@ -2022,6 +2046,59 @@ window.njFoto = (inp) => {
   r.readAsDataURL(f);
 };
 
+// Fotos del documento del alumno → bucket PRIVADO 'documentos' (prefijo jugadores/,
+// compartido con Liguify Competencias para la sincronización de jugadores).
+// Redimensiona a máx 1600px para no saturar el almacenamiento.
+function njResizeDoc(f) {
+  return new Promise((res) => {
+    if (!f || !/^image\//.test(f.type)) { res(f); return; }
+    const img = new Image();
+    img.onload = () => {
+      const esc2 = Math.min(1, 1600 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const w = Math.max(1, Math.round(img.naturalWidth * esc2)), h = Math.max(1, Math.round(img.naturalHeight * esc2));
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      const x = cv.getContext('2d');
+      x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+      x.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(img.src);
+      cv.toBlob((b) => {
+        if (!b || b.size >= f.size) { res(f); return; }
+        res(new File([b], f.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src); res(f); };
+    img.src = URL.createObjectURL(f);
+  });
+}
+window.njDocAlumno = async (jid, cara, inp) => {
+  const f = inp.files && inp.files[0];
+  if (!f) return;
+  const j = jugador(jid); if (!j) return;
+  const st = el('njdoc_' + cara);
+  try {
+    if (!window.AcademiasDB || !AcademiasDB.sb) throw new Error('Sin conexión a la base de datos');
+    if (st) { st.textContent = '⏳ subiendo…'; st.className = 'text-xs text-slate-400'; }
+    const chico = await njResizeDoc(f);
+    const ext = (chico.name.split('.').pop() || 'jpg').toLowerCase();
+    const ruta = `jugadores/alumno-${jid}-${cara}.${ext}`;
+    const { error } = await AcademiasDB.sb.storage.from('documentos').upload(ruta, chico, { upsert: true, contentType: chico.type });
+    if (error) throw error;
+    j[cara === 'frente' ? 'doc_scan_frente_url' : 'doc_scan_reverso_url'] = ruta;
+    if (st) { st.textContent = '✔ cargado'; st.className = 'text-xs text-emerald-600'; }
+    toast('Foto del documento guardada (privada)');
+  } catch (e) {
+    if (st) { st.textContent = '⚠ error'; st.className = 'text-xs text-rose-500'; }
+    toast('No se pudo subir la foto del documento: ' + (e.message || e));
+  }
+};
+window.njVerDoc = async (ruta) => {
+  try {
+    const { data, error } = await AcademiasDB.sb.storage.from('documentos').createSignedUrl(ruta, 300);
+    if (error) throw error;
+    window.open(data.signedUrl, '_blank');
+  } catch (e) { toast('⚠ ' + (e.message || e)); }
+};
+
 window.guardarNuevoJugador = (e, tid) => {
   e.preventDefault();
   if (!val('nj_nombre') || !val('nj_apellido') || !val('nj_fnac')) {
@@ -2038,9 +2115,13 @@ window.guardarNuevoJugador = (e, tid) => {
     tut = { id: uid('tu'), dni_tutor: doc || `S/D-${_seq}`, telefono_celular: tel, email_tutor: null, perfil_reclamado: false };
     DB.tutores.push(tut);
   }
+  const consNu = el('nj_consent') ? el('nj_consent').checked : false;
   const j = { id: uid('j'), tutor_id: tut.id, sede_id: SEDE_ACTUAL,
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
     sexo: val('nj_sexo') || null, tipo_documento: val('nj_tipodoc') || null, num_documento: doc || null,
+    pais_documento: (el('nj_paisdoc') && val('nj_paisdoc')) || 'PE',
+    consentimiento_imagen: consNu,
+    consentimiento_fecha: consNu ? new Date().toISOString() : null,
     telefono: tel, foto_url: NJ_FOTO,
     tipo_sangre: val('nj_sangre') || null, notas_medicas: val('nj_notas') || null,
     historial_lesiones: val('nj_lesiones') || null, alergias: val('nj_alergias') || null,
