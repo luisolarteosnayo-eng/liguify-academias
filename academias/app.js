@@ -643,7 +643,22 @@ const SCREENS = {
 
   tracks() {
     if (TRACK_SEL) { renderTrackDetalle(); return; }
+    // Dashboard de la sede: totales de todos sus tracks
+    const tot = tracksSede().reduce((a, t) => {
+      const st = statsTrack(t);
+      a.util += st.utilidad; a.ing += st.ingresos; a.cos += st.costoOperacion;
+      a.al += st.insc.length; a.cap += (+t.capacidad_maxima || 0); a.n++;
+      return a;
+    }, { util: 0, ing: 0, cos: 0, al: 0, cap: 0, n: 0 });
+    const utilCls = tot.util > 0 ? 'text-emerald-600' : tot.util < 0 ? 'text-rose-600' : 'text-slate-700';
+    const ocup = tot.cap ? Math.round(tot.al * 100 / tot.cap) : 0;
     el('content').innerHTML = `
+      <div class="mb-4 grid grid-cols-2 gap-3 sm:max-w-xl">
+        ${card('Utilidad total', `<span class="${utilCls}">${tot.util < 0 ? '−' : ''}${S(Math.abs(tot.util))}</span>`,
+          `ingresos ${S(tot.ing)} − costos ${S(tot.cos)}`)}
+        ${card('Alumnos', `${tot.al} <span class="text-sm font-normal text-slate-400">/ ${tot.cap}</span>`,
+          `${ocup}% de ocupación · ${tot.n} track(s)`)}
+      </div>
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center">
         <p class="text-sm text-slate-500">Toca un track para ver sus alumnos · equilibrio = ⌈costo ÷ mensualidad⌉</p>
         <button onclick="formTrack()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Nuevo track</button>
