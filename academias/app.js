@@ -270,12 +270,15 @@ function statsTrack(t) {
   const ingresos = insc.reduce((s, i) =>
     s + (i.costo_mensual_personalizado ?? t.mensualidad_sugerida), 0);
   const utilidad = ingresos - costoOperacion;
+  // Potencial de ganancia adicional: lo que falta vender = mensualidad × cupos libres
+  const cuposLibres = Math.max(0, (+t.capacidad_maxima || 0) - insc.length);
+  const potencial = cuposLibres * (+t.mensualidad_sugerida || 0);
   const rentable = insc.length >= puntoEquilibrio;
   // color: verde rentable; ámbar si hay algún alumno pero bajo umbral; rojo si muy por debajo
   const ratio = puntoEquilibrio ? insc.length / puntoEquilibrio : 0;
   const color = rentable ? 'emerald' : ratio >= 0.5 ? 'amber' : 'rose';
   const etiqueta = rentable ? 'Track Rentable' : ratio >= 0.5 ? 'Operando a pérdida' : 'Déficit crítico';
-  return { insc, costoOperacion, puntoEquilibrio, ingresos, utilidad, rentable, color, etiqueta };
+  return { insc, costoOperacion, puntoEquilibrio, ingresos, utilidad, rentable, color, etiqueta, cuposLibres, potencial };
 }
 
 // ---------- Almacén: stock derivado del kardex (ingresos − salidas) ----------
@@ -675,16 +678,19 @@ const SCREENS = {
       const st = statsTrack(t);
       a.util += st.utilidad; a.ing += st.ingresos; a.cos += st.costoOperacion;
       a.al += st.insc.length; a.cap += (+t.capacidad_maxima || 0); a.n++;
+      a.pot += st.potencial; a.cupos += st.cuposLibres;
       return a;
-    }, { util: 0, ing: 0, cos: 0, al: 0, cap: 0, n: 0 });
+    }, { util: 0, ing: 0, cos: 0, al: 0, cap: 0, n: 0, pot: 0, cupos: 0 });
     const utilCls = tot.util > 0 ? 'text-emerald-600' : tot.util < 0 ? 'text-rose-600' : 'text-slate-700';
     const ocup = tot.cap ? Math.round(tot.al * 100 / tot.cap) : 0;
     el('content').innerHTML = `
-      <div class="mb-4 grid grid-cols-2 gap-3 sm:max-w-xl">
+      <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:max-w-4xl">
         ${card('Utilidad total', `<span class="${utilCls}">${tot.util < 0 ? '−' : ''}${S(Math.abs(tot.util))}</span>`,
           `ingresos ${S(tot.ing)} − costos ${S(tot.cos)}`)}
         ${card('Alumnos', `${tot.al} <span class="text-sm font-normal text-slate-400">/ ${tot.cap}</span>`,
           `${ocup}% de ocupación · ${tot.n} track(s)`)}
+        ${card('Potencial adicional', `<span class="text-indigo-600">+${S(tot.pot)}</span>`,
+          `${tot.cupos} cupo(s) por vender`)}
       </div>
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center">
         <p class="text-sm text-slate-500">Toca un track para ver sus alumnos · equilibrio = ⌈costo ÷ mensualidad⌉</p>
@@ -1062,6 +1068,7 @@ function trackCard(t) {
           <div class="font-semibold">${t.nombre_track}</div>
           <div class="text-xs text-slate-400">${sede(t.sede_id).nombre_sede} · ${t.linea_negocio}</div>
           <div class="text-xs ${coach ? 'text-slate-500' : 'text-slate-300'}">👤 ${coach ? `${coach.nombre} ${coach.apellido}` : 'Sin profesor'}</div>
+          <div class="text-xs ${t.dias_horario ? 'text-slate-500' : 'text-slate-300'}">🕐 ${t.dias_horario || 'Sin horario'}</div>
         </div>
         ${badge(x.etiqueta, x.color)}
       </div>
@@ -1076,6 +1083,10 @@ function trackCard(t) {
       <div class="mt-3 flex justify-between text-sm">
         <span class="text-slate-500">Utilidad</span>
         <span class="font-semibold text-${x.color}-600">${S(x.utilidad)}</span>
+      </div>
+      <div class="mt-1 flex justify-between text-xs">
+        <span class="text-slate-400">Potencial adicional</span>
+        <span class="font-medium ${x.potencial > 0 ? 'text-indigo-600' : 'text-slate-400'}">${x.potencial > 0 ? `+${S(x.potencial)} · ${x.cuposLibres} cupo(s)` : 'Aforo completo'}</span>
       </div>
     </div>`;
 }
