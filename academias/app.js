@@ -495,22 +495,24 @@ const SCREENS = {
         // Resumen: utilidad total por sede + total general de los tracks mostrados
         const filas = sedesDash.map((s) => {
           const tks = tracksDash.filter((t) => t.sede_id === s.id);
-          const st = tks.reduce((a, t) => { const x = statsTrack(t); a.u += x.utilidad; a.al += x.insc.length; return a; }, { u: 0, al: 0 });
-          return { nombre: s.nombre_sede, n: tks.length, al: st.al, u: st.u };
+          const st = tks.reduce((a, t) => { const x = statsTrack(t); a.u += x.utilidad; a.al += x.insc.length; a.pot += x.potencial; return a; }, { u: 0, al: 0, pot: 0 });
+          return { nombre: s.nombre_sede, n: tks.length, al: st.al, u: st.u, pot: st.pot };
         }).filter((f) => f.n > 0);
         const totU = filas.reduce((s, f) => s + f.u, 0);
         const totAl = filas.reduce((s, f) => s + f.al, 0);
+        const totPot = filas.reduce((s, f) => s + f.pot, 0);
         const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S(Math.abs(u))}</b>`;
+        const fmtPot = (p) => `<span class="text-xs ${p > 0 ? 'text-indigo-600' : 'text-slate-400'}">${p > 0 ? `potencial +${S(p)}` : 'aforo completo'}</span>`;
         return filas.length ? `
         <div class="mb-3 rounded-xl bg-white ring-1 ring-slate-200 divide-y divide-slate-100">
           ${filas.map((f) => `
-            <div class="flex items-center justify-between px-4 py-2 text-sm">
+            <div class="flex items-center justify-between gap-2 px-4 py-2 text-sm">
               <span class="text-slate-600">${f.nombre} <span class="text-xs text-slate-400">· ${f.n} track(s) · ${f.al} alumno(s)</span></span>
-              ${fmtU(f.u)}
+              <span class="flex items-baseline gap-3 text-right">${fmtPot(f.pot)}${fmtU(f.u)}</span>
             </div>`).join('')}
-          <div class="flex items-center justify-between px-4 py-2.5 text-sm bg-slate-50 rounded-b-xl">
+          <div class="flex items-center justify-between gap-2 px-4 py-2.5 text-sm bg-slate-50 rounded-b-xl">
             <span class="font-semibold text-slate-700">Utilidad total general <span class="text-xs font-normal text-slate-400">· ${totAl} alumno(s)</span></span>
-            ${fmtU(totU)}
+            <span class="flex items-baseline gap-3 text-right">${fmtPot(totPot)}${fmtU(totU)}</span>
           </div>
         </div>` : '';
       })()}
