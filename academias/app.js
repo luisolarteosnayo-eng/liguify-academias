@@ -484,6 +484,29 @@ const SCREENS = {
       <div class="mb-6">${chartNuevosPorDia(nuevos)}</div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Salud de tracks (break-even)</h3>
+      ${(() => {
+        // Resumen: utilidad total por sede + total general de los tracks mostrados
+        const filas = sedesDash.map((s) => {
+          const tks = tracksDash.filter((t) => t.sede_id === s.id);
+          const st = tks.reduce((a, t) => { const x = statsTrack(t); a.u += x.utilidad; a.al += x.insc.length; return a; }, { u: 0, al: 0 });
+          return { nombre: s.nombre_sede, n: tks.length, al: st.al, u: st.u };
+        }).filter((f) => f.n > 0);
+        const totU = filas.reduce((s, f) => s + f.u, 0);
+        const totAl = filas.reduce((s, f) => s + f.al, 0);
+        const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S(Math.abs(u))}</b>`;
+        return filas.length ? `
+        <div class="mb-3 rounded-xl bg-white ring-1 ring-slate-200 divide-y divide-slate-100">
+          ${filas.map((f) => `
+            <div class="flex items-center justify-between px-4 py-2 text-sm">
+              <span class="text-slate-600">${f.nombre} <span class="text-xs text-slate-400">· ${f.n} track(s) · ${f.al} alumno(s)</span></span>
+              ${fmtU(f.u)}
+            </div>`).join('')}
+          <div class="flex items-center justify-between px-4 py-2.5 text-sm bg-slate-50 rounded-b-xl">
+            <span class="font-semibold text-slate-700">Utilidad total general <span class="text-xs font-normal text-slate-400">· ${totAl} alumno(s)</span></span>
+            ${fmtU(totU)}
+          </div>
+        </div>` : '';
+      })()}
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         ${tracksDash.length ? tracksDash.map(trackCard).join('') : '<p class="text-sm text-slate-400">Sin tracks.</p>'}
       </div>`;
