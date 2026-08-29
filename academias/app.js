@@ -175,6 +175,8 @@ const DB = {
 
 // ---------- Lookups ----------
 const sede    = (id) => DB.sedes.find((s) => s.id === id);
+// Solo las sedes ACTIVAS operan: selectores, dashboards y reportes las usan
+const sedesActivas = () => DB.sedes.filter((s) => s.activo !== false);
 const track   = (id) => DB.tracks.find((t) => t.id === id);
 const tutor   = (id) => DB.tutores.find((t) => t.id === id);
 const jugador = (id) => DB.jugadores.find((j) => j.id === id);
@@ -426,8 +428,10 @@ const estadoColor = { pagado: 'emerald', por_pagar: 'amber', vencido: 'rose', pa
 const SCREENS = {
   dashboard() {
     const win = DASH_PERIODO === 'anterior' ? mesAnteriorWindow(HOY) : mesActualWindow(HOY);
-    const inDash = (sedeId) => !DASH_SEDE || sedeId === DASH_SEDE;
-    const sedesDash = DB.sedes.filter((s) => inDash(s.id));
+    // El dashboard solo considera información de sedes ACTIVAS
+    if (DASH_SEDE && !(sede(DASH_SEDE) && sede(DASH_SEDE).activo !== false)) DASH_SEDE = '';
+    const inDash = (sedeId) => { const s = sede(sedeId); return !!s && s.activo !== false && (!DASH_SEDE || sedeId === DASH_SEDE); };
+    const sedesDash = sedesActivas().filter((s) => inDash(s.id));
     const alumnosDash = DB.jugadores.filter((j) => inDash(j.sede_id));
     const tracksDash = DB.tracks.filter((t) => t.activo !== false && inDash(t.sede_id));
     const nuevos = alumnosDash.filter((j) => j.fecha_registro && j.fecha_registro >= win.inicio && j.fecha_registro <= win.fin);
@@ -452,7 +456,7 @@ const SCREENS = {
           <span class="text-slate-500">Sede</span>
           <select id="dashSede" onchange="dashSet('sede', this.value)" class="rounded-lg border border-slate-300 px-3 py-2 bg-white text-sm">
             <option value="" ${DASH_SEDE === '' ? 'selected' : ''}>Todas</option>
-            ${DB.sedes.map((s) => `<option value="${s.id}" ${DASH_SEDE === s.id ? 'selected' : ''}>${s.nombre_sede}</option>`).join('')}
+            ${sedesActivas().map((s) => `<option value="${s.id}" ${DASH_SEDE === s.id ? 'selected' : ''}>${s.nombre_sede}</option>`).join('')}
           </select>
         </label>
         <div class="inline-flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-sm">
@@ -1311,7 +1315,7 @@ function njFormBody(j, tracksJid) {
         <input type="checkbox" id="nj_consent" ${g.consentimiento_imagen ? 'checked' : ''} class="mt-1 h-4 w-4 accent-indigo-600">
       </label>
       ${field('Teléfono', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
-      ${showTracks ? field('Sede del alumno', `${sel('nj_sede', DB.sedes.map((s) => ({ v: s.id, t: s.nombre_sede })), g.sede_id)}
+      ${showTracks ? field('Sede del alumno', `${sel('nj_sede', DB.sedes.filter((s) => s.activo !== false || s.id === g.sede_id).map((s) => ({ v: s.id, t: s.nombre_sede + (s.activo === false ? ' (inactiva)' : '') })), g.sede_id)}
         <p class="mt-1 text-xs text-slate-400">Cambiar la sede mueve al alumno (Alumnos y Por cobrar de esa sede); sus tracks actuales no se modifican.</p>`) : ''}
       ${!showTracks ? field('Fecha de inicio en el track', input('nj_iniciotrack', `type="date" value="${HOY}"`)) : ''}
     </div>
@@ -2366,7 +2370,7 @@ window.formRegistroExpress = () => {
       </div>
       ${field('Email del tutor (opcional)', input('f_email', 'type="email" placeholder="se puede completar luego"'))}
       ${field('Sede', select('f_sede',
-        [sede(SEDE_ACTUAL), ...DB.sedes.filter((s) => s.id !== SEDE_ACTUAL)]
+        [sede(SEDE_ACTUAL), ...sedesActivas().filter((s) => s.id !== SEDE_ACTUAL)]
           .map((s) => ({ v: s.id, t: s.nombre_sede })), 'onchange="onFnac()"'))}
       <div id="tracksBox" class="mb-3"></div>
       ${submitBar('Registrar y generar deuda')}
@@ -2627,10 +2631,12 @@ const CONFIG_TABS = {
           </div>
         </form>
       </div>
-      ${table(['Sede', 'Dirección', 'Ciudad', 'Teléfono', ''],
+      ${table(['Sede', 'Dirección', 'Ciudad', 'Estado', ''],
         DB.sedes.map((s) => [
-          `<b>${s.nombre_sede}</b>`, s.direccion1 || '—', s.ciudad || '—', s.telefono_coordinador || '—',
+          `<b>${s.nombre_sede}</b>`, s.direccion1 || '—', s.ciudad || '—',
+          s.activo === false ? badge('Inactiva', 'slate') : badge('Activa', 'emerald'),
           `<button onclick="editarSede('${s.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
+           <button onclick="toggleSedeActiva('${s.id}')" class="text-slate-500 hover:underline text-xs mr-3">${s.activo === false ? 'Activar' : 'Inactivar'}</button>
            <button onclick="eliminarSede('${s.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))}`;
   },
 
@@ -2649,7 +2655,7 @@ const CONFIG_TABS = {
           </div>
           <div class="grid grid-cols-2 gap-3">
             ${field('Rol', select('st_rol', [{ v: 'profesor', t: 'Profesor' }, { v: 'coordinador', t: 'Coordinador' }], g('rol', 'profesor')))}
-            ${field('Sede', select('st_sede', [{ v: '', t: 'Todas las sedes' }, ...DB.sedes.map((s) => ({ v: s.id, t: s.nombre_sede }))], g('sede_id', '')))}
+            ${field('Sede', select('st_sede', [{ v: '', t: 'Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], g('sede_id', '')))}
           </div>
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
@@ -2804,7 +2810,7 @@ const CONFIG_TABS = {
           </select>
           <select id="inv_sede" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
             <option value="">Todas las sedes</option>
-            ${DB.sedes.map((s) => `<option value="${s.id}">${s.nombre_sede}</option>`).join('')}
+            ${sedesActivas().map((s) => `<option value="${s.id}">${s.nombre_sede}</option>`).join('')}
           </select>
           <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Invitar</button>
         </form>
@@ -3043,6 +3049,15 @@ window.guardarSedeInline = (e) => {
   }
   SEDE_CABECERA = null;
   renderSedeSelect(); SCREENS.config();
+};
+window.toggleSedeActiva = (id) => {
+  const s = sede(id);
+  if (!s) return;
+  if (s.activo !== false && sedesActivas().length <= 1) { toast('No puedes inactivar la única sede activa'); return; }
+  s.activo = s.activo === false;
+  renderSedeSelect();   // si era la sede activa en uso, salta a la primera activa
+  toast(s.activo ? `Sede ${s.nombre_sede} activada` : `Sede ${s.nombre_sede} inactivada · sus datos salen de dashboards y reportes`);
+  SCREENS.config();
 };
 window.editarSede = (id) => { SEDE_EDIT = id; SEDE_CABECERA = (sede(id) && sede(id).cabecera_url) || null; SCREENS.config(); };
 window.cancelSedeEdit = () => { SEDE_EDIT = null; SEDE_CABECERA = null; SCREENS.config(); };
@@ -3349,8 +3364,9 @@ window.toggleNav = (open) => {
 
 // ---------- Selector de sede activa ----------
 function renderSedeSelect() {
-  if (!DB.sedes.some((s) => s.id === SEDE_ACTUAL)) SEDE_ACTUAL = DB.sedes[0] ? DB.sedes[0].id : null;
-  el('sedeSelect').innerHTML = DB.sedes
+  const activas = sedesActivas();
+  if (!activas.some((s) => s.id === SEDE_ACTUAL)) SEDE_ACTUAL = activas[0] ? activas[0].id : null;
+  el('sedeSelect').innerHTML = activas
     .map((s) => `<option value="${s.id}" ${s.id === SEDE_ACTUAL ? 'selected' : ''}>${s.nombre_sede}</option>`)
     .join('');
 }
@@ -3457,9 +3473,9 @@ async function entrarConectado() {
           <div class="text-xs text-slate-300 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
       }
     }
-    SEDE_ACTUAL = (PERFIL && PERFIL.sede_id && DB.sedes.some((s) => s.id === PERFIL.sede_id))
+    SEDE_ACTUAL = (PERFIL && PERFIL.sede_id && sedesActivas().some((s) => s.id === PERFIL.sede_id))
       ? PERFIL.sede_id
-      : (DB.sedes[0] ? DB.sedes[0].id : null);
+      : (sedesActivas()[0] ? sedesActivas()[0].id : null);
     AcademiasDB.sync.onStatus((st, err) => {
       const d = el('syncDot');
       if (!d) return;
