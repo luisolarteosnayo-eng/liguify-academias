@@ -1049,12 +1049,15 @@ function trackCard(t) {
   const x = statsTrack(t);
   const pct = Math.min(100, Math.round((x.insc.length / t.capacidad_maxima) * 100));
   const pctBE = Math.round((x.puntoEquilibrio / t.capacidad_maxima) * 100);
+  const coachId = t.coach_id || (DB.trackStaff[t.id] && DB.trackStaff[t.id][0]) || null;
+  const coach = coachId ? staffDe(coachId) : null;
   return `
     <div onclick="abrirTrack('${t.id}')" class="cursor-pointer rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200 hover:ring-indigo-300 hover:shadow-md transition">
       <div class="flex justify-between items-start">
         <div>
           <div class="font-semibold">${t.nombre_track}</div>
           <div class="text-xs text-slate-400">${sede(t.sede_id).nombre_sede} · ${t.linea_negocio}</div>
+          <div class="text-xs ${coach ? 'text-slate-500' : 'text-slate-300'}">👤 ${coach ? `${coach.nombre} ${coach.apellido}` : 'Sin profesor'}</div>
         </div>
         ${badge(x.etiqueta, x.color)}
       </div>
