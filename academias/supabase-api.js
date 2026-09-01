@@ -184,7 +184,19 @@ window.AcademiasDB = (() => {
     },
     async invitar(email, rol, sedeId) {
       const { data, error } = await sb.rpc('invitar_usuario', { p_email: email, p_rol: rol, p_sede: sedeId || null });
-      if (error) throw error; return data;
+      if (error) throw error;
+      const mailError = await this.enviarAcceso(email);   // correo con enlace de acceso directo
+      return { id: data, mailError };
+    },
+    // Envía (o reenvía) el correo de acceso: enlace mágico que abre la app ya
+    // autenticado; al entrar, aceptar_invitacion() lo une a la academia.
+    // No toca la sesión del admin que lo dispara.
+    async enviarAcceso(email) {
+      const { error } = await sb.auth.signInWithOtp({
+        email: String(email).trim(),
+        options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true },
+      });
+      return error ? error.message : null;
     },
     async revocar(id) {
       const { error } = await sb.rpc('revocar_invitacion', { p_id: id });

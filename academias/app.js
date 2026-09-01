@@ -2812,7 +2812,7 @@ const CONFIG_TABS = {
     el('configTab').innerHTML = `
       <div class="max-w-2xl">
         <h3 class="font-semibold mb-1">Invitar usuario</h3>
-        <p class="text-xs text-slate-500 mb-3">La persona debe registrarse (o entrar con Google) en la app con este correo; al entrar se unirá automáticamente a tu academia con el rol asignado.</p>
+        <p class="text-xs text-slate-500 mb-3">Al invitar, la persona <b>recibe un correo con un enlace de acceso directo</b>; al abrirlo entra a la app y se une automáticamente a tu academia con el rol asignado. También puede registrarse o entrar con Google usando ese mismo correo.</p>
         <form onsubmit="enviarInvitacion(event)" class="mb-6 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
           <input id="inv_email" type="email" required placeholder="correo@ejemplo.com" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <select id="inv_rol" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
@@ -2936,7 +2936,10 @@ async function renderUsuarios() {
               <div class="text-sm text-slate-800 truncate">${i.email}</div>
               <div class="text-xs text-slate-400">${ROL_LABEL[i.rol] || i.rol} · ${sedeNom(i.sede_id)} · ${fmtDMY(i.created_at.slice(0, 10))}</div>
             </div>
-            <button onclick="revocarInvitacionUI('${i.id}')" class="text-xs text-rose-500 hover:text-rose-700 shrink-0">Revocar</button>
+            <span class="flex shrink-0 gap-3">
+              <button onclick="reenviarCorreoInvitacion('${i.email}')" class="text-xs text-indigo-600 hover:underline">Reenviar correo</button>
+              <button onclick="revocarInvitacionUI('${i.id}')" class="text-xs text-rose-500 hover:text-rose-700">Revocar</button>
+            </span>
           </div>`).join('')}
       </div>` : '<p class="text-sm text-slate-400">Sin invitaciones pendientes.</p>'}`;
   } catch (e) {
@@ -2946,11 +2949,18 @@ async function renderUsuarios() {
 window.enviarInvitacion = async (ev) => {
   ev.preventDefault();
   try {
-    await AcademiasDB.usuarios.invitar(el('inv_email').value.trim(), el('inv_rol').value, el('inv_sede').value || null);
+    const email = el('inv_email').value.trim();
+    const r = await AcademiasDB.usuarios.invitar(email, el('inv_rol').value, el('inv_sede').value || null);
     el('inv_email').value = '';
-    toast('Invitación registrada ✓ Pídele que entre a la app con ese correo');
+    toast(r.mailError
+      ? `Invitación registrada, pero el correo no se pudo enviar (${r.mailError}). Usa "Reenviar correo" en unos minutos.`
+      : `✓ Invitación registrada y correo de acceso enviado a ${email}`);
     renderUsuarios();
   } catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
+};
+window.reenviarCorreoInvitacion = async (email) => {
+  const err = await AcademiasDB.usuarios.enviarAcceso(email);
+  toast(err ? '⚠ No se pudo enviar: ' + err : `✓ Correo de acceso reenviado a ${email}`);
 };
 window.revocarInvitacionUI = async (id) => {
   try { await AcademiasDB.usuarios.revocar(id); toast('Invitación revocada'); renderUsuarios(); }
