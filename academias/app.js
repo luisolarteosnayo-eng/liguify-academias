@@ -351,6 +351,7 @@ let SCREEN = 'dashboard';
 let CONFIG_TAB = 'perfil';
 let SEDE_EDIT = null;          // id de sede en edición (o null)
 let SEDE_CABECERA = null;      // dataURL de la cabecera de la sede en edición
+let SEDE_LOGO = null;          // dataURL del logo de la sede en edición
 let CNR_EDIT = null;           // id de concepto CNR en edición (o null)
 let MP_EDIT = null;            // id de medio de pago en edición (o null)
 let CICLO_EDIT = null;         // id de ciclo de pago en edición (o null)
@@ -2579,7 +2580,7 @@ window.obGuardar = (e, tid) => {
 // =====================================================================
 // CONFIGURACIÓN (Módulo I) — pestañas
 // =====================================================================
-window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; STAFF_EDIT = null; SCREENS.config(); };
+window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; STAFF_EDIT = null; SCREENS.config(); };
 
 const stub = (txt) => `<div class="rounded-xl border-2 border-dashed border-slate-200 p-10 text-center text-slate-400">${txt}<br><span class="text-xs">Próximamente</span></div>`;
 
@@ -2659,6 +2660,17 @@ const CONFIG_TABS = {
           <div class="grid grid-cols-2 gap-3">
             ${field('Teléfono', input('sd_tel', `value="${g('telefono_coordinador')}" placeholder="+51 999 999 999"`))}
             ${field('Google Maps URL', input('sd_maps', `value="${g('google_maps_url')}" placeholder="https://maps.google.com/..."`))}
+          </div>
+          <div class="mb-3">
+            <span class="block text-xs font-medium text-slate-500 mb-1">Logo de la sede</span>
+            <div class="flex items-center gap-3">
+              ${SEDE_LOGO ? `<img src="${SEDE_LOGO}" class="h-14 w-14 rounded-lg ring-1 ring-slate-200 object-cover">` : '<div class="flex h-14 w-14 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 text-xs text-slate-400">📍</div>'}
+              <label class="cursor-pointer text-sm font-medium text-indigo-600 hover:underline">
+                ${SEDE_LOGO ? 'Cambiar logo' : 'Subir logo'}
+                <input type="file" accept="image/*" class="hidden" onchange="cambiarLogoSede(this)">
+                <div class="text-xs font-normal text-slate-400">Se muestra junto al selector de sede en toda la app</div>
+              </label>
+            </div>
           </div>
           <div class="mb-3">
             <span class="block text-xs font-medium text-slate-500 mb-1">Cabecera del estado de cuenta</span>
@@ -3091,12 +3103,18 @@ window.cambiarCabeceraSede = (inp) => {
   r.onload = () => { SEDE_CABECERA = r.result; SCREENS.config(); };
   r.readAsDataURL(f);
 };
+window.cambiarLogoSede = (inp) => {
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { SEDE_LOGO = r.result; SCREENS.config(); };
+  r.readAsDataURL(f);
+};
 window.guardarSedeInline = (e) => {
   e.preventDefault();
   const data = {
     nombre_sede: val('sd_nombre'), direccion1: val('sd_dir1'), direccion2: val('sd_dir2'),
     ciudad: val('sd_ciudad'), pais: val('sd_pais'), codigo_postal: val('sd_cp'),
-    telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'), cabecera_url: SEDE_CABECERA,
+    telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'), cabecera_url: SEDE_CABECERA, logo_url: SEDE_LOGO,
   };
   if (SEDE_EDIT) {
     Object.assign(sede(SEDE_EDIT), data); SEDE_EDIT = null; toast('Sede actualizada');
@@ -3104,6 +3122,7 @@ window.guardarSedeInline = (e) => {
     DB.sedes.push({ id: uid('s'), activo: true, ...data }); toast('Sede agregada');
   }
   SEDE_CABECERA = null;
+  SEDE_LOGO = null;
   renderSedeSelect(); SCREENS.config();
 };
 window.toggleSedeActiva = (id) => {
@@ -3115,8 +3134,8 @@ window.toggleSedeActiva = (id) => {
   toast(s.activo ? `Sede ${s.nombre_sede} activada` : `Sede ${s.nombre_sede} inactivada · sus datos salen de dashboards y reportes`);
   SCREENS.config();
 };
-window.editarSede = (id) => { SEDE_EDIT = id; SEDE_CABECERA = (sede(id) && sede(id).cabecera_url) || null; SCREENS.config(); };
-window.cancelSedeEdit = () => { SEDE_EDIT = null; SEDE_CABECERA = null; SCREENS.config(); };
+window.editarSede = (id) => { SEDE_EDIT = id; SEDE_CABECERA = (sede(id) && sede(id).cabecera_url) || null; SEDE_LOGO = (sede(id) && sede(id).logo_url) || null; SCREENS.config(); };
+window.cancelSedeEdit = () => { SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; SCREENS.config(); };
 window.eliminarSede = (id) => {
   const usados = DB.tracks.filter((t) => t.sede_id === id).length;
   if (usados) { toast(`No se puede eliminar: la sede tiene ${usados} track(s)`); return; }
@@ -3434,6 +3453,15 @@ function renderSedeSelect() {
       .map((s) => `<option value="${s.id}" ${s.id === SEDE_ACTUAL ? 'selected' : ''}>${s.nombre_sede}</option>`)
       .join('');
   }
+  // Logo de la sede consultada, junto al selector (📍 si no tiene o si es "Todas")
+  const logoBox = el('sedeLogoBox');
+  if (logoBox) {
+    const sId = SCREEN === 'dashboard' ? DASH_SEDE : SEDE_ACTUAL;
+    const s = sId && sede(sId);
+    logoBox.innerHTML = s && s.logo_url
+      ? `<img src="${s.logo_url}" alt="${s.nombre_sede}" class="h-8 w-8 rounded-lg object-cover ring-1 ring-slate-200">`
+      : '📍';
+  }
 }
 
 // =====================================================================
@@ -3446,6 +3474,7 @@ function bootApp() {
     if (SCREEN === 'dashboard') {
       DASH_SEDE = v;                    // '' = Todas las sedes
       if (v) SEDE_ACTUAL = v;           // elegir una sede también fija el contexto operativo
+      renderSedeSelect();               // refresca el logo de la sede en el header
       SCREENS.dashboard();
     } else {
       SEDE_ACTUAL = v; TRACK_SEL = null; go(SCREEN);
