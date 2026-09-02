@@ -278,7 +278,9 @@ function statsTrack(t) {
   const ratio = puntoEquilibrio ? insc.length / puntoEquilibrio : 0;
   const color = rentable ? 'emerald' : ratio >= 0.5 ? 'amber' : 'rose';
   const etiqueta = rentable ? 'Track Rentable' : ratio >= 0.5 ? 'Operando a pérdida' : 'Déficit crítico';
-  return { insc, costoOperacion, puntoEquilibrio, ingresos, utilidad, rentable, color, etiqueta, cuposLibres, potencial };
+  // CR promedio: suma de precios efectivos por alumno ÷ alumnos del track
+  const crPromedio = insc.length ? ingresos / insc.length : 0;
+  return { insc, costoOperacion, puntoEquilibrio, ingresos, utilidad, rentable, color, etiqueta, cuposLibres, potencial, crPromedio };
 }
 
 // ---------- Almacén: stock derivado del kardex (ingresos − salidas) ----------
@@ -1082,6 +1084,10 @@ function trackCard(t) {
         <span class="font-semibold text-${x.color}-600">${S(x.utilidad)}</span>
       </div>
       <div class="mt-1 flex justify-between text-xs">
+        <span class="text-slate-400">CR promedio</span>
+        <span class="font-medium text-slate-600">${x.insc.length ? S(x.crPromedio) : '—'}</span>
+      </div>
+      <div class="mt-1 flex justify-between text-xs">
         <span class="text-slate-400">Potencial adicional</span>
         <span class="font-medium ${x.potencial > 0 ? 'text-indigo-600' : 'text-slate-400'}">${x.potencial > 0 ? `+${S(x.potencial)} · ${x.cuposLibres} cupo(s)` : 'Aforo completo'}</span>
       </div>
@@ -1148,9 +1154,10 @@ function renderTrackDetalle() {
       </div>
       <button onclick="formAgregarAlumno('${t.id}')" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Agregar alumno</button>
     </div>
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       ${card('Profesor', coach ? `<span class="text-lg">${coach.nombre} ${coach.apellido}</span>` : '<span class="text-lg text-slate-400">Sin asignar</span>', coach ? (coach.rol === 'coordinador' ? 'Coordinador' : 'Profesor') : '')}
       ${card('Alumnos', `${insc.length} <span class="text-sm font-normal text-slate-400">/ ${t.capacidad_maxima}</span>`, `equilibrio: ${st.puntoEquilibrio} alumnos`)}
+      ${card('CR promedio', insc.length ? S(st.crPromedio) : '—', `mensualidad sugerida ${S(t.mensualidad_sugerida)}`)}
       ${card('Rentabilidad', `<span class="${utilCls}">${st.utilidad >= 0 ? '' : '−'}${S(Math.abs(st.utilidad))}</span>`, `ingresos ${S(st.ingresos)} − costos ${S(st.costoOperacion)}`)}
       ${card('Costo profesores', S(t.costo_mensual_profesores), 'mensual')}
       ${card('Costo cancha', S(t.costo_mensual_cancha), 'mensual')}
