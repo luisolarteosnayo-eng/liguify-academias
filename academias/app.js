@@ -355,6 +355,7 @@ let CICLO_EDIT = null;         // id de ciclo de pago en edición (o null)
 let PROMO_EDIT = null;         // id de promoción en edición (o null)
 let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
 let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (o null)
+let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto en la pestaña Tracks
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 const nombreCiclo = (c) => c ? `Ciclo al ${c.dia}` : '';
 let SEDE_ACTUAL = 's1';        // sede activa: cada sede se opera de forma independiente
@@ -1284,8 +1285,8 @@ function njFormBody(j, tracksJid) {
       </label>
     </div>
     <div class="flex flex-wrap gap-1 border-b border-slate-200 mb-4 text-xs">
-      ${['cuenta', 'tracks', 'pagos', 'torneos'].filter(() => showTracks).map((id) => {
-        const lbl = { cuenta: '💳 Cuenta', tracks: '🎯 Tracks', pagos: '🧾 Pagos', torneos: '🏆 Torneos' }[id];
+      ${['cuenta', 'tracks', 'cnr', 'pagos', 'torneos'].filter(() => showTracks).map((id) => {
+        const lbl = { cuenta: '💳 Cuenta', tracks: '🎯 Tracks', cnr: '🏷️ CNR', pagos: '🧾 Historial de Pagos', torneos: '🏆 Torneos' }[id];
         return `<button type="button" id="njt_${id}" onclick="njTab('${id}')" class="px-2.5 py-2 -mb-px border-b-2 ${id === act ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">${lbl}</button>`;
       }).join('')}
       <button type="button" id="njt_personal" onclick="njTab('personal')" class="px-2.5 py-2 -mb-px border-b-2 ${act === 'personal' ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">👤 Personal</button>
@@ -1294,6 +1295,7 @@ function njFormBody(j, tracksJid) {
     </div>
     ${showTracks ? `<div id="nj_cuenta" class="${hide('cuenta')}">${estadoCuentaHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_tracks" class="${hide('tracks')}">${fichaTracksHTML(tracksJid)}</div>` : ''}
+    ${showTracks ? `<div id="nj_cnr" class="${hide('cnr')}">${cnrFormHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_pagos" class="${hide('pagos')}">${pagosDocsHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_torneos" class="${hide('torneos')}">${torneosAlumnoHTML(tracksJid)}</div>` : ''}
     <div id="nj_personal" class="${hide('personal')}">
@@ -1374,20 +1376,26 @@ function fichaTracksHTML(jid) {
     const t = track(i.track_id);
     const efect = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
     const beca = i.costo_mensual_personalizado != null && i.costo_mensual_personalizado !== t.mensualidad_sugerida;
-    return `<div class="flex items-center justify-between rounded-lg ring-1 ring-slate-200 px-3 py-2 text-sm">
-      <div>
-        <b>${t.nombre_track}</b> <span class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</span>
-        <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)'}</div>
+    return `<div class="rounded-lg ring-1 ring-slate-200 px-3 py-2 text-sm">
+      <div class="flex items-center justify-between">
+        <div>
+          <b>${t.nombre_track}</b> <span class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</span>
+          <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)'}</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">S/</span>
+          <input type="number" step="0.01" value="${efect}" onchange="editarCostoTrack('${i.id}','${jid}',this.value)"
+            class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right ${beca ? 'text-indigo-600 font-medium' : ''}">
+          ${beca ? `<span class="line-through text-slate-400 text-xs" title="Mensualidad sugerida">${S(t.mensualidad_sugerida)}</span>` : ''}
+          <button type="button" onclick="mostrarFormCR('${i.id}','${jid}')" class="rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">+ CR</button>
+          <button type="button" onclick="quitarInscripcion('${i.id}','${jid}')" class="text-rose-600 hover:underline text-xs">Quitar</button>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-slate-400">S/</span>
-        <input type="number" step="0.01" value="${efect}" onchange="editarCostoTrack('${i.id}','${jid}',this.value)"
-          class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right ${beca ? 'text-indigo-600 font-medium' : ''}">
-        ${beca ? `<span class="line-through text-slate-400 text-xs" title="Mensualidad sugerida">${S(t.mensualidad_sugerida)}</span>` : ''}
-        <button type="button" onclick="quitarInscripcion('${i.id}','${jid}')" class="text-rose-600 hover:underline text-xs">Quitar</button>
-      </div>
+      ${FICHA_CR_INSC === i.id ? crFormPanelHTML(i, jid) : ''}
     </div>`;
   }).join('') || '<p class="text-xs text-slate-400">Sin tracks asignados. Agrégalo abajo.</p>';
+  const promoLink = insc.length && DB.promociones.some((p) => p.activo)
+    ? `<div class="mt-2"><button type="button" onclick="formPromo('${jid}')" class="text-xs text-indigo-600 hover:underline">🎁 Aplicar promoción (genera varios CR)</button></div>` : '';
 
   const yaIds = new Set(insc.map((i) => i.track_id));
   const disp = tracksSede().filter((t) => !yaIds.has(t.id));
@@ -1407,7 +1415,7 @@ function fichaTracksHTML(jid) {
          </div>
        </div>`
     : '<p class="mt-3 text-xs text-slate-400">El alumno ya está en todos los tracks de la sede.</p>';
-  return `<div class="space-y-2">${lista}</div>${addForm}`;
+  return `<div class="space-y-2">${lista}</div>${promoLink}${addForm}`;
 }
 window.renderFichaTracks = (jid) => { if (el('nj_tracks')) el('nj_tracks').innerHTML = fichaTracksHTML(jid); };
 window.quitarInscripcion = (iid, jid) => {
@@ -1465,16 +1473,6 @@ function estadoCuentaHTML(jid) {
     ];
   });
 
-  const cnrCat = DB.conceptosCNR.filter((c) => c.activo);
-  const inscAct = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
-  const firstI = inscAct[0];
-  const firstMonto = firstI ? (firstI.costo_mensual_personalizado ?? track(firstI.track_id).mensualidad_sugerida) : 0;
-  const ciclos = DB.ciclosPago.filter((c) => c.activo);
-  const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
-  const firstInicio = firstI ? inicioCR(firstI) : '';
-  const firstFin = firstInicio ? finCR(firstInicio) : '';
-  const firstVenc = (firstInicio && cicloDef && cicloDef.dia_venc) ? fechaVencimiento(firstInicio, cicloDef.dia_venc) : '';
-
   return `
     <div class="mb-4 rounded-xl p-4 ${saldo > 0 ? 'bg-rose-50' : saldo < 0 ? 'bg-emerald-50' : 'bg-slate-50'}">
       <div class="text-xs text-slate-500">Saldo actual</div>
@@ -1505,33 +1503,51 @@ function estadoCuentaHTML(jid) {
         </div>
       </div>`;
     })()}
-    <div class="mt-3 space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
-      <div class="text-xs font-medium text-slate-500">Agregar cargo recurrente (CR) — manual</div>
-      ${inscAct.length && ciclos.length ? `
-        <div class="flex gap-2">
-          <select id="cr_track" onchange="crAutoDatos(true)" class="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
-            ${inscAct.map((i) => `<option value="${i.id}">${track(i.track_id).nombre_track}</option>`).join('')}
-          </select>
-          <input id="cr_monto" readonly value="${firstMonto}" title="Monto fijo del track (no editable)"
-            class="w-24 rounded border border-slate-300 bg-slate-100 px-2 py-1.5 text-sm text-right text-slate-600">
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="text-xs text-slate-500 shrink-0">Inicio</label>
-          <input id="cr_inicio" type="date" value="${firstInicio}" onchange="crAutoDatos()"
-            class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
-          <select id="cr_ciclo" onchange="crAutoDatos()" title="Define el día de vencimiento" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
-            ${ciclos.map((c) => `<option value="${c.id}" ${c === cicloDef ? 'selected' : ''}>${nombreCiclo(c)}${c.dia_venc ? ` · vence ${c.dia_venc}` : ''}</option>`).join('')}
-          </select>
-        </div>
-        <div class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(firstInicio)} al ${fmtDMY(firstFin)}${firstVenc ? ` · vence ${fmtDMY(firstVenc)}` : ''}</b></div>
-        <input type="hidden" id="cr_fin" value="${firstFin}">
-        <div class="flex gap-2">
-          <input id="cr_desc" placeholder="Descripción (opc.)" class="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm">
-          <button type="button" onclick="agregarCR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
-        </div>`
-        : (inscAct.length ? '<p class="text-xs text-slate-400">No hay ciclos de pago. Créalos en Configuración → Ciclos de pago.</p>' : '<p class="text-xs text-slate-400">El alumno no tiene tracks. Asígnalo en la pestaña Tracks.</p>')}
-      ${inscAct.length && DB.promociones.some((p) => p.activo) ? `<div><button type="button" onclick="formPromo('${jid}')" class="text-xs text-indigo-600 hover:underline">🎁 Aplicar promoción (genera varios CR)</button></div>` : ''}
-      <hr class="border-slate-200 my-2">
+    <p class="mt-3 text-xs text-slate-400">Los cargos se agregan desde las pestañas <b>Tracks</b> (CR) y <b>CNR</b>.</p>`;
+}
+
+// Panel para agregar un CR de UNA inscripción (pestaña Tracks de la ficha)
+function crFormPanelHTML(i, jid) {
+  const ciclos = DB.ciclosPago.filter((c) => c.activo);
+  const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
+  if (!ciclos.length) return '<p class="mt-2 text-xs text-slate-400">No hay ciclos de pago. Créalos en Configuración → Ciclos de pago.</p>';
+  const t = track(i.track_id);
+  const monto = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
+  const inicio = inicioCR(i);
+  const fin = finCR(inicio);
+  const venc = cicloDef && cicloDef.dia_venc ? fechaVencimiento(inicio, cicloDef.dia_venc) : '';
+  return `
+  <div class="mt-2 space-y-2 rounded-lg bg-indigo-50/70 ring-1 ring-indigo-200 p-3">
+    <div class="text-xs font-medium text-indigo-700">Agregar CR · ${t.nombre_track} · ${S(monto)}</div>
+    <input type="hidden" id="cr_track" value="${i.id}">
+    <input type="hidden" id="cr_monto" value="${monto}">
+    <input type="hidden" id="cr_fin" value="${fin}">
+    <div class="flex items-center gap-2">
+      <label class="text-xs text-slate-500 shrink-0">Inicio</label>
+      <input id="cr_inicio" type="date" value="${inicio}" onchange="crAutoDatos()"
+        class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+      <select id="cr_ciclo" onchange="crAutoDatos()" title="Define el día de vencimiento" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+        ${ciclos.map((c) => `<option value="${c.id}" ${c === cicloDef ? 'selected' : ''}>${nombreCiclo(c)}${c.dia_venc ? ` · vence ${c.dia_venc}` : ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${venc ? ` · vence ${fmtDMY(venc)}` : ''}</b></div>
+    <div class="flex gap-2">
+      <input id="cr_desc" placeholder="Descripción (opc.)" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm">
+      <button type="button" onclick="cancelarFormCR('${jid}')" class="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
+      <button type="button" onclick="agregarCR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
+    </div>
+  </div>`;
+}
+window.mostrarFormCR = (iid, jid) => { FICHA_CR_INSC = iid; renderFichaTracks(jid); };
+window.cancelarFormCR = (jid) => { FICHA_CR_INSC = null; renderFichaTracks(jid); };
+
+// Pestaña CNR de la ficha: agregar CNR + historial de CNRs del alumno
+function cnrFormHTML(jid) {
+  const cnrCat = DB.conceptosCNR.filter((c) => c.activo);
+  const cnrs = DB.cargos.filter((c) => c.jugador_id === jid && c.tipo === 'CNR');
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  return `
+    <div class="space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 mb-4">
       <div class="text-xs font-medium text-slate-500">Agregar cargo no recurrente (CNR)</div>
       ${cnrCat.length ? `
         <div class="flex gap-2">
@@ -1549,8 +1565,14 @@ function estadoCuentaHTML(jid) {
           <input id="cnr_desc" placeholder="Descripción (opc.)" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm">
           <button type="button" onclick="agregarCNR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
         </div>` : '<p class="text-xs text-slate-400">No hay conceptos CNR. Créalos en Configuración → Conceptos CNR.</p>'}
-    </div>`;
+    </div>
+    <div class="text-xs font-medium text-slate-500 mb-2">CNRs del alumno (${cnrs.length})</div>
+    ${cnrs.length ? table(['Concepto', 'Vence', 'Monto', 'Estado'],
+      cnrs.map((c) => [descCargo(c), c.fecha_vencimiento ? fmtDMY(c.fecha_vencimiento) : '—', S(c.monto),
+        c.estado === 'pagado' ? badge('Pagado', 'emerald') : saldoC(c) > 0 && c.fecha_vencimiento && c.fecha_vencimiento < HOY ? badge('Vencido', 'rose') : badge('Por pagar', 'amber')]))
+      : '<p class="text-sm text-slate-400">Sin CNRs registrados.</p>'}`;
 }
+window.renderFichaCNR = (jid) => { if (el('nj_cnr')) el('nj_cnr').innerHTML = cnrFormHTML(jid); };
 window.renderCuenta = (jid) => { if (el('nj_cuenta')) el('nj_cuenta').innerHTML = estadoCuentaHTML(jid); };
 // ---------- Modificar CR (solo coordinador/admin): vencimiento y monto ----------
 window.editarCRForm = (cid, jid) => { CR_EDIT_ID = cid; renderCuenta(jid); };
@@ -1571,6 +1593,7 @@ window.eliminarCargoCNR = (cid, jid) => {
   }
   CR_EDIT_ID = null;
   toast(salida ? 'Cargo eliminado · stock devuelto al almacén' : 'Cargo eliminado');
+  renderFichaCNR(jid);
   renderCuenta(jid);
 };
 window.cancelarEdicionCR = (jid) => { CR_EDIT_ID = null; renderCuenta(jid); };
@@ -1621,7 +1644,10 @@ window.agregarCR = (jid) => {
   DB.cargos.push(cargo);
   i.ultima_fecha_corte = fin;             // actualiza la última fecha de corte del CR
   i.ciclo_dia = ciclo ? ciclo.dia : null; // recuerda el ciclo elegido en la inscripción
-  toast(`CR generado · ${t.nombre_track} (corte ${fmtDMY(fin)})`); renderCuenta(jid);
+  toast(`CR generado · ${t.nombre_track} (corte ${fmtDMY(fin)})`);
+  FICHA_CR_INSC = null;
+  renderFichaTracks(jid);
+  renderCuenta(jid);
 };
 
 // ---------- Aplicar promoción (genera la secuencia de CR) ----------
@@ -1793,6 +1819,7 @@ window.agregarCNR = (jid) => {
   } else {
     toast('Cargo CNR agregado');
   }
+  renderFichaCNR(jid);
   renderCuenta(jid);
 };
 // Registrar pago: selecciona CR/CNR pendientes, medio, N° operación y voucher
@@ -2042,6 +2069,7 @@ window.formEditarAlumno = (jid) => {
   if (!j) return;
   NJ_FOTO = j.foto_url || null;
   CR_EDIT_ID = null;
+  FICHA_CR_INSC = null;
   openModal(nom(j), `
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
@@ -2088,7 +2116,7 @@ window.toggleBajaAlumno = (jid) => {
 };
 
 window.njTab = (name) => {
-  ['tracks', 'cuenta', 'pagos', 'torneos', 'personal', 'deportiva', 'academia'].forEach((s) => {
+  ['tracks', 'cuenta', 'cnr', 'pagos', 'torneos', 'personal', 'deportiva', 'academia'].forEach((s) => {
     const sec = el('nj_' + s);
     if (sec) sec.classList.toggle('hidden', s !== name);
     const btn = el('njt_' + s);
