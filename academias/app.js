@@ -490,13 +490,15 @@ const SCREENS = {
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Salud de tracks (break-even)</h3>
       ${(() => {
         // Resumen: utilidad total por sede + total general de los tracks mostrados
+        const todosIds = new Set();   // alumnos únicos (uno con 2 tracks cuenta una vez)
         const filas = sedesDash.map((s) => {
           const tks = tracksDash.filter((t) => t.sede_id === s.id);
-          const st = tks.reduce((a, t) => { const x = statsTrack(t); a.u += x.utilidad; a.al += x.insc.length; a.pot += x.potencial; return a; }, { u: 0, al: 0, pot: 0 });
-          return { nombre: s.nombre_sede, n: tks.length, al: st.al, u: st.u, pot: st.pot };
+          const ids = new Set();
+          const st = tks.reduce((a, t) => { const x = statsTrack(t); x.insc.forEach((i) => { ids.add(i.jugador_id); todosIds.add(i.jugador_id); }); a.u += x.utilidad; a.pot += x.potencial; return a; }, { u: 0, pot: 0 });
+          return { nombre: s.nombre_sede, n: tks.length, al: ids.size, u: st.u, pot: st.pot };
         }).filter((f) => f.n > 0);
         const totU = filas.reduce((s, f) => s + f.u, 0);
-        const totAl = filas.reduce((s, f) => s + f.al, 0);
+        const totAl = todosIds.size;
         const totPot = filas.reduce((s, f) => s + f.pot, 0);
         const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S(Math.abs(u))}</b>`;
         const fmtPot = (p) => `<span class="text-xs ${p > 0 ? 'text-indigo-600' : 'text-slate-400'}">${p > 0 ? `potencial +${S(p)}` : 'aforo completo'}</span>`;
@@ -673,8 +675,10 @@ const SCREENS = {
   tracks() {
     if (TRACK_SEL) { renderTrackDetalle(); return; }
     // Dashboard de la sede: totales de todos sus tracks
+    const unicos = new Set();   // un alumno con 2 tracks cuenta una sola vez
     const tot = tracksSede().reduce((a, t) => {
       const st = statsTrack(t);
+      st.insc.forEach((i) => unicos.add(i.jugador_id));
       a.util += st.utilidad; a.ing += st.ingresos; a.cos += st.costoOperacion;
       a.al += st.insc.length; a.cap += (+t.capacidad_maxima || 0); a.n++;
       a.pot += st.potencial; a.cupos += st.cuposLibres;
@@ -686,8 +690,8 @@ const SCREENS = {
       <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:max-w-4xl">
         ${card('Utilidad total', `<span class="${utilCls}">${tot.util < 0 ? '−' : ''}${S(Math.abs(tot.util))}</span>`,
           `ingresos ${S(tot.ing)} − costos ${S(tot.cos)}`)}
-        ${card('Alumnos', `${tot.al} <span class="text-sm font-normal text-slate-400">/ ${tot.cap}</span>`,
-          `${ocup}% de ocupación · ${tot.n} track(s)`)}
+        ${card('Alumnos', `${unicos.size}`,
+          `${tot.al}/${tot.cap} cupos ocupados · ${ocup}% · ${tot.n} track(s)`)}
         ${card('Potencial adicional', `<span class="text-indigo-600">+${S(tot.pot)}</span>`,
           `${tot.cupos} cupo(s) por vender`)}
       </div>
