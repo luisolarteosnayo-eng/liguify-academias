@@ -399,6 +399,7 @@ function go(screen) {
   SCREEN = item && item.roles.includes(ROL) ? screen : 'dashboard';
   el('pageTitle').textContent = (MENU.find((m) => m.id === SCREEN) || {}).label || '';
   renderNav();
+  renderSedeSelect();   // el selector cambia de modo entre Dashboard y pantallas operativas
   SCREENS[SCREEN]();
 }
 
@@ -455,14 +456,7 @@ const SCREENS = {
     const totalPorCobrar = porCobrarItems.reduce((s, d) => s + d.monto, 0);
 
     el('content').innerHTML = `
-      <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <label class="flex items-center gap-2 text-sm">
-          <span class="text-slate-500">Sede</span>
-          <select id="dashSede" onchange="dashSet('sede', this.value)" class="rounded-lg border border-slate-300 px-3 py-2 bg-white text-sm">
-            <option value="" ${DASH_SEDE === '' ? 'selected' : ''}>Todas</option>
-            ${sedesActivas().map((s) => `<option value="${s.id}" ${DASH_SEDE === s.id ? 'selected' : ''}>${s.nombre_sede}</option>`).join('')}
-          </select>
-        </label>
+      <div class="mb-3 flex justify-end">
         <div class="inline-flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-sm">
           <button onclick="dashSet('periodo','mes')" class="px-3 py-2 ${DASH_PERIODO === 'mes' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Mes actual</button>
           <button onclick="dashSet('periodo','anterior')" class="px-3 py-2 ${DASH_PERIODO === 'anterior' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Mes anterior</button>
@@ -3417,9 +3411,18 @@ window.toggleNav = (open) => {
 function renderSedeSelect() {
   const activas = sedesActivas();
   if (!activas.some((s) => s.id === SEDE_ACTUAL)) SEDE_ACTUAL = activas[0] ? activas[0].id : null;
-  el('sedeSelect').innerHTML = activas
-    .map((s) => `<option value="${s.id}" ${s.id === SEDE_ACTUAL ? 'selected' : ''}>${s.nombre_sede}</option>`)
-    .join('');
+  // En el Dashboard el mismo selector filtra y ofrece "Todas las sedes";
+  // en las demás pantallas es la sede operativa (siempre una concreta).
+  if (SCREEN === 'dashboard') {
+    if (DASH_SEDE && !activas.some((s) => s.id === DASH_SEDE)) DASH_SEDE = '';
+    el('sedeSelect').innerHTML = `<option value="" ${DASH_SEDE === '' ? 'selected' : ''}>🌐 Todas las sedes</option>` + activas
+      .map((s) => `<option value="${s.id}" ${s.id === DASH_SEDE ? 'selected' : ''}>${s.nombre_sede}</option>`)
+      .join('');
+  } else {
+    el('sedeSelect').innerHTML = activas
+      .map((s) => `<option value="${s.id}" ${s.id === SEDE_ACTUAL ? 'selected' : ''}>${s.nombre_sede}</option>`)
+      .join('');
+  }
 }
 
 // =====================================================================
@@ -3427,7 +3430,16 @@ function renderSedeSelect() {
 // =====================================================================
 function bootApp() {
   el('rolSelect').addEventListener('change', (e) => { ROL = e.target.value; TRACK_SEL = null; go(SCREEN); });
-  el('sedeSelect').addEventListener('change', (e) => { SEDE_ACTUAL = e.target.value; TRACK_SEL = null; go(SCREEN); });
+  el('sedeSelect').addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (SCREEN === 'dashboard') {
+      DASH_SEDE = v;                    // '' = Todas las sedes
+      if (v) SEDE_ACTUAL = v;           // elegir una sede también fija el contexto operativo
+      SCREENS.dashboard();
+    } else {
+      SEDE_ACTUAL = v; TRACK_SEL = null; go(SCREEN);
+    }
+  });
   renderSedeSelect();
   renderNav();
   go('dashboard');
