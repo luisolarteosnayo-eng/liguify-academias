@@ -390,7 +390,7 @@ function renderNav() {
   el('nav').innerHTML = MENU.filter((m) => m.roles.includes(ROL)).map((m) => `
     <button data-screen="${m.id}"
       class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left
-             ${SCREEN === m.id ? 'bg-[#4F86C6] text-white font-medium' : 'text-blue-100 hover:bg-white/10'}">
+             ${SCREEN === m.id ? 'bg-brand-500 text-white font-bold' : 'text-white/70 hover:bg-white/10 hover:text-white'}">
       <span>${m.icon}</span><span>${m.label}</span>
     </button>`).join('');
   el('nav').querySelectorAll('button').forEach((b) =>
@@ -978,7 +978,7 @@ window.dashSet = (key, val) => {
 };
 function chartNuevosPorDia(nuevos) {
   if (!nuevos.length) return '<div class="rounded-xl bg-white ring-1 ring-slate-200 p-6 text-center text-sm text-slate-400">Sin registros en el periodo.</div>';
-  const palette = ['#6366f1', '#f59e0b', '#94a3b8', '#10b981', '#ec4899', '#0ea5e9'];
+  const palette = ['#d9232e', '#171e2e', '#8b93a7', '#10b981', '#f59e0b', '#0ea5e9'];
   const sedeIds = DB.sedes.map((s) => s.id).filter((sid) => nuevos.some((j) => j.sede_id === sid));
   const colorDe = {}; sedeIds.forEach((sid, i) => { colorDe[sid] = palette[i % palette.length]; });
   const dias = [...new Set(nuevos.map((j) => j.fecha_registro))].sort();
@@ -1025,7 +1025,7 @@ function donaPorCategoria(items, emptyMsg) {
   const cats = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
   if (!cats.length) return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-6 text-center text-sm text-slate-400">${emptyMsg}</div>`;
   const total = cats.reduce((s, c) => s + totals[c], 0);
-  const palette = ['#6366f1', '#f59e0b', '#10b981', '#ec4899', '#0ea5e9', '#94a3b8'];
+  const palette = ['#d9232e', '#171e2e', '#f59e0b', '#10b981', '#0ea5e9', '#8b93a7'];
   const cx = 90, cy = 90, r = 82, rInner = 50;
   const rad = (a) => ((a - 90) * Math.PI) / 180;
   let acc = 0;
@@ -3572,8 +3572,8 @@ async function entrarConectado() {
       if (idBox) {
         idBox.classList.remove('hidden');
         idBox.innerHTML = `
-          <div class="text-[11px] uppercase tracking-wide text-blue-300 mb-0.5">${({admin:'Administrador / Director',coordinador:'Coordinador / Recepción',tesorero:'Tesorero / Caja',profesor:'Profesor'})[PERFIL.rol] || PERFIL.rol}</div>
-          <div class="text-xs text-blue-100 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
+          <div class="text-[11px] uppercase tracking-wide text-white/50 mb-0.5">${({admin:'Administrador / Director',coordinador:'Coordinador / Recepción',tesorero:'Tesorero / Caja',profesor:'Profesor'})[PERFIL.rol] || PERFIL.rol}</div>
+          <div class="text-xs text-white/80 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
       }
     }
     SEDE_ACTUAL = (PERFIL && PERFIL.sede_id && sedesActivas().some((s) => s.id === PERFIL.sede_id))

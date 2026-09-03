@@ -5,19 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Liguify Academias — Gestión de Academias</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <script>
-    // Identidad Liguify (misma paleta que Liguify Torneos): se redefine "indigo"
-    // a los azules de la marca para que toda la app cambie de estilo de una vez.
+    // Identidad Liguify Competencias (Torneos SaaS): rojo de marca, tinta oscura,
+    // fondo paper y Bebas Neue. Se redefine "indigo" a la escala del rojo brand
+    // para que toda la app cambie de estilo de una vez.
     tailwind.config = {
       theme: {
         extend: {
           colors: {
+            brand: { 50: '#fef2f2', 100: '#fde3e3', 500: '#d9232e', 600: '#c11d27' },
+            ink: { 900: '#171e2e', 700: '#2b3550', 500: '#5b6478', 400: '#8b93a7' },
+            paper: '#faf9f7',
+            line: '#e9e6e0',
             indigo: {
-              50: '#f0f5fa', 100: '#dfeaf4', 200: '#c2d7ea', 300: '#9cbdde',
-              400: '#74a2d2', 500: '#5f94cc', 600: '#4F86C6', 700: '#3a70b0',
-              800: '#24476e', 900: '#18324F',
+              50: '#fef2f2', 100: '#fde3e3', 200: '#f8c9cc', 300: '#f09aa0',
+              400: '#e5636c', 500: '#d9232e', 600: '#d9232e', 700: '#c11d27',
+              800: '#8f151d', 900: '#171e2e',
             },
-            navy: '#18324F',
+            slate: { 200: '#e9e6e0' },
+          },
+          fontFamily: {
+            display: ['"Bebas Neue"', 'sans-serif'],
+            sans: ['Inter', 'system-ui', 'sans-serif'],
           },
         },
       },
@@ -25,7 +35,7 @@
   </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
-<body class="bg-slate-100 text-slate-800">
+<body class="bg-paper font-sans text-slate-800">
 <div class="flex min-h-screen">
 
   <!-- Overlay del drawer (solo móvil) -->
@@ -33,22 +43,22 @@
 
   <!-- ===================== SIDEBAR / DRAWER ===================== -->
   <aside id="sidebar"
-    class="fixed inset-y-0 left-0 z-40 w-64 -translate-x-full transform bg-[#18324F] text-white transition-transform duration-200
+    class="fixed inset-y-0 left-0 z-40 w-64 -translate-x-full transform bg-ink-900 text-white transition-transform duration-200
            md:static md:translate-x-0 md:z-auto flex flex-col">
     <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-[#4F86C6] text-lg font-extrabold text-white">L</div>
+        <div class="grid h-9 w-9 place-items-center rounded-lg bg-brand-500 pt-0.5 font-display text-xl text-white">L</div>
         <div>
-          <div class="font-bold leading-tight">Academias</div>
-          <div class="text-xs text-blue-300">Liguify</div>
+          <div class="font-display text-xl leading-none tracking-wide">ACADEMIAS</div>
+          <div class="text-xs text-white/50">Liguify</div>
         </div>
       </div>
-      <button onclick="toggleNav(false)" class="md:hidden text-blue-300 hover:text-white text-2xl leading-none">&times;</button>
+      <button onclick="toggleNav(false)" class="md:hidden text-white/50 hover:text-white text-2xl leading-none">&times;</button>
     </div>
 
     <!-- Selector de rol (solo modo demo) -->
     <div id="rolBox" class="px-5 py-3 border-b border-white/10">
-      <label class="block text-[11px] uppercase tracking-wide text-blue-300 mb-1">Rol</label>
+      <label class="block text-[11px] uppercase tracking-wide text-white/50 mb-1">Rol</label>
       <select id="rolSelect" class="w-full bg-white/10 text-sm text-white rounded-md px-2 py-2 border border-white/20 [&>option]:text-slate-800">
         <option value="admin">Administrador / Director</option>
         <option value="coordinador">Coordinador / Recepción</option>
@@ -63,8 +73,8 @@
     <nav id="nav" class="flex-1 px-3 py-3 space-y-1 text-sm overflow-y-auto"></nav>
 
     <div class="px-5 py-3 border-t border-white/10 flex items-center justify-between">
-      <a href="../../proyecto-torneos/index.html" data-app-liguify class="text-xs text-blue-300 hover:text-white">← Liguify · otras soluciones</a>
-      <button id="btnLogout" onclick="doLogoutAcademias()" class="hidden text-xs text-blue-300 hover:text-rose-300">Salir</button>
+      <a href="../../proyecto-torneos/index.html" data-app-liguify class="text-xs text-white/50 hover:text-white">← Liguify · otras soluciones</a>
+      <button id="btnLogout" onclick="doLogoutAcademias()" class="hidden text-xs font-bold text-white/50 hover:text-white border border-white/20 rounded-lg px-2.5 py-1">SALIR</button>
     </div>
   </aside>
 
@@ -77,7 +87,7 @@
             <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
         </button>
-        <h1 id="pageTitle" class="text-base md:text-lg font-semibold truncate">Dashboard</h1>
+        <h1 id="pageTitle" class="font-display text-xl md:text-2xl tracking-wide truncate">Dashboard</h1>
       </div>
       <label class="flex items-center gap-1.5 text-sm shrink-0 min-w-0">
         <span id="syncDot" class="hidden h-2.5 w-2.5 rounded-full bg-emerald-400 shrink-0" title="Sincronizado"></span>
@@ -107,12 +117,12 @@
 <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 z-[60] rounded-lg bg-slate-900 text-white text-sm px-4 py-3 shadow-lg text-center"></div>
 
 <!-- ===================== AUTH (Supabase) ===================== -->
-<div id="authScreen" class="hidden fixed inset-0 z-[100] bg-[#18324F] flex items-center justify-center p-4">
+<div id="authScreen" class="hidden fixed inset-0 z-[100] bg-ink-900 flex items-center justify-center p-4">
   <div class="w-full max-w-sm">
     <div class="text-center mb-6">
-      <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[#4F86C6] text-2xl font-extrabold text-white">L</div>
-      <h1 class="text-white text-xl font-bold">Liguify Academias</h1>
-      <p class="text-blue-300 text-sm">Gestión de academias deportivas</p>
+      <div class="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-lg bg-brand-500 pt-0.5 font-display text-3xl text-white">L</div>
+      <h1 class="font-display text-3xl tracking-wide text-white">LIGUIFY <span class="text-white/50">ACADEMIAS</span></h1>
+      <p class="text-white/60 text-sm">Gestión de academias deportivas</p>
     </div>
     <div class="rounded-2xl bg-white p-6 shadow-xl">
 
@@ -162,7 +172,7 @@
 
       <p id="authMsg" class="hidden mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600"></p>
     </div>
-    <p class="mt-4 text-center text-xs text-blue-300">
+    <p class="mt-4 text-center text-xs text-white/50">
       <a href="../../proyecto-torneos/index.html" data-app-liguify class="hover:text-white">← Liguify · otras soluciones</a></p>
   </div>
 </div>
