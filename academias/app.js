@@ -390,7 +390,7 @@ function renderNav() {
   el('nav').innerHTML = MENU.filter((m) => m.roles.includes(ROL)).map((m) => `
     <button data-screen="${m.id}"
       class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left
-             ${SCREEN === m.id ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800'}">
+             ${SCREEN === m.id ? 'bg-[#4F86C6] text-white font-medium' : 'text-blue-100 hover:bg-white/10'}">
       <span>${m.icon}</span><span>${m.label}</span>
     </button>`).join('');
   el('nav').querySelectorAll('button').forEach((b) =>
@@ -3572,8 +3572,8 @@ async function entrarConectado() {
       if (idBox) {
         idBox.classList.remove('hidden');
         idBox.innerHTML = `
-          <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-0.5">${({admin:'Administrador / Director',coordinador:'Coordinador / Recepción',tesorero:'Tesorero / Caja',profesor:'Profesor'})[PERFIL.rol] || PERFIL.rol}</div>
-          <div class="text-xs text-slate-300 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
+          <div class="text-[11px] uppercase tracking-wide text-blue-300 mb-0.5">${({admin:'Administrador / Director',coordinador:'Coordinador / Recepción',tesorero:'Tesorero / Caja',profesor:'Profesor'})[PERFIL.rol] || PERFIL.rol}</div>
+          <div class="text-xs text-blue-100 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
       }
     }
     SEDE_ACTUAL = (PERFIL && PERFIL.sede_id && sedesActivas().some((s) => s.id === PERFIL.sede_id))
