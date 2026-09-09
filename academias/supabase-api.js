@@ -91,26 +91,32 @@ window.AcademiasDB = (() => {
     },
     mediosPago: {
       table: 'medios_pago',
-      toRow: (m) => ({ ...pick(m, ['id', 'nombre']), activo: m.activo !== false, academia_id: ACADEMIA_ID }),
+      toRow: (m) => ({ ...pick(m, ['id', 'nombre', 'sede_id']), activo: m.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => r,
     },
     ciclosPago: {
       table: 'ciclos_pago',
-      toRow: (c) => ({ ...pick(c, ['id']), dia: N(c.dia), dia_venc: N(c.dia_venc), es_default: !!c.es_default,
+      toRow: (c) => ({ ...pick(c, ['id', 'sede_id']), dia: N(c.dia), dia_venc: N(c.dia_venc), es_default: !!c.es_default,
         activo: c.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, dia: N(r.dia), dia_venc: N(r.dia_venc) }),
     },
     promociones: {
       table: 'promociones',
-      toRow: (p) => ({ ...pick(p, ['id', 'nombre']), meses_total: N(p.meses_total), meses_pagados: N(p.meses_pagados),
+      toRow: (p) => ({ ...pick(p, ['id', 'nombre', 'sede_id']), meses_total: N(p.meses_total), meses_pagados: N(p.meses_pagados),
         activo: p.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, meses_total: N(r.meses_total), meses_pagados: N(r.meses_pagados) }),
     },
     conceptosCNR: {
       table: 'conceptos_cnr',
-      toRow: (c) => ({ ...pick(c, ['id', 'nombre']), precio: N(c.precio) || 0, maneja_stock: !!c.maneja_stock,
+      toRow: (c) => ({ ...pick(c, ['id', 'nombre', 'sede_id']), precio: N(c.precio) || 0, maneja_stock: !!c.maneja_stock,
         es_torneo: !!c.es_torneo, activo: c.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, precio: N(r.precio) }),
+    },
+    egresos: {
+      table: 'egresos',
+      toRow: (e) => ({ ...pick(e, ['id', 'sede_id', 'concepto', 'descripcion', 'periodo', 'fecha']),
+        monto: N(e.monto) || 0, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, monto: N(r.monto) }),
     },
     torneos: {
       table: 'torneos',
@@ -228,14 +234,14 @@ window.AcademiasDB = (() => {
     const perfilQ = userId ? await sb.from('perfiles').select('*').eq('user_id', userId).maybeSingle() : { data: null };
     const perfil = perfilQ.data || null;
     const sel = (t) => sb.from(t).select('*');
-    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug] = await Promise.all([
+    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
       sel('medios_pago'), sel('ciclos_pago'), sel('promociones'), sel('conceptos_cnr'),
       sel('procesos_facturacion'), sel('asistencias'), sel('inv_pedidos'), sel('inv_movimientos'),
-      sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'),
+      sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'), sel('egresos'),
     ]);
-    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug].find((r) => r.error);
+    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg].find((r) => r.error);
     if (err) throw err.error;
     if (!ac.data.length) return { academia: null, perfil };
 
@@ -274,6 +280,7 @@ window.AcademiasDB = (() => {
       torneos: to.data.map(T.torneos.fromRow),
       torneoCategorias: tcat.data.map(T.torneoCategorias.fromRow),
       torneoJugadores: tjug.data.map(T.torneoJugadores.fromRow),
+      egresos: eg.data.map(T.egresos.fromRow),
     };
   }
 

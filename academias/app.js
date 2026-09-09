@@ -138,6 +138,13 @@ const DB = {
 
   asistencias: [],   // { track_id, jugador_id, fecha, estado }
 
+  // Gastos (egresos) por sede: la utilidad real de la sede = ingresos − gastos
+  egresos: [         // { id, sede_id, concepto: cancha|materiales|uniformes|nomina|otro, descripcion, monto, fecha, periodo }
+    { id: 'e1', sede_id: 's1', concepto: 'cancha', descripcion: 'Alquiler de cancha julio', monto: 500, fecha: '2026-07-01', periodo: '2026-07' },
+    { id: 'e2', sede_id: 's1', concepto: 'nomina', descripcion: 'Pago profesores', monto: 600, fecha: '2026-07-01', periodo: '2026-07' },
+    { id: 'e3', sede_id: 's2', concepto: 'materiales', descripcion: 'Balones', monto: 150, fecha: '2026-07-02', periodo: '2026-07' },
+  ],
+
   // Torneos en los que participan los alumnos
   torneos: [
     { id: 'to1', nombre: 'INTI CUP', fecha_inicio: '2026-07-15', descripcion: 'Torneo interacademias de menores', activo: true },
@@ -177,6 +184,13 @@ const DB = {
 const sede    = (id) => DB.sedes.find((s) => s.id === id);
 // Solo las sedes ACTIVAS operan: selectores, dashboards y reportes las usan
 const sedesActivas = () => DB.sedes.filter((s) => s.activo !== false);
+// Catálogos financieros por sede: sede_id vacío = compartido con todas las sedes
+const esDeSede = (x) => !x.sede_id || x.sede_id === SEDE_ACTUAL;
+const conceptosCNRSede = () => DB.conceptosCNR.filter((c) => c.activo && esDeSede(c));
+const mediosPagoSede   = () => DB.mediosPago.filter((m) => m.activo && esDeSede(m));
+const ciclosPagoSede   = () => DB.ciclosPago.filter((c) => c.activo && esDeSede(c));
+const promocionesSede  = () => DB.promociones.filter((p) => p.activo && esDeSede(p));
+const sedeScopeNom = (id) => (id ? (sede(id) ? sede(id).nombre_sede : '?') : '🌐 Todas');
 const track   = (id) => DB.tracks.find((t) => t.id === id);
 const tutor   = (id) => DB.tutores.find((t) => t.id === id);
 const jugador = (id) => DB.jugadores.find((j) => j.id === id);
@@ -338,6 +352,7 @@ const MENU = [
   { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
   { id: 'almacen',     label: 'Almacén',       icon: '📦', roles: ['admin','coordinador'] },
   { id: 'torneos',     label: 'Torneos',       icon: '🏆', roles: ['admin','coordinador'] },
+  { id: 'gastos',      label: 'Gastos',        icon: '💸', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
@@ -360,6 +375,8 @@ let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
 let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (o null)
 let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto en la pestaña Tracks
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
+let GASTO_MES = null;          // mes visible de la pantalla de Gastos; null = mes de HOY
+const CONCEPTOS_EGRESO = [['cancha', 'Cancha'], ['materiales', 'Materiales'], ['uniformes', 'Uniformes'], ['nomina', 'Nómina'], ['otro', 'Otro']];
 const nombreCiclo = (c) => c ? `Ciclo al ${c.dia}` : '';
 let SEDE_ACTUAL = 's1';        // sede activa: cada sede se opera de forma independiente
 let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
@@ -452,6 +469,10 @@ const SCREENS = {
     const porAprobar = DB.pagos
       .filter((p) => p.estado === 'pendiente' && p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
       .reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+    // Gastos del periodo (sedes filtradas) para la utilidad real
+    const gastosPeriodo = DB.egresos
+      .filter((e) => inDash(e.sede_id) && (e.fecha || '') >= win.inicio && (e.fecha || '') <= win.fin)
+      .reduce((s, e) => s + (+e.monto || 0), 0);
     // Cuentas por cobrar (snapshot): cargos pendientes por tipo, no depende del periodo
     const porCobrarItems = DB.cargos
       .filter((c) => c.jugador_id && inDash(jugador(c.jugador_id).sede_id) && (c.monto - (c.pagado_monto || 0)) > 0)
@@ -467,9 +488,11 @@ const SCREENS = {
       </div>
       <p class="text-xs text-slate-400 mb-4">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'}</p>
 
-      <div class="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-6">
+      <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-6">
         ${card('Alumnos nuevos', nuevos.length, 'en el periodo')}
         ${card('Recaudado', S(totalIngresos), porAprobar > 0 ? `+ <b class="text-amber-600">${S(porAprobar)}</b> por aprobar` : 'pagos del periodo')}
+        ${card('Gastos', `<span class="text-rose-600">${S(gastosPeriodo)}</span>`, 'del periodo')}
+        ${card('Utilidad', `<span class="${totalIngresos - gastosPeriodo > 0 ? 'text-emerald-600' : totalIngresos - gastosPeriodo < 0 ? 'text-rose-600' : 'text-slate-700'}">${totalIngresos - gastosPeriodo < 0 ? '−' : ''}${S(Math.abs(totalIngresos - gastosPeriodo))}</span>`, 'recaudado − gastos')}
         ${card('Por cobrar', S(totalPorCobrar), 'pendiente total')}
         ${card('Alumnos activos', activos)}
       </div>
@@ -595,8 +618,56 @@ const SCREENS = {
       </div>`;
   },
 
+  gastos() {
+    if (!GASTO_MES) GASTO_MES = HOY.slice(0, 7);
+    const [y, m] = GASTO_MES.split('-').map(Number);
+    const mesLabel = new Date(y, m - 1, 1).toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+    const delMes = DB.egresos.filter((e) => e.sede_id === SEDE_ACTUAL && (e.fecha || '').startsWith(GASTO_MES))
+      .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+    const totGastos = delMes.reduce((s, e) => s + (+e.monto || 0), 0);
+    const nomCat = (k) => (CONCEPTOS_EGRESO.find((c) => c[0] === k) || ['', k])[1];
+    const porCat = {};
+    delMes.forEach((e) => { porCat[e.concepto] = (porCat[e.concepto] || 0) + (+e.monto || 0); });
+    // Ingresos del mes: pagos aprobados de alumnos de esta sede
+    const ingresos = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && jugador(p.jugador_id)
+        && jugador(p.jugador_id).sede_id === SEDE_ACTUAL && (p.fecha || '').startsWith(GASTO_MES))
+      .reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+    const util = ingresos - totGastos;
+    const utilCls = util > 0 ? 'text-emerald-600' : util < 0 ? 'text-rose-600' : 'text-slate-700';
+    el('content').innerHTML = `
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <button onclick="gastoMes(-1)" class="rounded-lg px-3 py-1.5 text-sm ring-1 ring-slate-300 hover:bg-slate-100">◀</button>
+          <div class="w-44 text-center text-base font-semibold capitalize">${mesLabel}</div>
+          <button onclick="gastoMes(1)" class="rounded-lg px-3 py-1.5 text-sm ring-1 ring-slate-300 hover:bg-slate-100">▶</button>
+        </div>
+        <p class="text-sm text-slate-500">Gastos de <b>${sede(SEDE_ACTUAL).nombre_sede}</b></p>
+      </div>
+      <div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:max-w-3xl">
+        ${card('Gastos del mes', `<span class="text-rose-600">${S(totGastos)}</span>`,
+          Object.keys(porCat).map((k) => `${nomCat(k)} ${S(porCat[k])}`).join(' · ') || 'sin gastos')}
+        ${card('Ingresos del mes', S(ingresos), 'pagos aprobados de la sede')}
+        ${card('Utilidad del mes', `<span class="${utilCls}">${util < 0 ? '−' : ''}${S(Math.abs(util))}</span>`, 'ingresos − gastos')}
+      </div>
+      <div class="mb-5 rounded-xl bg-white ring-1 ring-slate-200 p-4">
+        <div class="text-sm font-semibold text-slate-700 mb-3">Registrar gasto</div>
+        <form onsubmit="guardarGasto(event)" class="grid gap-2 sm:grid-cols-[auto_1fr_auto_auto_auto] items-end">
+          ${field('Concepto', select('g_concepto', CONCEPTOS_EGRESO.map(([v, t]) => ({ v, t }))))}
+          ${field('Descripción', input('g_desc', 'placeholder="Ej: Alquiler de cancha"'))}
+          ${field('Monto S/ *', input('g_monto', 'type="number" step="0.01" required class-extra'))}
+          ${field('Fecha', input('g_fecha', `type="date" value="${HOY}"`))}
+          <button type="submit" class="mb-3 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Registrar</button>
+        </form>
+      </div>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Gastos de ${mesLabel} (${delMes.length})</h3>
+      ${delMes.length ? table(['Fecha', 'Concepto', 'Descripción', 'Monto', ''],
+        delMes.map((e) => [fmtDMY(e.fecha), nomCat(e.concepto), e.descripcion || '—', S(e.monto),
+          `<button onclick="eliminarGasto('${e.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))
+        : '<p class="text-sm text-slate-400">Sin gastos registrados este mes.</p>'}`;
+  },
+
   almacen() {
-    const conceptosInv = DB.conceptosCNR.filter((c) => c.maneja_stock && c.activo);
+    const conceptosInv = conceptosCNRSede().filter((c) => c.maneja_stock);
     const movs = movsInvSede();
     const cnNom = (id) => { const c = DB.conceptosCNR.find((x) => x.id === id); return c ? c.nombre : '?'; };
     // Stock actual por concepto y talla
@@ -1400,7 +1471,7 @@ function fichaTracksHTML(jid) {
       ${FICHA_CR_INSC === i.id ? crFormPanelHTML(i, jid) : ''}
     </div>`;
   }).join('') || '<p class="text-xs text-slate-400">Sin tracks asignados. Agrégalo abajo.</p>';
-  const promoLink = insc.length && DB.promociones.some((p) => p.activo)
+  const promoLink = insc.length && promocionesSede().length
     ? `<div class="mt-2"><button type="button" onclick="formPromo('${jid}')" class="text-xs text-indigo-600 hover:underline">🎁 Aplicar promoción (genera varios CR)</button></div>` : '';
 
   const yaIds = new Set(insc.map((i) => i.track_id));
@@ -1514,7 +1585,7 @@ function estadoCuentaHTML(jid) {
 
 // Panel para agregar un CR de UNA inscripción (pestaña Tracks de la ficha)
 function crFormPanelHTML(i, jid) {
-  const ciclos = DB.ciclosPago.filter((c) => c.activo);
+  const ciclos = ciclosPagoSede();
   const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
   if (!ciclos.length) return '<p class="mt-2 text-xs text-slate-400">No hay ciclos de pago. Créalos en Configuración → Ciclos de pago.</p>';
   const t = track(i.track_id);
@@ -1549,7 +1620,7 @@ window.cancelarFormCR = (jid) => { FICHA_CR_INSC = null; renderFichaTracks(jid);
 
 // Pestaña CNR de la ficha: agregar CNR + historial de CNRs del alumno
 function cnrFormHTML(jid) {
-  const cnrCat = DB.conceptosCNR.filter((c) => c.activo);
+  const cnrCat = conceptosCNRSede();
   const cnrs = DB.cargos.filter((c) => c.jugador_id === jid && c.tipo === 'CNR');
   const saldoC = (c) => c.monto - (c.pagado_monto || 0);
   return `
@@ -1659,7 +1730,7 @@ window.agregarCR = (jid) => {
 // ---------- Aplicar promoción (genera la secuencia de CR) ----------
 window.formPromo = (jid) => {
   const insc = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
-  const promos = DB.promociones.filter((p) => p.activo);
+  const promos = promocionesSede();
   if (!insc.length || !promos.length) { toast('Faltan tracks o promociones activas'); return; }
   const j = jugador(jid);
   openModal(`Aplicar promoción · ${nom(j)}`, `
@@ -1700,7 +1771,7 @@ window.guardarPromoAlumno = (e, jid) => {
   const t = track(i.track_id);
   const precio = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
   const j = jugador(jid);
-  const cicloDef = DB.ciclosPago.find((c) => c.es_default && c.activo) || DB.ciclosPago.find((c) => c.activo);
+  const cicloDef = ciclosPagoSede().find((c) => c.es_default) || ciclosPagoSede()[0];
   const diaVenc = cicloDef ? cicloDef.dia_venc : null;
   periodosPromo(ancla, promo).forEach((p) => {
     const monto = p.gratis ? 0 : precio;
@@ -1723,7 +1794,7 @@ function inscElegiblesCiclo(dia, corteIso, sedeId) {
     && i.ultima_fecha_corte && i.ultima_fecha_corte < corteIso);
 }
 window.formGenerarCR = () => {
-  const ciclos = DB.ciclosPago.filter((c) => c.activo);
+  const ciclos = ciclosPagoSede();
   if (!ciclos.length) { toast('No hay ciclos de pago'); return; }
   const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
   openModal('Generar CR por ciclo', `
@@ -1835,7 +1906,7 @@ window.formPagoAlumno = (jid) => {
   const pend = DB.cargos.filter((c) => c.jugador_id === jid && c.estado !== 'pagado')
     .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
   if (!pend.length) { toast('No hay cargos pendientes de pago'); return; }
-  const medios = DB.mediosPago.filter((m) => m.activo);
+  const medios = mediosPagoSede();
   openModal(`Registrar pago · ${nom(j)}`, `
     <form onsubmit="guardarPagoAlumno(event,'${jid}')">
       <p class="text-xs text-slate-500 mb-2">Marca los cargos a pagar. Desmarca los que no entran en este pago.</p>
@@ -1926,7 +1997,7 @@ function pagoAprobCard(p) {
 window.gestionarPago = (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p) return;
   const j = p.jugador_id ? jugador(p.jugador_id) : null;
-  const medios = DB.mediosPago.filter((m) => m.activo);
+  const medios = mediosPagoSede();
   openModal('Aprobar / Rechazar pago', `
     <p class="text-sm mb-1">${j ? nom(j) : ''} · <b>${S(p.total ?? p.monto ?? 0)}</b></p>
     <p class="text-xs text-slate-400 mb-3">${p.num_operacion ? 'Op. ' + p.num_operacion + ' · ' : ''}${fmtDMY(p.fecha)}${p.voucher_url ? ' · voucher adjunto' : ' · sin voucher'}</p>
@@ -2481,7 +2552,7 @@ window.formPago = () => {
 
 // ---------- Cargo eventual (no recurrente) ----------
 window.formCargo = () => {
-  const cnrCat = DB.conceptosCNR.filter((c) => c.activo);
+  const cnrCat = conceptosCNRSede();
   openModal('Cargo no recurrente (CNR)', `
     <form onsubmit="guardarCargo(event)">
       ${field('Alumno', select('f_alumno', alumnosSede().map((j) => ({ v: j.id, t: `${nom(j)} · Cat. ${anio(j.fecha_nacimiento)}` }))))}
@@ -2742,6 +2813,7 @@ const CONFIG_TABS = {
             ${field('Concepto (nombre del cargo) *', input('cn_nombre', `required value="${e ? e.nombre.replace(/"/g, '&quot;') : ''}" placeholder="Ej: Uniforme"`))}
             ${field('Precio unitario (S/.)', input('cn_precio', `type="number" step="0.01" value="${e ? e.precio : ''}" placeholder="0.00"`))}
           </div>
+          ${field('Sede', select('cn_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
           <div class="flex flex-wrap gap-5 mb-3">
             <label class="flex items-center gap-2 text-sm">
               <input type="checkbox" id="cn_stock" class="h-4 w-4 rounded accent-indigo-600" ${e && e.maneja_stock ? 'checked' : ''}>
@@ -2759,9 +2831,9 @@ const CONFIG_TABS = {
         </form>
       </div>
       <p class="text-xs text-slate-400 mb-2">Estos conceptos aparecen al generar un Cargo No Recurrente y autocompletan el precio. <b>Stock</b> = descuenta inventario · <b>Torneo</b> = seguimiento especial.</p>
-      ${table(['Concepto', 'Precio unitario', 'Stock', 'Torneo', 'Estado', ''],
+      ${table(['Concepto', 'Precio unitario', 'Sede', 'Stock', 'Torneo', 'Estado', ''],
         DB.conceptosCNR.map((c) => [
-          `<b>${c.nombre}</b>`, S(c.precio),
+          `<b>${c.nombre}</b>`, S(c.precio), sedeScopeNom(c.sede_id),
           c.maneja_stock ? badge('Stock', 'sky') : '—',
           c.es_torneo ? badge('Torneo', 'fuchsia') : '—',
           badge(c.activo ? 'Activo' : 'Inactivo', c.activo ? 'emerald' : 'slate'),
@@ -2777,6 +2849,7 @@ const CONFIG_TABS = {
         <div class="text-sm font-semibold text-slate-700 mb-3">${e ? 'Editar medio de pago' : 'Nuevo medio de pago'}</div>
         <form onsubmit="guardarMedioPago(event)">
           ${field('Nombre del medio *', input('mp_nombre', `required value="${e ? e.nombre.replace(/"/g, '&quot;') : ''}" placeholder="Ej: Yape"`))}
+          ${field('Sede', select('mp_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
             ${e ? `<button type="button" onclick="cancelMPEdit()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>` : ''}
@@ -2784,9 +2857,9 @@ const CONFIG_TABS = {
         </form>
       </div>
       <p class="text-xs text-slate-400 mb-2">Los medios <b>activos</b> aparecen al registrar un pago.</p>
-      ${table(['Medio', 'Estado', ''],
+      ${table(['Medio', 'Sede', 'Estado', ''],
         DB.mediosPago.map((m) => [
-          `<b>${m.nombre}</b>`,
+          `<b>${m.nombre}</b>`, sedeScopeNom(m.sede_id),
           badge(m.activo ? 'Activo' : 'Inactivo', m.activo ? 'emerald' : 'slate'),
           `<button onclick="editarMedioPago('${m.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="toggleMedioPago('${m.id}')" class="text-slate-500 hover:underline text-xs mr-3">${m.activo ? 'Desactivar' : 'Activar'}</button>
@@ -2802,6 +2875,7 @@ const CONFIG_TABS = {
             ${field('Día del mes (corte) *', input('ci_dia', `type="number" min="1" max="28" required value="${e ? e.dia : ''}" placeholder="Ej: 1"`))}
             ${field('Día de vencimiento *', input('ci_venc', `type="number" min="1" max="28" required value="${e ? (e.dia_venc ?? '') : ''}" placeholder="Ej: 5"`))}
           </div>
+          ${field('Sede', select('ci_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
           <label class="flex items-center gap-2 text-sm mb-3">
             <input type="checkbox" id="ci_default" class="h-4 w-4 rounded accent-indigo-600" ${e && e.es_default ? 'checked' : ''}>
             Predeterminado <span class="text-xs text-slate-400">(se usa por defecto al generar CR)</span>
@@ -2813,9 +2887,9 @@ const CONFIG_TABS = {
         </form>
       </div>
       <p class="text-xs text-slate-400 mb-2">El <b>día de corte</b> marca el fin del ciclo (día − 1). El <b>vencimiento</b> es ese día dentro del mes del ciclo (ej. ciclo 01/08–31/08 con venc. día 5 → 05/08).</p>
-      ${table(['Ciclo', 'Corte', 'Vencimiento', 'Predeterminado', 'Estado', ''],
+      ${table(['Ciclo', 'Corte', 'Vencimiento', 'Sede', 'Predeterminado', 'Estado', ''],
         DB.ciclosPago.map((c) => [
-          `<b>${nombreCiclo(c)}</b>`, `día ${c.dia}`, `día ${c.dia_venc ?? '—'}`,
+          `<b>${nombreCiclo(c)}</b>`, `día ${c.dia}`, `día ${c.dia_venc ?? '—'}`, sedeScopeNom(c.sede_id),
           c.es_default ? badge('Por defecto', 'indigo') : '—',
           badge(c.activo ? 'Activo' : 'Inactivo', c.activo ? 'emerald' : 'slate'),
           `<button onclick="editarCicloPago('${c.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
@@ -2833,6 +2907,7 @@ const CONFIG_TABS = {
             ${field('Meses total *', input('pr_total', `type="number" min="1" required value="${e ? e.meses_total : ''}" placeholder="3"`))}
             ${field('Meses pagados *', input('pr_pagados', `type="number" min="0" required value="${e ? e.meses_pagados : ''}" placeholder="2"`))}
           </div>
+          ${field('Sede', select('pr_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
           <p class="text-xs text-slate-400 mb-3">Los últimos <b>(total − pagados)</b> meses van gratis.</p>
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
@@ -2840,9 +2915,9 @@ const CONFIG_TABS = {
           </div>
         </form>
       </div>
-      ${table(['Promoción', 'Meses', 'Pagados', 'Gratis', 'Estado', ''],
+      ${table(['Promoción', 'Meses', 'Pagados', 'Gratis', 'Sede', 'Estado', ''],
         DB.promociones.map((p) => [
-          `<b>${p.nombre}</b>`, p.meses_total, p.meses_pagados, p.meses_total - p.meses_pagados,
+          `<b>${p.nombre}</b>`, p.meses_total, p.meses_pagados, p.meses_total - p.meses_pagados, sedeScopeNom(p.sede_id),
           badge(p.activo ? 'Activo' : 'Inactivo', p.activo ? 'emerald' : 'slate'),
           `<button onclick="editarPromo('${p.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="togglePromo('${p.id}')" class="text-slate-500 hover:underline text-xs mr-3">${p.activo ? 'Desactivar' : 'Activar'}</button>
@@ -2881,7 +2956,7 @@ const CONFIG_TABS = {
 window.guardarConceptoCNR = (ev) => {
   ev.preventDefault();
   const data = {
-    nombre: val('cn_nombre'), precio: num('cn_precio'),
+    nombre: val('cn_nombre'), precio: num('cn_precio'), sede_id: val('cn_sede') || null,
     maneja_stock: el('cn_stock').checked, es_torneo: el('cn_torneo').checked,
   };
   if (CNR_EDIT) {
@@ -3021,8 +3096,9 @@ window.quitarUsuarioUI = async (userId, email) => {
 window.guardarMedioPago = (ev) => {
   ev.preventDefault();
   const nombre = val('mp_nombre');
-  if (MP_EDIT) { DB.mediosPago.find((m) => m.id === MP_EDIT).nombre = nombre; MP_EDIT = null; toast('Medio actualizado'); }
-  else { DB.mediosPago.push({ id: uid('mp'), nombre, activo: true }); toast('Medio agregado'); }
+  const sedeId = val('mp_sede') || null;
+  if (MP_EDIT) { Object.assign(DB.mediosPago.find((m) => m.id === MP_EDIT), { nombre, sede_id: sedeId }); MP_EDIT = null; toast('Medio actualizado'); }
+  else { DB.mediosPago.push({ id: uid('mp'), nombre, sede_id: sedeId, activo: true }); toast('Medio agregado'); }
   SCREENS.config();
 };
 window.editarMedioPago = (id) => { MP_EDIT = id; SCREENS.config(); };
@@ -3041,8 +3117,8 @@ window.guardarCicloPago = (ev) => {
   const diaVenc = parseInt(val('ci_venc'), 10) || dia;
   const esDefault = el('ci_default').checked;
   if (esDefault) DB.ciclosPago.forEach((c) => { c.es_default = false; });
-  if (CICLO_EDIT) { Object.assign(DB.ciclosPago.find((c) => c.id === CICLO_EDIT), { dia, dia_venc: diaVenc, es_default: esDefault }); CICLO_EDIT = null; toast('Ciclo actualizado'); }
-  else { DB.ciclosPago.push({ id: uid('ci'), dia, dia_venc: diaVenc, es_default: esDefault, activo: true }); toast('Ciclo agregado'); }
+  if (CICLO_EDIT) { Object.assign(DB.ciclosPago.find((c) => c.id === CICLO_EDIT), { dia, dia_venc: diaVenc, es_default: esDefault, sede_id: val('ci_sede') || null }); CICLO_EDIT = null; toast('Ciclo actualizado'); }
+  else { DB.ciclosPago.push({ id: uid('ci'), dia, dia_venc: diaVenc, es_default: esDefault, sede_id: val('ci_sede') || null, activo: true }); toast('Ciclo agregado'); }
   // Garantiza al menos un predeterminado
   if (!DB.ciclosPago.some((c) => c.es_default) && DB.ciclosPago[0]) DB.ciclosPago[0].es_default = true;
   SCREENS.config();
@@ -3063,7 +3139,7 @@ window.guardarPromo = (ev) => {
   const total = parseInt(val('pr_total'), 10) || 1;
   const pagados = parseInt(val('pr_pagados'), 10);
   if (pagados > total) { toast('Meses pagados no puede superar al total'); return; }
-  const data = { nombre: val('pr_nombre'), meses_total: total, meses_pagados: isNaN(pagados) ? 0 : pagados };
+  const data = { nombre: val('pr_nombre'), meses_total: total, meses_pagados: isNaN(pagados) ? 0 : pagados, sede_id: val('pr_sede') || null };
   if (PROMO_EDIT) { Object.assign(DB.promociones.find((p) => p.id === PROMO_EDIT), data); PROMO_EDIT = null; toast('Promoción actualizada'); }
   else { DB.promociones.push({ id: uid('pr'), activo: true, ...data }); toast('Promoción agregada'); }
   SCREENS.config();
@@ -3335,10 +3411,36 @@ window.generarCNRsTorneo = (tid) => {
   renderTorneoDetalle();
 };
 
+// ---------- Gastos por sede ----------
+window.gastoMes = (delta) => {
+  const [y, m] = GASTO_MES.split('-').map(Number);
+  GASTO_MES = isoDate(new Date(y, m - 1 + delta, 1)).slice(0, 7);
+  SCREENS.gastos();
+};
+window.guardarGasto = (ev) => {
+  ev.preventDefault();
+  const monto = num('g_monto');
+  if (!monto || monto <= 0) { toast('Ingresa un monto válido'); return; }
+  const fecha = val('g_fecha') || HOY;
+  DB.egresos.push({ id: uid('e'), sede_id: SEDE_ACTUAL, concepto: val('g_concepto'),
+    descripcion: val('g_desc'), monto, fecha, periodo: fecha.slice(0, 7) });
+  GASTO_MES = fecha.slice(0, 7);
+  toast('Gasto registrado ✓');
+  SCREENS.gastos();
+};
+window.eliminarGasto = (id) => {
+  const e = DB.egresos.find((x) => x.id === id);
+  if (!e) return;
+  if (!confirm(`¿Eliminar el gasto "${e.descripcion || e.concepto}" de ${S(e.monto)}?`)) return;
+  DB.egresos = DB.egresos.filter((x) => x.id !== id);
+  toast('Gasto eliminado');
+  SCREENS.gastos();
+};
+
 // ---------- Almacén: ingresos, pedidos y recepción ----------
 const TALLAS_SUGERIDAS = ['4', '6', '8', '10', '12', '14', '16', 'XS', 'S', 'M', 'L', 'XL'];
 function invFormCampos(pfx, conProveedor) {
-  const conceptosInv = DB.conceptosCNR.filter((c) => c.maneja_stock && c.activo);
+  const conceptosInv = conceptosCNRSede().filter((c) => c.maneja_stock);
   return `
     ${field('Concepto', select(pfx + '_concepto', conceptosInv.map((c) => ({ v: c.id, t: c.nombre }))))}
     <div class="grid grid-cols-2 gap-3">
@@ -3350,7 +3452,7 @@ function invFormCampos(pfx, conProveedor) {
     ${field(conProveedor ? 'Fecha del pedido' : 'Fecha del ingreso', input(pfx + '_fecha', `type="date" value="${HOY}" required`))}`;
 }
 window.formIngresoInv = () => {
-  if (!DB.conceptosCNR.some((c) => c.maneja_stock && c.activo)) { toast('No hay conceptos inventariables'); return; }
+  if (!conceptosCNRSede().some((c) => c.maneja_stock)) { toast('No hay conceptos inventariables'); return; }
   openModal('Ingreso a almacén', `
     <form onsubmit="guardarIngresoInv(event)">
       <p class="mb-3 text-xs text-slate-500">Registra unidades que entran al almacén de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> (compra, donación, devolución...).</p>
@@ -3369,7 +3471,7 @@ window.guardarIngresoInv = (e) => {
   closeModal(); toast('Ingreso registrado ✓'); go('almacen');
 };
 window.formPedidoInv = () => {
-  if (!DB.conceptosCNR.some((c) => c.maneja_stock && c.activo)) { toast('No hay conceptos inventariables'); return; }
+  if (!conceptosCNRSede().some((c) => c.maneja_stock)) { toast('No hay conceptos inventariables'); return; }
   openModal('Nuevo pedido', `
     <form onsubmit="guardarPedidoInv(event)">
       <p class="mb-3 text-xs text-slate-500">El pedido queda <b>pendiente</b>; al recibirlo se genera el ingreso al almacén automáticamente.</p>
