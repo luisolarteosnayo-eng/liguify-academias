@@ -596,7 +596,7 @@ const SCREENS = {
     const lista = DB.torneos.filter((t) => t.activo !== false);
     el('content').innerHTML = `
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-sm text-slate-500">Torneos y competencias en los que participan los alumnos de la academia</p>
+        <p class="text-sm text-slate-500">Torneos y competencias en los que participan los alumnos de la empresa</p>
         <button onclick="formTorneo()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Nuevo torneo</button>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -720,7 +720,7 @@ const SCREENS = {
   config() {
     const a = DB.academia;
     const tabs = [
-      { id: 'perfil', t: 'Perfil' }, { id: 'sedes', t: 'Sedes' }, { id: 'cnr', t: 'Conceptos CNR' },
+      { id: 'perfil', t: 'Empresa' }, { id: 'sedes', t: 'Sedes' }, { id: 'cnr', t: 'Conceptos CNR' },
       { id: 'staff', t: 'Profesores' },
       { id: 'pagos', t: 'Medios de pago' }, { id: 'ciclos', t: 'Ciclos de pago' }, { id: 'promos', t: 'Promociones' }, { id: 'publica', t: 'Página pública' }, { id: 'invitaciones', t: 'Invitaciones' },
     ];
@@ -728,7 +728,7 @@ const SCREENS = {
       <div class="max-w-3xl">
         <div class="mb-4">
           <h2 class="text-xl font-bold">Configuración</h2>
-          <p class="text-sm text-slate-400">Ajustes de la academia y página pública</p>
+          <p class="text-sm text-slate-400">Ajustes de la empresa (marca) y sus sedes</p>
           <span class="mt-2 inline-block rounded-lg bg-indigo-50 px-3 py-1 text-xs text-slate-600">
             Plan actual: <b class="text-indigo-600 capitalize">${a.plan_suscripcion}</b></span>
         </div>
@@ -2665,7 +2665,7 @@ const CONFIG_TABS = {
     el('configTab').innerHTML = `
       <form onsubmit="guardarPerfil(event)" class="space-y-1">
         <div class="mb-5">
-          <span class="block text-xs font-medium text-slate-500 mb-1">Logo de la academia</span>
+          <span class="block text-xs font-medium text-slate-500 mb-1">Logo de la empresa</span>
           <div class="flex items-center gap-4">
             ${logo}
             <div>
@@ -2678,7 +2678,7 @@ const CONFIG_TABS = {
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          ${field('Nombre de la academia *', input('p_nombre', `required value="${v(a.nombre_academia)}"`))}
+          ${field('Nombre de la empresa (marca) *', input('p_nombre', `required value="${v(a.nombre_academia)}"`))}
           ${field('Slug (URL)', input('p_slug', `value="${v(a.slug_url)}"`))}
           ${field('Email', input('p_email', `type="email" value="${v(a.email)}"`))}
           ${field('Teléfono', input('p_tel', `value="${v(a.telefono)}"`))}
@@ -2923,7 +2923,7 @@ const CONFIG_TABS = {
            <button onclick="togglePromo('${p.id}')" class="text-slate-500 hover:underline text-xs mr-3">${p.activo ? 'Desactivar' : 'Activar'}</button>
            <button onclick="eliminarPromo('${p.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))}`;
   },
-  publica()      { el('configTab').innerHTML = stub('Página pública de la academia (marca blanca)'); },
+  publica()      { el('configTab').innerHTML = stub('Página pública de la empresa (marca blanca)'); },
   invitaciones() {
     if (!window.AcademiasDB || !AcademiasDB.on) {
       el('configTab').innerHTML = stub('Invitaciones a staff y coordinadores (requiere modo conectado)');
@@ -2932,7 +2932,8 @@ const CONFIG_TABS = {
     el('configTab').innerHTML = `
       <div class="max-w-2xl">
         <h3 class="font-semibold mb-1">Invitar usuario</h3>
-        <p class="text-xs text-slate-500 mb-3">Al invitar, la persona <b>recibe un correo con un enlace de acceso directo</b>; al abrirlo entra a la app y se une automáticamente a tu academia con el rol asignado. También puede registrarse o entrar con Google usando ese mismo correo.</p>
+        <p class="text-xs text-slate-500 mb-3">Al invitar, la persona <b>recibe un correo con un enlace de acceso directo</b>; al abrirlo entra a la app y se une automáticamente a tu empresa con el rol asignado. También puede registrarse o entrar con Google usando ese mismo correo.</p>
+        <p class="text-xs text-slate-400 mb-3"><b>Coordinador General</b> = Coordinador + 🌐 Todas las sedes (maneja la marca y ve todas las sedes) · <b>Coordinador de Sede</b> = Coordinador + una sede específica (solo gestiona esa sede).</p>
         <form onsubmit="enviarInvitacion(event)" class="mb-6 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
           <input id="inv_email" type="email" required placeholder="correo@ejemplo.com" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
           <select id="inv_rol" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
@@ -3034,13 +3035,13 @@ async function renderUsuarios() {
     const pendientes = invitaciones.filter((i) => i.estado === 'pendiente');
     const sedeNom = (id) => { const s = id && sede(id); return s ? s.nombre_sede : 'Todas'; };
     box.innerHTML = `
-      <h3 class="font-semibold text-slate-800 mb-2">Usuarios de la academia (${perfiles.length})</h3>
+      <h3 class="font-semibold text-slate-800 mb-2">Usuarios de la empresa (${perfiles.length})</h3>
       <div class="rounded-xl ring-1 ring-slate-200 divide-y divide-slate-100 mb-6 bg-white">
         ${perfiles.map((p) => `
           <div class="flex items-center justify-between gap-2 px-4 py-2.5">
             <div class="min-w-0">
               <div class="text-sm font-medium text-slate-800 truncate">${p.email || p.nombre || p.user_id.slice(0, 8)}</div>
-              <div class="text-xs text-slate-400">${ROL_LABEL[p.rol] || p.rol} · ${sedeNom(p.sede_id)}</div>
+              <div class="text-xs text-slate-400">${p.rol === 'coordinador' ? (p.sede_id ? `Coordinador de Sede · ${sedeNom(p.sede_id)}` : 'Coordinador General') : `${ROL_LABEL[p.rol] || p.rol} · ${sedeNom(p.sede_id)}`}</div>
             </div>
             ${PERFIL && p.user_id === PERFIL.user_id
               ? '<span class="text-[11px] rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 shrink-0">Tú</span>'
@@ -3087,7 +3088,7 @@ window.revocarInvitacionUI = async (id) => {
   catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
 };
 window.quitarUsuarioUI = async (userId, email) => {
-  if (!confirm(`¿Quitar a ${email || 'este usuario'} de la academia? Perderá el acceso.`)) return;
+  if (!confirm(`¿Quitar a ${email || 'este usuario'} de la empresa? Perderá el acceso.`)) return;
   try { await AcademiasDB.usuarios.quitar(userId); toast('Usuario quitado'); renderUsuarios(); }
   catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
 };
@@ -3170,7 +3171,7 @@ window.guardarPerfil = (e) => {
     whatsapp: val('p_whatsapp'), instagram: val('p_instagram'), facebook: val('p_facebook'),
     tiktok: val('p_tiktok'), youtube: val('p_youtube'), twitter: val('p_twitter'), google_maps_url: val('p_maps'),
   });
-  toast('Perfil de la academia guardado');
+  toast('Perfil de la empresa guardado');
 };
 
 window.cambiarCabeceraSede = (inp) => {
@@ -3673,8 +3674,12 @@ async function entrarConectado() {
       if (rolBox) rolBox.classList.add('hidden');
       if (idBox) {
         idBox.classList.remove('hidden');
+        const sedeP = PERFIL.sede_id && sede(PERFIL.sede_id);
+        const rolTxt = PERFIL.rol === 'coordinador'
+          ? (sedeP ? `Coordinador · ${sedeP.nombre_sede}` : 'Coordinador General')
+          : ({ admin: 'Administrador / Director', tesorero: 'Tesorero / Caja', profesor: 'Profesor' })[PERFIL.rol] || PERFIL.rol;
         idBox.innerHTML = `
-          <div class="text-[11px] uppercase tracking-wide text-white/50 mb-0.5">${({admin:'Administrador / Director',coordinador:'Coordinador / Recepción',tesorero:'Tesorero / Caja',profesor:'Profesor'})[PERFIL.rol] || PERFIL.rol}</div>
+          <div class="text-[11px] uppercase tracking-wide text-white/50 mb-0.5">${rolTxt}</div>
           <div class="text-xs text-white/80 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
       }
     }
