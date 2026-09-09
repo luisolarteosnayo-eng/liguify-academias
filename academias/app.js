@@ -346,18 +346,19 @@ function statsTorneo(t) {
 
 // ---------- Menú por rol ----------
 const MENU = [
-  { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor'] },
-  { id: 'tracks',      label: 'Tracks · Rentabilidad', icon: '🎯', roles: ['admin','coordinador'] },
-  { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador'] },
+  { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor','operador','cobranza'] },
+  { id: 'tracks',      label: 'Tracks · Rentabilidad', icon: '🎯', roles: ['admin','coordinador','operador'] },
+  { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador','operador'] },
   { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
   { id: 'almacen',     label: 'Almacén',       icon: '📦', roles: ['admin','coordinador'] },
   { id: 'torneos',     label: 'Torneos',       icon: '🏆', roles: ['admin','coordinador'] },
   { id: 'gastos',      label: 'Gastos',        icon: '💸', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
-  { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero'] },
+  { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero','cobranza'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
   { id: 'asistencia',  label: 'Asistencia',    icon: '✅', roles: ['admin','profesor'] },
   { id: 'cromos',      label: 'Cromos',        icon: '🃏', roles: ['admin','profesor'] },
+  { id: 'usuarios',    label: 'Usuarios',      icon: '👥', roles: ['admin','coordinador'] },
   { id: 'config',      label: 'Configuración', icon: '⚙️', roles: ['admin'] },
 ];
 
@@ -722,7 +723,7 @@ const SCREENS = {
     const tabs = [
       { id: 'perfil', t: 'Empresa' }, { id: 'sedes', t: 'Sedes' }, { id: 'cnr', t: 'Conceptos CNR' },
       { id: 'staff', t: 'Profesores' },
-      { id: 'pagos', t: 'Medios de pago' }, { id: 'ciclos', t: 'Ciclos de pago' }, { id: 'promos', t: 'Promociones' }, { id: 'publica', t: 'Página pública' }, { id: 'invitaciones', t: 'Invitaciones' },
+      { id: 'pagos', t: 'Medios de pago' }, { id: 'ciclos', t: 'Ciclos de pago' }, { id: 'promos', t: 'Promociones' }, { id: 'publica', t: 'Página pública' },
     ];
     el('content').innerHTML = `
       <div class="max-w-3xl">
@@ -2924,34 +2925,47 @@ const CONFIG_TABS = {
            <button onclick="eliminarPromo('${p.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))}`;
   },
   publica()      { el('configTab').innerHTML = stub('Página pública de la empresa (marca blanca)'); },
-  invitaciones() {
-    if (!window.AcademiasDB || !AcademiasDB.on) {
-      el('configTab').innerHTML = stub('Invitaciones a staff y coordinadores (requiere modo conectado)');
-      return;
-    }
-    el('configTab').innerHTML = `
-      <div class="max-w-2xl">
-        <h3 class="font-semibold mb-1">Invitar usuario</h3>
-        <p class="text-xs text-slate-500 mb-3">Al invitar, la persona <b>recibe un correo con un enlace de acceso directo</b>; al abrirlo entra a la app y se une automáticamente a tu empresa con el rol asignado. También puede registrarse o entrar con Google usando ese mismo correo.</p>
-        <p class="text-xs text-slate-400 mb-3"><b>Coordinador General</b> = Coordinador + 🌐 Todas las sedes (maneja la marca y ve todas las sedes) · <b>Coordinador de Sede</b> = Coordinador + una sede específica (solo gestiona esa sede).</p>
-        <form onsubmit="enviarInvitacion(event)" class="mb-6 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
-          <input id="inv_email" type="email" required placeholder="correo@ejemplo.com" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-          <select id="inv_rol" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
-            <option value="coordinador">Coordinador</option>
-            <option value="tesorero">Tesorero</option>
-            <option value="profesor">Profesor</option>
-            <option value="admin">Administrador</option>
-          </select>
-          <select id="inv_sede" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
-            <option value="">Todas las sedes</option>
-            ${sedesActivas().map((s) => `<option value="${s.id}">${s.nombre_sede}</option>`).join('')}
-          </select>
-          <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Invitar</button>
-        </form>
-        <div id="usuariosBox" class="text-sm text-slate-400">Cargando usuarios...</div>
-      </div>`;
-    renderUsuarios();
-  },
+};
+
+// La pantalla Usuarios vive en el menú (admin y coordinadores)
+SCREENS.usuarios = function () {
+  if (!window.AcademiasDB || !AcademiasDB.on) {
+    el('content').innerHTML = stub('Usuarios e invitaciones (requiere modo conectado)');
+    return;
+  }
+  // Alcance según quién invita:
+  //  admin            -> cualquier rol, cualquier sede
+  //  coord. general   -> cualquier rol menos admin, cualquier sede
+  //  coord. de sede   -> operador/cobranza/profesor/tesorero, SOLO su sede
+  const esAdmin = !PERFIL || PERFIL.rol === 'admin';
+  const esCoordSede = PERFIL && PERFIL.rol === 'coordinador' && PERFIL.sede_id;
+  const roles = esAdmin
+    ? [['coordinador', 'Coordinador'], ['operador', 'Operador'], ['cobranza', 'Cobranza'], ['tesorero', 'Tesorero'], ['profesor', 'Profesor'], ['admin', 'Administrador']]
+    : esCoordSede
+      ? [['operador', 'Operador'], ['cobranza', 'Cobranza'], ['tesorero', 'Tesorero'], ['profesor', 'Profesor']]
+      : [['coordinador', 'Coordinador'], ['operador', 'Operador'], ['cobranza', 'Cobranza'], ['tesorero', 'Tesorero'], ['profesor', 'Profesor']];
+  el('content').innerHTML = `
+    <div class="max-w-2xl">
+      <h3 class="font-semibold mb-1">Invitar usuario</h3>
+      <p class="text-xs text-slate-500 mb-3">El acceso es <b>por email</b>: al invitar, la persona recibe un correo con un enlace de acceso directo; al abrirlo entra a la app y se une a tu empresa con el rol asignado. También puede registrarse o entrar con Google con ese mismo correo.</p>
+      <p class="text-xs text-slate-400 mb-1"><b>Coordinador General</b> = Coordinador + 🌐 Todas las sedes · <b>Coordinador de Sede</b> = Coordinador + una sede específica.</p>
+      <p class="text-xs text-slate-400 mb-3"><b>Operador</b>: registra alumnos, revisa su información y registra pagos · <b>Cobranza</b>: registra pagos y revisa cuentas por cobrar.</p>
+      ${esCoordSede ? `<p class="text-xs text-amber-600 mb-3">Como Coordinador de Sede, tus invitaciones son para <b>${sede(PERFIL.sede_id) ? sede(PERFIL.sede_id).nombre_sede : 'tu sede'}</b>.</p>` : ''}
+      <form onsubmit="enviarInvitacion(event)" class="mb-6 grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
+        <input id="inv_email" type="email" required placeholder="correo@ejemplo.com" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select id="inv_rol" class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white">
+          ${roles.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}
+        </select>
+        <select id="inv_sede" ${esCoordSede ? 'disabled' : ''} class="rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white ${esCoordSede ? 'opacity-70' : ''}">
+          ${esCoordSede
+            ? `<option value="${PERFIL.sede_id}" selected>${sede(PERFIL.sede_id) ? sede(PERFIL.sede_id).nombre_sede : 'Mi sede'}</option>`
+            : `<option value="">🌐 Todas las sedes</option>` + sedesActivas().map((s) => `<option value="${s.id}">${s.nombre_sede}</option>`).join('')}
+        </select>
+        <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Invitar</button>
+      </form>
+      <div id="usuariosBox" class="text-sm text-slate-400">Cargando usuarios...</div>
+    </div>`;
+  renderUsuarios();
 };
 
 window.guardarConceptoCNR = (ev) => {
@@ -3026,7 +3040,7 @@ window.fTallaBox = () => {
 };
 
 // ---------- Usuarios e invitaciones (módulo de seguridad) ----------
-const ROL_LABEL = { admin: 'Administrador', coordinador: 'Coordinador', tesorero: 'Tesorero', profesor: 'Profesor' };
+const ROL_LABEL = { admin: 'Administrador', coordinador: 'Coordinador', tesorero: 'Tesorero', profesor: 'Profesor', operador: 'Operador', cobranza: 'Cobranza' };
 async function renderUsuarios() {
   const box = el('usuariosBox');
   if (!box) return;
@@ -3045,7 +3059,9 @@ async function renderUsuarios() {
             </div>
             ${PERFIL && p.user_id === PERFIL.user_id
               ? '<span class="text-[11px] rounded-full bg-indigo-50 text-indigo-600 px-2 py-0.5 shrink-0">Tú</span>'
-              : `<button onclick="quitarUsuarioUI('${p.user_id}','${(p.email || '').replace(/'/g, '')}')" class="text-xs text-rose-500 hover:text-rose-700 shrink-0">Quitar</button>`}
+              : (!PERFIL || PERFIL.rol === 'admin')
+                ? `<button onclick="quitarUsuarioUI('${p.user_id}','${(p.email || '').replace(/'/g, '')}')" class="text-xs text-rose-500 hover:text-rose-700 shrink-0">Quitar</button>`
+                : ''}
           </div>`).join('')}
       </div>
       <h3 class="font-semibold text-slate-800 mb-2">Invitaciones pendientes (${pendientes.length})</h3>
@@ -3677,7 +3693,7 @@ async function entrarConectado() {
         const sedeP = PERFIL.sede_id && sede(PERFIL.sede_id);
         const rolTxt = PERFIL.rol === 'coordinador'
           ? (sedeP ? `Coordinador · ${sedeP.nombre_sede}` : 'Coordinador General')
-          : ({ admin: 'Administrador / Director', tesorero: 'Tesorero / Caja', profesor: 'Profesor' })[PERFIL.rol] || PERFIL.rol;
+          : ({ admin: 'Administrador / Director', tesorero: 'Tesorero / Caja', profesor: 'Profesor', operador: 'Operador', cobranza: 'Cobranza' })[PERFIL.rol] || PERFIL.rol;
         idBox.innerHTML = `
           <div class="text-[11px] uppercase tracking-wide text-white/50 mb-0.5">${rolTxt}</div>
           <div class="text-xs text-white/80 truncate" title="${PERFIL.email || ''}">${PERFIL.email || ''}</div>`;
