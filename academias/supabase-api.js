@@ -49,6 +49,11 @@ window.AcademiasDB = (() => {
         clases_mensuales: N(r.clases_mensuales), costo_mensual_cancha: N(r.costo_mensual_cancha),
         costo_mensual_profesores: N(r.costo_mensual_profesores) }),
     },
+    trackEntrenadores: {
+      table: 'track_entrenadores',
+      toRow: (x) => ({ ...pick(x, ['id', 'track_id', 'staff_id']), costo: N(x.costo) || 0 }),
+      fromRow: (r) => ({ ...r, costo: N(r.costo) }),
+    },
     tutores: {
       table: 'tutores',
       toRow: (t) => ({ ...pick(t, ['id', 'dni_tutor', 'telefono_celular', 'email_tutor']),
@@ -245,14 +250,14 @@ window.AcademiasDB = (() => {
     const perfiles = perfilQ.data || [];
     const perfil = perfiles[0] || null;
     const sel = (t) => sb.from(t).select('*');
-    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg] = await Promise.all([
+    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
       sel('medios_pago'), sel('ciclos_pago'), sel('promociones'), sel('conceptos_cnr'),
       sel('procesos_facturacion'), sel('asistencias'), sel('inv_pedidos'), sel('inv_movimientos'),
-      sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'), sel('egresos'),
+      sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'), sel('egresos'), sel('track_entrenadores'),
     ]);
-    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg].find((r) => r.error);
+    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te].find((r) => r.error);
     if (err) throw err.error;
     if (!ac.data.length || !perfil) return { academia: null, perfil, misEmpresas: [] };
 
@@ -296,6 +301,7 @@ window.AcademiasDB = (() => {
       torneoCategorias: tcat.data.map(T.torneoCategorias.fromRow),
       torneoJugadores: tjug.data.map(T.torneoJugadores.fromRow),
       egresos: eg.data.map(T.egresos.fromRow),
+      trackEntrenadores: te.data.map(T.trackEntrenadores.fromRow),
     };
   }
 

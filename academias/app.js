@@ -46,8 +46,14 @@ const DB = {
     { id: 't3', sede_id: 's2', linea_negocio: 'alto_rendimiento', nombre_track: '2016', capacidad_maxima: 18, mensualidad_sugerida: 200, clases_mensuales: 8, costo_mensual_cancha: 450, costo_mensual_profesores: 550, dias_horario: 'Sáb 10:00' },
   ],
 
-  // cuerpo técnico M2M
+  // cuerpo técnico M2M (legado, solo lectura)
   trackStaff: { t1: ['st1'], t2: ['st2'], t3: ['st1'] },
+  // Entrenadores por track con costo individual: la suma = costo de profesores del track
+  trackEntrenadores: [   // { id, track_id, staff_id, costo }
+    { id: 'te1', track_id: 't1', staff_id: 'st1', costo: 600 },
+    { id: 'te2', track_id: 't2', staff_id: 'st2', costo: 700 },
+    { id: 'te3', track_id: 't3', staff_id: 'st1', costo: 550 },
+  ],
 
   tutores: [
     { id: 'tu1', dni_tutor: '40111222', telefono_celular: '987654321', email_tutor: 'rosa@mail.com', perfil_reclamado: true },
@@ -277,9 +283,24 @@ const origenTag = (c) => {
 };
 
 // Cálculos de negocio (Flujo C)
+// Entrenadores del track (con costo individual); fallback al campo legado
+const entrenadoresDe = (tid) => (DB.trackEntrenadores || []).filter((x) => x.track_id === tid);
+const costoEntrenadores = (t) => {
+  const es = entrenadoresDe(t.id);
+  return es.length ? es.reduce((s, x) => s + (+x.costo || 0), 0) : (+t.costo_mensual_profesores || 0);
+};
+// Nombres de los entrenadores del track (fallback: coach_id / trackStaff legado)
+function coachesNombres(t) {
+  const es = entrenadoresDe(t.id).map((x) => staffDe(x.staff_id)).filter(Boolean);
+  if (es.length) return es.map((s) => `${s.nombre} ${s.apellido}`);
+  const cid = t.coach_id || (DB.trackStaff[t.id] && DB.trackStaff[t.id][0]) || null;
+  const c = cid && staffDe(cid);
+  return c ? [`${c.nombre} ${c.apellido}`] : [];
+}
+
 function statsTrack(t) {
   const insc = DB.inscripciones.filter((i) => i.track_id === t.id && i.activo);
-  const costoOperacion = t.costo_mensual_cancha + t.costo_mensual_profesores;
+  const costoOperacion = (+t.costo_mensual_cancha || 0) + costoEntrenadores(t);
   const puntoEquilibrio = ceil(costoOperacion / t.mensualidad_sugerida);
   const ingresos = insc.reduce((s, i) =>
     s + (i.costo_mensual_personalizado ?? t.mensualidad_sugerida), 0);
@@ -1135,15 +1156,14 @@ function trackCard(t) {
   const x = statsTrack(t);
   const pct = Math.min(100, Math.round((x.insc.length / t.capacidad_maxima) * 100));
   const pctBE = Math.round((x.puntoEquilibrio / t.capacidad_maxima) * 100);
-  const coachId = t.coach_id || (DB.trackStaff[t.id] && DB.trackStaff[t.id][0]) || null;
-  const coach = coachId ? staffDe(coachId) : null;
+  const nombresCoach = coachesNombres(t);
   return `
     <div onclick="abrirTrack('${t.id}')" class="cursor-pointer rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200 hover:ring-indigo-300 hover:shadow-md transition">
       <div class="flex justify-between items-start">
         <div>
           <div class="font-semibold">${t.nombre_track}</div>
           <div class="text-xs text-slate-400">${sede(t.sede_id).nombre_sede} · ${t.linea_negocio}</div>
-          <div class="text-xs ${coach ? 'text-slate-500' : 'text-slate-300'}">👤 ${coach ? `${coach.nombre} ${coach.apellido}` : 'Sin profesor'}</div>
+          <div class="text-xs ${nombresCoach.length ? 'text-slate-500' : 'text-slate-300'}">👤 ${nombresCoach.join(', ') || 'Sin profesor'}</div>
           <div class="text-xs ${t.dias_horario ? 'text-slate-500' : 'text-slate-300'}">🕐 ${t.dias_horario || 'Sin horario'}</div>
         </div>
         ${badge(x.etiqueta, x.color)}
@@ -1215,8 +1235,8 @@ function renderTrackDetalle() {
   const cats = [...new Set(DB.inscripciones.filter((i) => i.track_id === t.id)
     .map((i) => anio(jugador(i.jugador_id).fecha_nacimiento)))].sort();
   const st = statsTrack(t);
-  const coachId = t.coach_id || (DB.trackStaff[t.id] && DB.trackStaff[t.id][0]) || null;
-  const coach = coachId ? staffDe(coachId) : null;
+  const nombresCoach = coachesNombres(t);
+  const costoProfes = costoEntrenadores(t);
   const utilCls = st.utilidad > 0 ? 'text-emerald-600' : st.utilidad < 0 ? 'text-rose-600' : 'text-slate-700';
   el('content').innerHTML = `
     <button onclick="cerrarTrack()" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver a tracks</button>
@@ -1226,17 +1246,20 @@ function renderTrackDetalle() {
           <h2 class="text-xl font-bold">${t.nombre_track}</h2>
           <span id="trkCount" class="text-sm text-emerald-600 font-medium">${insc.length}/${t.capacidad_maxima}</span>
           ${badge(st.etiqueta, st.color)}
+          <button onclick="formEditarTrack('${t.id}')" class="text-xs text-indigo-600 hover:underline">✏️ Editar track</button>
         </div>
         <div class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</div>
       </div>
       <button onclick="formAgregarAlumno('${t.id}')" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Agregar alumno</button>
     </div>
     <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      ${card('Profesor', coach ? `<span class="text-lg">${coach.nombre} ${coach.apellido}</span>` : '<span class="text-lg text-slate-400">Sin asignar</span>', coach ? (coach.rol === 'coordinador' ? 'Coordinador' : 'Profesor') : '')}
+      ${card(nombresCoach.length > 1 ? 'Entrenadores' : 'Profesor',
+        nombresCoach.length ? `<span class="text-base leading-tight">${nombresCoach.join('<br>')}</span>` : '<span class="text-lg text-slate-400">Sin asignar</span>',
+        nombresCoach.length ? `${nombresCoach.length} entrenador(es)` : 'asígnalo en Editar track')}
       ${card('Alumnos', `${insc.length} <span class="text-sm font-normal text-slate-400">/ ${t.capacidad_maxima}</span>`, `equilibrio: ${st.puntoEquilibrio} alumnos`)}
       ${card('CR promedio', insc.length ? S(st.crPromedio) : '—', `mensualidad sugerida ${S(t.mensualidad_sugerida)}`)}
       ${card('Rentabilidad', `<span class="${utilCls}">${st.utilidad >= 0 ? '' : '−'}${S(Math.abs(st.utilidad))}</span>`, `ingresos ${S(st.ingresos)} − costos ${S(st.costoOperacion)}`)}
-      ${card('Costo profesores', S(t.costo_mensual_profesores), 'mensual')}
+      ${card('Costo profesores', S(costoProfes), entrenadoresDe(t.id).length ? 'suma de entrenadores' : 'mensual')}
       ${card('Costo cancha', S(t.costo_mensual_cancha), 'mensual')}
     </div>
     <div class="mb-4 space-y-2">
@@ -2365,6 +2388,7 @@ const num = (id) => parseFloat(val(id)) || 0;
 
 // ---------- Nuevo track (con break-even en vivo) ----------
 let TRACK_HORARIOS = {};                       // { 'Mar': {ini,fin}, ... }
+let TRACK_EDIT_COACHES = [];                   // copia de trabajo del modal Editar track: [{id?, staff_id, costo}]
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 window.formTrack = () => {
@@ -2439,7 +2463,9 @@ window.aplicarTodos = () => {
 };
 
 window.beCalc = () => {
-  const costo = num('f_cancha') + num('f_prof');
+  // en el modal de edición no hay f_prof: el costo viene de los entrenadores
+  const profes = el('f_prof') ? num('f_prof') : TRACK_EDIT_COACHES.reduce((s, x) => s + (+x.costo || 0), 0);
+  const costo = num('f_cancha') + profes;
   const mens = num('f_mens');
   const be = mens > 0 ? Math.ceil(costo / mens) : 0;
   const aforo = num('f_aforo');
@@ -2450,8 +2476,8 @@ window.beCalc = () => {
     <div class="mt-1 text-xs text-slate-400">Se necesitan ${be} de ${aforo} cupos para no operar a pérdida.</div>`;
 };
 
-window.guardarTrack = (e) => {
-  e.preventDefault();
+// Resumen legible de TRACK_HORARIOS ("Lun/Mié 18:00-19:00")
+function resumenHorarios() {
   const dias = DIAS.filter((d) => TRACK_HORARIOS[d]);
   const horarios = dias.map((d) => ({ dia: d, ini: TRACK_HORARIOS[d].ini, fin: TRACK_HORARIOS[d].fin }));
   let resumen = '';
@@ -2462,14 +2488,114 @@ window.guardarTrack = (e) => {
       ? `${dias.join('/')} ${t0.ini}-${t0.fin}`
       : horarios.map((h) => `${h.dia} ${h.ini}-${h.fin}`).join(', ');
   }
+  return { resumen, horarios };
+}
+
+window.guardarTrack = (e) => {
+  e.preventDefault();
+  const { resumen, horarios } = resumenHorarios();
   const id = uid('t');
   DB.tracks.push({ id, sede_id: SEDE_ACTUAL, linea_negocio: 'academia',
     nombre_track: val('f_nombre'), capacidad_maxima: num('f_aforo'), mensualidad_sugerida: num('f_mens'),
     clases_mensuales: num('f_clases') || 8, costo_mensual_cancha: num('f_cancha'),
     costo_mensual_profesores: num('f_prof'), dias_horario: resumen, horarios,
     coach_id: val('f_coach') || null, activo: true });
-  if (val('f_coach')) DB.trackStaff[id] = [val('f_coach')];
+  if (val('f_coach')) {
+    DB.trackEntrenadores.push({ id: uid('te'), track_id: id, staff_id: val('f_coach'), costo: num('f_prof') || 0 });
+  }
   closeModal(); toast('Track creado'); go('tracks');
+};
+
+// ---------- Editar track: datos + entrenadores con costo individual ----------
+window.formEditarTrack = (tid) => {
+  const t = track(tid);
+  if (!t) return;
+  TRACK_HORARIOS = {};
+  (t.horarios || []).forEach((h) => { TRACK_HORARIOS[h.dia] = { ini: h.ini, fin: h.fin }; });
+  TRACK_EDIT_COACHES = entrenadoresDe(tid).map((x) => ({ ...x }));
+  if (!TRACK_EDIT_COACHES.length) {
+    // migra en caliente el coach legado con el costo actual del track
+    const cid = t.coach_id || (DB.trackStaff[t.id] && DB.trackStaff[t.id][0]) || null;
+    if (cid) TRACK_EDIT_COACHES = [{ staff_id: cid, costo: +t.costo_mensual_profesores || 0 }];
+  }
+  const esc = (x) => (x == null ? '' : String(x)).replace(/"/g, '&quot;');
+  openModal(`Editar track · ${t.nombre_track}`, `
+    <form onsubmit="guardarEdicionTrack(event,'${tid}')">
+      ${field('Nombre del track', input('f_nombre', `required value="${esc(t.nombre_track)}"`))}
+      <div class="mb-3">
+        <span class="block text-xs font-medium text-slate-500 mb-1">Entrenadores <span class="text-slate-400">(la suma de sus costos = costo de profesores del track)</span></span>
+        <div id="tecList" class="space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3"></div>
+      </div>
+      <div class="mb-3">
+        <span class="block text-xs font-medium text-slate-500 mb-1">Días y horarios</span>
+        <div id="trkDias" class="flex flex-wrap gap-2 mb-3"></div>
+        <div id="trkHorarios" class="rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 space-y-2"></div>
+      </div>
+      ${field('Capacidad máxima', input('f_aforo', `type="number" value="${esc(t.capacidad_maxima)}" oninput="beCalc()"`))}
+      <div class="grid grid-cols-2 gap-3">
+        ${field('Mensualidad (S/.)', input('f_mens', `type="number" step="0.01" value="${esc(t.mensualidad_sugerida)}" oninput="beCalc()"`))}
+        ${field('Clases/mes', input('f_clases', `type="number" value="${esc(t.clases_mensuales)}"`))}
+      </div>
+      ${field('Costo mensual cancha (S/.)', input('f_cancha', `type="number" step="0.01" value="${esc(t.costo_mensual_cancha)}" oninput="beCalc()"`))}
+      <div id="bePreview" class="rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 text-sm mb-3"></div>
+      ${submitBar('Guardar cambios')}
+    </form>`);
+  renderTrackDias(); renderTecList(); beCalc();
+};
+
+function renderTecList() {
+  const box = el('tecList');
+  if (!box) return;
+  const usados = new Set(TRACK_EDIT_COACHES.map((x) => x.staff_id));
+  const disponibles = DB.staff.filter((s) => (s.rol === 'profesor' || s.rol === 'coordinador')
+    && s.activo !== false && (!s.sede_id || s.sede_id === SEDE_ACTUAL) && !usados.has(s.id));
+  const total = TRACK_EDIT_COACHES.reduce((s, x) => s + (+x.costo || 0), 0);
+  box.innerHTML = (TRACK_EDIT_COACHES.map((x, i) => {
+    const s = staffDe(x.staff_id);
+    return `<div class="flex items-center gap-2 text-sm">
+      <span class="flex-1 min-w-0 truncate">👤 ${s ? `${s.nombre} ${s.apellido}` : '?'}</span>
+      <span class="text-xs text-slate-400">S/</span>
+      <input type="number" step="0.01" value="${x.costo ?? 0}" onchange="tecCosto(${i}, this.value)"
+        class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">
+      <button type="button" onclick="tecQuitar(${i})" class="text-rose-500 hover:underline text-xs">Quitar</button>
+    </div>`;
+  }).join('') || '<p class="text-xs text-slate-400">Sin entrenadores asignados.</p>')
+  + (disponibles.length ? `
+    <div class="flex items-center gap-2 border-t border-slate-200 pt-2">
+      <select id="tec_nuevo" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+        ${disponibles.map((s) => `<option value="${s.id}">${s.nombre} ${s.apellido}</option>`).join('')}
+      </select>
+      <input id="tec_costo" type="number" step="0.01" placeholder="Costo S/" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right">
+      <button type="button" onclick="tecAgregar()" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ Agregar</button>
+    </div>` : '<p class="text-xs text-slate-400 border-t border-slate-200 pt-2">No hay más profesores disponibles (créalos en Configuración → Profesores).</p>')
+  + `<div class="flex justify-between border-t border-slate-200 pt-2 text-xs"><span class="text-slate-500">Costo total de entrenadores</span><b>${S(total)}</b></div>`;
+}
+window.tecCosto = (i, v) => { if (TRACK_EDIT_COACHES[i]) { TRACK_EDIT_COACHES[i].costo = parseFloat(v) || 0; renderTecList(); beCalc(); } };
+window.tecQuitar = (i) => { TRACK_EDIT_COACHES.splice(i, 1); renderTecList(); beCalc(); };
+window.tecAgregar = () => {
+  const sid = val('tec_nuevo');
+  if (!sid) return;
+  TRACK_EDIT_COACHES.push({ staff_id: sid, costo: num('tec_costo') || 0 });
+  renderTecList(); beCalc();
+};
+
+window.guardarEdicionTrack = (e, tid) => {
+  e.preventDefault();
+  const t = track(tid);
+  if (!t) return;
+  const { resumen, horarios } = resumenHorarios();
+  const totalProfes = TRACK_EDIT_COACHES.reduce((s, x) => s + (+x.costo || 0), 0);
+  Object.assign(t, {
+    nombre_track: val('f_nombre'), capacidad_maxima: num('f_aforo'), mensualidad_sugerida: num('f_mens'),
+    clases_mensuales: num('f_clases') || 8, costo_mensual_cancha: num('f_cancha'),
+    dias_horario: resumen, horarios,
+    coach_id: TRACK_EDIT_COACHES[0] ? TRACK_EDIT_COACHES[0].staff_id : null,
+    costo_mensual_profesores: totalProfes,   // derivado: suma de entrenadores
+  });
+  DB.trackEntrenadores = (DB.trackEntrenadores || []).filter((x) => x.track_id !== tid)
+    .concat(TRACK_EDIT_COACHES.map((x) => ({ id: x.id || uid('te'), track_id: tid, staff_id: x.staff_id, costo: +x.costo || 0 })));
+  closeModal(); toast('Track actualizado ✓');
+  if (TRACK_SEL === tid) renderTrackDetalle(); else go('tracks');
 };
 
 // ---------- Registro cero fricción (Flujo A) ----------
@@ -2996,7 +3122,8 @@ window.editarStaff = (id) => { STAFF_EDIT = id; SCREENS.config(); };
 window.cancelStaffEdit = () => { STAFF_EDIT = null; SCREENS.config(); };
 window.toggleStaff = (id) => { const s = staffDe(id); if (s) { s.activo = s.activo === false; SCREENS.config(); } };
 window.eliminarStaff = (id) => {
-  const usado = DB.tracks.some((t) => t.coach_id === id) || Object.values(DB.trackStaff).some((ids) => (ids || []).includes(id));
+  const usado = DB.tracks.some((t) => t.coach_id === id) || Object.values(DB.trackStaff).some((ids) => (ids || []).includes(id))
+    || (DB.trackEntrenadores || []).some((x) => x.staff_id === id);
   if (usado) { toast('No se puede eliminar: está asignado a un track. Inactívalo.'); return; }
   DB.staff = DB.staff.filter((s) => s.id !== id);
   if (STAFF_EDIT === id) STAFF_EDIT = null;
