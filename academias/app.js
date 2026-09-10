@@ -3659,21 +3659,42 @@ window.doLogoutAcademias = async () => {
   if (window.AcademiasDB && AcademiasDB.on) await AcademiasDB.auth.signOut();
   location.reload();
 };
+// Multi-empresa: marca la empresa activa en el servidor y recarga limpio
+window.cambiarEmpresaUI = async (academiaId) => {
+  try {
+    await AcademiasDB.cambiarEmpresa(academiaId);
+    location.reload();
+  } catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
+};
 
 // ---------- Arranque conectado: hidratar DB y activar sincronización ----------
-let PERFIL = null;   // perfil del usuario autenticado (rol, sede, email)
+let PERFIL = null;        // perfil del usuario en la empresa ACTIVA (rol, sede, email)
+let MIS_EMPRESAS = [];    // todas las empresas del usuario (multi-empresa)
 async function entrarConectado() {
   try {
+    // Acepta TODAS las invitaciones pendientes de este correo (pueden ser de
+    // otras empresas aunque ya pertenezca a una)
+    const unido = await AcademiasDB.usuarios.aceptarInvitacion().catch(() => null);
     let data = await AcademiasDB.loadAll();
-    if (!data.academia) {
-      // ¿Tiene una invitación pendiente? Únete a esa academia con su rol.
-      const unido = await AcademiasDB.usuarios.aceptarInvitacion().catch(() => null);
-      if (unido) data = await AcademiasDB.loadAll();
-      if (!data.academia) { showAuthScreen('crear'); return; }
-    }
+    if (unido && !data.academia) data = await AcademiasDB.loadAll();
+    if (!data.academia) { showAuthScreen('crear'); return; }
     Object.assign(DB, data);
     PERFIL = data.perfil || null;
+    MIS_EMPRESAS = data.misEmpresas || [];
     delete DB.perfil;
+    delete DB.misEmpresas;
+    // Empresa activa en el sidebar; conmutador si pertenece a varias
+    const eBox = el('empresaBox');
+    if (eBox) {
+      eBox.classList.remove('hidden');
+      eBox.innerHTML = `
+        <div class="text-[11px] uppercase tracking-wide text-white/50 mb-1">Empresa</div>
+        ${MIS_EMPRESAS.length > 1
+          ? `<select onchange="cambiarEmpresaUI(this.value)" class="w-full bg-white/10 text-sm text-white rounded-md px-2 py-2 border border-white/20 [&>option]:text-slate-800">
+              ${MIS_EMPRESAS.map((e2) => `<option value="${e2.id}" ${e2.id === DB.academia.id ? 'selected' : ''}>${e2.nombre}</option>`).join('')}
+            </select>`
+          : `<div class="font-display text-lg tracking-wide">${DB.academia.nombre_academia || ''}</div>`}`;
+    }
     // Backfill: perfiles creados antes de v3 no tienen email guardado
     if (PERFIL && !PERFIL.email) {
       const { data: s } = await AcademiasDB.sb.auth.getSession();

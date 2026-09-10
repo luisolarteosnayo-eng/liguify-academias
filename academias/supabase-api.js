@@ -182,6 +182,12 @@ window.AcademiasDB = (() => {
     if (error) throw error; return data;
   }
 
+  // Cambia la empresa activa del usuario (multi-empresa)
+  async function cambiarEmpresa(academiaId) {
+    const { error } = await sb.rpc('cambiar_empresa', { p_academia: academiaId });
+    if (error) throw error;
+  }
+
   // ---------- Usuarios e invitaciones (módulo de seguridad) ----------
   const usuarios = {
     async aceptarInvitacion() {
@@ -231,8 +237,13 @@ window.AcademiasDB = (() => {
   async function loadAll() {
     const { data: sess } = await sb.auth.getSession();
     const userId = sess && sess.session ? sess.session.user.id : null;
-    const perfilQ = userId ? await sb.from('perfiles').select('*').eq('user_id', userId).maybeSingle() : { data: null };
-    const perfil = perfilQ.data || null;
+    // Multi-empresa: el usuario puede tener un perfil por empresa; el activo manda
+    const perfilQ = userId
+      ? await sb.from('perfiles').select('*').eq('user_id', userId)
+          .order('activa', { ascending: false }).order('created_at', { ascending: true })
+      : { data: [] };
+    const perfiles = perfilQ.data || [];
+    const perfil = perfiles[0] || null;
     const sel = (t) => sb.from(t).select('*');
     const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
@@ -243,11 +254,14 @@ window.AcademiasDB = (() => {
     ]);
     const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg].find((r) => r.error);
     if (err) throw err.error;
-    if (!ac.data.length) return { academia: null, perfil };
+    if (!ac.data.length || !perfil) return { academia: null, perfil, misEmpresas: [] };
 
-    const a = ac.data[0];
+    // El select de academias devuelve TODAS mis empresas (para el conmutador);
+    // la activa es la del perfil activo
+    const a = ac.data.find((x) => x.id === perfil.academia_id) || ac.data[0];
     const academia = { ...a, email: a.email_corporativo, ruc: a.ruc_dni };
     ACADEMIA_ID = a.id;
+    const misEmpresas = ac.data.map((x) => ({ id: x.id, nombre: x.nombre_academia }));
 
     const pagos = pa.data.map(T.pagos.fromRow);
     pc.data.forEach((d) => {
@@ -260,6 +274,7 @@ window.AcademiasDB = (() => {
     return {
       academia,
       perfil,
+      misEmpresas,
       sedes: se.data.map(T.sedes.fromRow),
       staff: st.data.map(T.staff.fromRow),
       tracks: tr.data.map(T.tracks.fromRow),
@@ -437,5 +452,5 @@ window.AcademiasDB = (() => {
     },
   };
 
-  return { on: true, sb, auth, crearAcademia, usuarios, loadAll, sync, get academiaId() { return ACADEMIA_ID; } };
+  return { on: true, sb, auth, crearAcademia, cambiarEmpresa, usuarios, loadAll, sync, get academiaId() { return ACADEMIA_ID; } };
 })();
