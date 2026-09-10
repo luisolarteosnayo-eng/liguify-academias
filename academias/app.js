@@ -144,6 +144,12 @@ const DB = {
 
   asistencias: [],   // { track_id, jugador_id, fecha, estado }
 
+  // Cierres mensuales por track (snapshot para evaluar evolución mes a mes)
+  trackCierres: [   // { id, sede_id, track_id, periodo 'YYYY-MM', nombre_track, entrenadores, alumnos, capacidad, ingresos, costo_cancha, costo_profesores, utilidad, cr_promedio }
+    { id: 'tc1', sede_id: 's1', track_id: 't1', periodo: '2026-05', nombre_track: '2015 - 2016', entrenadores: 'Carlos Ramírez', alumnos: 2, capacidad: 20, ingresos: 440, costo_cancha: 500, costo_profesores: 600, utilidad: -660, cr_promedio: 220 },
+    { id: 'tc2', sede_id: 's1', track_id: 't1', periodo: '2026-06', nombre_track: '2015 - 2016', entrenadores: 'Carlos Ramírez', alumnos: 3, capacidad: 20, ingresos: 520, costo_cancha: 500, costo_profesores: 600, utilidad: -580, cr_promedio: 173.33 },
+  ],
+
   // Gastos (egresos) por sede: la utilidad real de la sede = ingresos − gastos
   egresos: [         // { id, sede_id, concepto: cancha|materiales|uniformes|nomina|otro, descripcion, monto, fecha, periodo }
     { id: 'e1', sede_id: 's1', concepto: 'cancha', descripcion: 'Alquiler de cancha julio', monto: 500, fecha: '2026-07-01', periodo: '2026-07' },
@@ -835,7 +841,10 @@ const SCREENS = {
       </div>` : ''}
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center">
         <p class="text-sm text-slate-500">Toca un track para ver sus alumnos · equilibrio = ⌈costo ÷ mensualidad⌉</p>
-        <button onclick="formTrack()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Nuevo track</button>
+        <div class="flex gap-2">
+          ${puedeEliminarTrack() ? `<button onclick="formCierreMensual()" class="rounded-lg ring-1 ring-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">🔒 Cierre mensual</button>` : ''}
+          <button onclick="formTrack()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Nuevo track</button>
+        </div>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         ${ordenarPorHorario(tracksSede()).map(trackCard).join('') || '<p class="text-sm text-slate-400">Esta sede aún no tiene tracks.</p>'}
@@ -1306,6 +1315,33 @@ function renderTrackDetalle() {
       ${card('Costo profesores', S(costoProfes), entrenadoresDe(t.id).length ? 'suma de entrenadores' : 'mensual')}
       ${card('Costo cancha', S(t.costo_mensual_cancha), 'mensual')}
     </div>
+    ${(() => {
+      // Evolución mensual del track: cierres guardados, con deltas vs mes anterior
+      const cierres = DB.trackCierres.filter((c) => c.track_id === t.id)
+        .sort((a, b) => (a.periodo < b.periodo ? 1 : -1));
+      if (!cierres.length) return '';
+      const delta = (v, prev, invertir) => {
+        if (prev === undefined || prev === null) return '<span class="text-slate-300 text-xs">—</span>';
+        const d = Math.round((v - prev) * 100) / 100;
+        if (d === 0) return '<span class="text-slate-400 text-xs">=</span>';
+        const bueno = invertir ? d < 0 : d > 0;
+        return `<span class="text-xs font-medium ${bueno ? 'text-emerald-600' : 'text-rose-600'}">${d > 0 ? '▲ +' : '▼ '}${d}</span>`;
+      };
+      const rows = cierres.map((c, i) => {
+        const prev = cierres[i + 1];   // mes anterior (orden desc)
+        return [
+          `<b>${mesLabelDe(c.periodo)}</b>`,
+          `<span class="text-xs">${c.entrenadores || '—'}</span>`,
+          `${c.alumnos}/${c.capacidad || '—'} ${delta(c.alumnos, prev && prev.alumnos)}`,
+          `S/ ${Math.round(c.ingresos)}`,
+          `<span class="${c.utilidad > 0 ? 'text-emerald-600' : c.utilidad < 0 ? 'text-rose-600' : ''}">S/ ${Math.round(c.utilidad)}</span> ${delta(Math.round(c.utilidad), prev && Math.round(prev.utilidad))}`,
+          `S/ ${Math.round(c.cr_promedio)}`,
+        ];
+      });
+      return `
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">📈 Evolución mensual (cierres)</h3>
+      <div class="mb-4">${table(['Mes', 'Entrenadores', 'Alumnos · Δ', 'Ingresos', 'Utilidad · Δ', 'CR promedio'], rows)}</div>`;
+    })()}
     <div class="mb-4 space-y-2">
       <input id="fltQ" oninput="renderTrackRows()" placeholder="Filtrar jugadores por nombre..."
         class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
@@ -2650,6 +2686,54 @@ window.eliminarTrack = (tid) => {
   TRACK_SEL = null;
   closeModal();
   toast(`Track "${t.nombre_track}" eliminado`);
+  go('tracks');
+};
+
+// ---------- Cierre mensual de tracks (snapshot para evaluar evolución) ----------
+const mesLabelDe = (periodo) => {
+  const [y, m] = periodo.split('-').map(Number);
+  const s = new Date(y, m - 1, 1).toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+window.formCierreMensual = () => {
+  if (!puedeEliminarTrack()) { toast('Solo el Coordinador General o el Administrador pueden ejecutar el cierre'); return; }
+  openModal('Cierre mensual de tracks', `
+    <form onsubmit="ejecutarCierreMensual(event)">
+      <p class="mb-3 text-xs text-slate-500">Guarda una <b>foto del mes</b> de TODOS los tracks activos de TODAS las sedes de la empresa:
+        alumnos, ingresos, costos, utilidad, CR promedio y entrenadores a cargo. Con los cierres guardados podrás
+        evaluar la evolución mes a mes de cada track y el rendimiento de sus profesores.</p>
+      ${field('Mes a cerrar', input('cie_mes', `type="month" required value="${HOY.slice(0, 7)}"`))}
+      <p class="text-xs text-slate-400 mb-3">Si el mes ya tiene un cierre, se recalcula con los datos actuales.</p>
+      ${submitBar('Ejecutar cierre')}
+    </form>`);
+};
+window.ejecutarCierreMensual = (e) => {
+  e.preventDefault();
+  const periodo = val('cie_mes');
+  if (!periodo) return;
+  const existentes = DB.trackCierres.filter((c) => c.periodo === periodo);
+  if (existentes.length && !confirm(`${mesLabelDe(periodo)} ya tiene un cierre (${existentes.length} track(s)). ¿Recalcular con los datos actuales?`)) return;
+  let n = 0;
+  sedesActivas().forEach((s) => {
+    DB.tracks.filter((t) => t.activo !== false && t.sede_id === s.id).forEach((t) => {
+      const x = statsTrack(t);
+      const fila = {
+        sede_id: s.id, track_id: t.id, periodo,
+        nombre_track: t.nombre_track,
+        entrenadores: coachesNombres(t).join(', ') || 'Sin asignar',
+        alumnos: x.insc.length, capacidad: +t.capacidad_maxima || 0,
+        ingresos: x.ingresos, costo_cancha: +t.costo_mensual_cancha || 0,
+        costo_profesores: costoEntrenadores(t), utilidad: x.utilidad,
+        cr_promedio: x.crPromedio,
+      };
+      const prev = DB.trackCierres.find((c) => c.track_id === t.id && c.periodo === periodo);
+      if (prev) Object.assign(prev, fila);
+      else DB.trackCierres.push({ id: uid('tc'), ...fila });
+      n++;
+    });
+  });
+  closeModal();
+  toast(`🔒 Cierre de ${mesLabelDe(periodo)} guardado · ${n} track(s)`);
   go('tracks');
 };
 

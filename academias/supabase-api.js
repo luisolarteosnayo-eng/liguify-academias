@@ -117,6 +117,16 @@ window.AcademiasDB = (() => {
         es_torneo: !!c.es_torneo, activo: c.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, precio: N(r.precio) }),
     },
+    trackCierres: {
+      table: 'track_cierres',
+      toRow: (c) => ({ ...pick(c, ['id', 'sede_id', 'track_id', 'periodo', 'nombre_track', 'entrenadores']),
+        alumnos: N(c.alumnos) || 0, capacidad: N(c.capacidad) || 0, ingresos: N(c.ingresos) || 0,
+        costo_cancha: N(c.costo_cancha) || 0, costo_profesores: N(c.costo_profesores) || 0,
+        utilidad: N(c.utilidad) || 0, cr_promedio: N(c.cr_promedio) || 0, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, alumnos: N(r.alumnos), capacidad: N(r.capacidad), ingresos: N(r.ingresos),
+        costo_cancha: N(r.costo_cancha), costo_profesores: N(r.costo_profesores),
+        utilidad: N(r.utilidad), cr_promedio: N(r.cr_promedio) }),
+    },
     egresos: {
       table: 'egresos',
       toRow: (e) => ({ ...pick(e, ['id', 'sede_id', 'concepto', 'descripcion', 'periodo', 'fecha']),
@@ -250,14 +260,15 @@ window.AcademiasDB = (() => {
     const perfiles = perfilQ.data || [];
     const perfil = perfiles[0] || null;
     const sel = (t) => sb.from(t).select('*');
-    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te] = await Promise.all([
+    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
       sel('medios_pago'), sel('ciclos_pago'), sel('promociones'), sel('conceptos_cnr'),
       sel('procesos_facturacion'), sel('asistencias'), sel('inv_pedidos'), sel('inv_movimientos'),
       sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'), sel('egresos'), sel('track_entrenadores'),
+      sel('track_cierres'),
     ]);
-    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te].find((r) => r.error);
+    const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci].find((r) => r.error);
     if (err) throw err.error;
     if (!ac.data.length || !perfil) return { academia: null, perfil, misEmpresas: [] };
 
@@ -302,6 +313,7 @@ window.AcademiasDB = (() => {
       torneoJugadores: tjug.data.map(T.torneoJugadores.fromRow),
       egresos: eg.data.map(T.egresos.fromRow),
       trackEntrenadores: te.data.map(T.trackEntrenadores.fromRow),
+      trackCierres: tci.data.map(T.trackCierres.fromRow),
     };
   }
 
