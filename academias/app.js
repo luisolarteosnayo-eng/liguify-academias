@@ -2538,7 +2538,13 @@ window.formEditarTrack = (tid) => {
       </div>
       ${field('Costo mensual cancha (S/.)', input('f_cancha', `type="number" step="0.01" value="${esc(t.costo_mensual_cancha)}" oninput="beCalc()"`))}
       <div id="bePreview" class="rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 text-sm mb-3"></div>
-      ${submitBar('Guardar cambios')}
+      <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
+        ${puedeEliminarTrack() ? `<button type="button" onclick="eliminarTrack('${tid}')" class="rounded-lg px-3 py-2 text-sm text-rose-600 hover:bg-rose-50">Eliminar track</button>` : '<span></span>'}
+        <div class="flex gap-2">
+          <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
+          <button type="submit" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Guardar cambios</button>
+        </div>
+      </div>
     </form>`);
   renderTrackDias(); renderTecList(); beCalc();
 };
@@ -2577,6 +2583,30 @@ window.tecAgregar = () => {
   if (!sid) return;
   TRACK_EDIT_COACHES.push({ staff_id: sid, costo: num('tec_costo') || 0 });
   renderTecList(); beCalc();
+};
+
+// Eliminar track: solo Coordinador General o Administrador (nivel marca).
+// Es una eliminación lógica: el track y sus inscripciones se desactivan y
+// dejan de contar en la rentabilidad de la sede; el historial financiero
+// de los alumnos (cargos y pagos) se conserva intacto.
+function puedeEliminarTrack() {
+  return ROL === 'admin' || (ROL === 'coordinador' && (!PERFIL || !PERFIL.sede_id));
+}
+window.eliminarTrack = (tid) => {
+  const t = track(tid);
+  if (!t) return;
+  if (!puedeEliminarTrack()) { toast('Solo el Coordinador General o el Administrador pueden eliminar tracks'); return; }
+  const inscAct = DB.inscripciones.filter((i) => i.track_id === tid && i.activo);
+  const msg = `¿Eliminar el track "${t.nombre_track}"?`
+    + (inscAct.length ? `\n\nTiene ${inscAct.length} alumno(s) inscritos: se quitarán del track (su historial de cargos y pagos se conserva).` : '')
+    + '\n\nEl track dejará de contar en la rentabilidad de la sede.';
+  if (!confirm(msg)) return;
+  t.activo = false;
+  inscAct.forEach((i) => { i.activo = false; });
+  TRACK_SEL = null;
+  closeModal();
+  toast(`Track "${t.nombre_track}" eliminado`);
+  go('tracks');
 };
 
 window.guardarEdicionTrack = (e, tid) => {
