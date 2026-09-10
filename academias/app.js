@@ -552,37 +552,38 @@ const SCREENS = {
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Alumnos nuevos por día</h3>
       <div class="mb-6">${chartNuevosPorDia(nuevos)}</div>
 
-      <h3 class="mb-2 text-sm font-semibold text-slate-600">Salud de tracks (break-even)</h3>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Tracks por sede (break-even)</h3>
       ${(() => {
-        // Resumen: utilidad total por sede + total general de los tracks mostrados
+        // KPIs de todos los tracks agrupados por sede + sumatoria a nivel empresa
         const todosIds = new Set();   // alumnos únicos (uno con 2 tracks cuenta una vez)
         const filas = sedesDash.map((s) => {
           const tks = tracksDash.filter((t) => t.sede_id === s.id);
           const ids = new Set();
-          const st = tks.reduce((a, t) => { const x = statsTrack(t); x.insc.forEach((i) => { ids.add(i.jugador_id); todosIds.add(i.jugador_id); }); a.u += x.utilidad; a.pot += x.potencial; return a; }, { u: 0, pot: 0 });
-          return { nombre: s.nombre_sede, n: tks.length, al: ids.size, u: st.u, pot: st.pot };
+          const a = tks.reduce((acc, t) => {
+            const x = statsTrack(t);
+            x.insc.forEach((i) => { ids.add(i.jugador_id); todosIds.add(i.jugador_id); });
+            acc.u += x.utilidad; acc.pot += x.potencial; acc.ing += x.ingresos;
+            acc.cancha += (+t.costo_mensual_cancha || 0); acc.profes += costoEntrenadores(t);
+            acc.cupos += x.cuposLibres;
+            return acc;
+          }, { u: 0, pot: 0, ing: 0, cancha: 0, profes: 0, cupos: 0 });
+          return { nombre: s.nombre_sede, n: tks.length, al: ids.size, ...a };
         }).filter((f) => f.n > 0);
-        const totU = filas.reduce((s, f) => s + f.u, 0);
-        const totAl = todosIds.size;
-        const totPot = filas.reduce((s, f) => s + f.pot, 0);
+        if (!filas.length) return '<p class="text-sm text-slate-400">Sin tracks.</p>';
         const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S(Math.abs(u))}</b>`;
-        const fmtPot = (p) => `<span class="text-xs ${p > 0 ? 'text-indigo-600' : 'text-slate-400'}">${p > 0 ? `potencial +${S(p)}` : 'aforo completo'}</span>`;
-        return filas.length ? `
-        <div class="mb-3 rounded-xl bg-white ring-1 ring-slate-200 divide-y divide-slate-100">
-          ${filas.map((f) => `
-            <div class="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-              <span class="text-slate-600">${f.nombre} <span class="text-xs text-slate-400">· ${f.n} track(s) · ${f.al} alumno(s)</span></span>
-              <span class="flex items-baseline gap-3 text-right">${fmtPot(f.pot)}${fmtU(f.u)}</span>
-            </div>`).join('')}
-          <div class="flex items-center justify-between gap-2 px-4 py-2.5 text-sm bg-slate-50 rounded-b-xl">
-            <span class="font-semibold text-slate-700">Utilidad total general <span class="text-xs font-normal text-slate-400">· ${totAl} alumno(s)</span></span>
-            <span class="flex items-baseline gap-3 text-right">${fmtPot(totPot)}${fmtU(totU)}</span>
-          </div>
-        </div>` : '';
-      })()}
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        ${tracksDash.length ? ordenarPorHorario(tracksDash).map(trackCard).join('') : '<p class="text-sm text-slate-400">Sin tracks.</p>'}
-      </div>`;
+        const rows = filas.map((f) => [
+          `<b>${f.nombre}</b>`, f.n, f.al, S(f.ing), S(f.cancha), S(f.profes),
+          `<span class="text-indigo-600">+${S(f.pot)}</span>`, fmtU(f.u)]);
+        if (filas.length > 1) {
+          const sum = (k) => filas.reduce((s, f) => s + f[k], 0);
+          rows.push([
+            '<b class="uppercase text-[11px] tracking-wide">Total empresa</b>',
+            `<b>${sum('n')}</b>`, `<b>${todosIds.size}</b>`, `<b>${S(sum('ing'))}</b>`,
+            `<b>${S(sum('cancha'))}</b>`, `<b>${S(sum('profes'))}</b>`,
+            `<b class="text-indigo-600">+${S(sum('pot'))}</b>`, fmtU(sum('u'))]);
+        }
+        return table(['Sede', 'Tracks', 'Alumnos', 'Ingresos', 'Costo cancha', 'Costo profesores', 'Potencial', 'Utilidad'], rows);
+      })()}`;
   },
 
   calendario() {
