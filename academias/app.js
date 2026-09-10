@@ -564,25 +564,26 @@ const SCREENS = {
             x.insc.forEach((i) => { ids.add(i.jugador_id); todosIds.add(i.jugador_id); });
             acc.u += x.utilidad; acc.pot += x.potencial; acc.ing += x.ingresos;
             acc.cancha += (+t.costo_mensual_cancha || 0); acc.profes += costoEntrenadores(t);
-            acc.cupos += x.cuposLibres;
+            acc.cap += (+t.capacidad_maxima || 0);
             return acc;
-          }, { u: 0, pot: 0, ing: 0, cancha: 0, profes: 0, cupos: 0 });
+          }, { u: 0, pot: 0, ing: 0, cancha: 0, profes: 0, cap: 0 });
           return { nombre: s.nombre_sede, n: tks.length, al: ids.size, ...a };
         }).filter((f) => f.n > 0);
         if (!filas.length) return '<p class="text-sm text-slate-400">Sin tracks.</p>';
-        const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S(Math.abs(u))}</b>`;
+        const S0 = (n) => 'S/ ' + Math.round(n);   // sin decimales
+        const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S0(Math.abs(u))}</b>`;
         const rows = filas.map((f) => [
-          `<b>${f.nombre}</b>`, f.n, f.al, S(f.ing), S(f.cancha), S(f.profes),
-          `<span class="text-indigo-600">+${S(f.pot)}</span>`, fmtU(f.u)]);
+          `<b>${f.nombre}</b>`, `${f.al}/${f.cap}`, S0(f.ing), S0(f.cancha), S0(f.profes),
+          `<span class="text-indigo-600">+${S0(f.pot)}</span>`, fmtU(f.u), fmtU(f.u + f.pot)]);
         if (filas.length > 1) {
           const sum = (k) => filas.reduce((s, f) => s + f[k], 0);
           rows.push([
             '<b class="uppercase text-[11px] tracking-wide">Total empresa</b>',
-            `<b>${sum('n')}</b>`, `<b>${todosIds.size}</b>`, `<b>${S(sum('ing'))}</b>`,
-            `<b>${S(sum('cancha'))}</b>`, `<b>${S(sum('profes'))}</b>`,
-            `<b class="text-indigo-600">+${S(sum('pot'))}</b>`, fmtU(sum('u'))]);
+            `<b>${todosIds.size}/${sum('cap')}</b>`, `<b>${S0(sum('ing'))}</b>`,
+            `<b>${S0(sum('cancha'))}</b>`, `<b>${S0(sum('profes'))}</b>`,
+            `<b class="text-indigo-600">+${S0(sum('pot'))}</b>`, fmtU(sum('u')), fmtU(sum('u') + sum('pot'))]);
         }
-        return table(['Sede', 'Tracks', 'Alumnos', 'Ingresos', 'Costo cancha', 'Costo profesores', 'Potencial', 'Utilidad'], rows);
+        return table(['Sede', 'Alumnos/Capacidad', 'Ingresos', 'Costo cancha', 'Costo profesores', 'Potencial', 'Utilidad', 'Utilidad Potencial'], rows);
       })()}`;
   },
 
