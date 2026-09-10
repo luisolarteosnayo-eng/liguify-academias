@@ -298,6 +298,25 @@ function coachesNombres(t) {
   return c ? [`${c.nombre} ${c.apellido}`] : [];
 }
 
+// Orden de tracks por horario: primero por hora de inicio, luego por día
+function ordenarPorHorario(tracks) {
+  const clave = (t) => {
+    let ini = '99:99', dia = 99;
+    if (t.horarios && t.horarios.length) {
+      const h = t.horarios.slice().sort((a, b) => String(a.ini).localeCompare(String(b.ini)))[0];
+      ini = h.ini || '99:99';
+      dia = Math.min(...t.horarios.map((x) => { const i = DIAS.indexOf(x.dia); return i === -1 ? 99 : i; }));
+    } else {
+      const hm = (t.dias_horario || '').match(/(\d{1,2}:\d{2})/);
+      if (hm) ini = hm[1].padStart(5, '0');
+      const dm = (t.dias_horario || '').match(/(Lun|Mar|Mié|Jue|Vie|Sáb|Dom)/);
+      if (dm) dia = DIAS.indexOf(dm[1]);
+    }
+    return `${ini} ${String(dia).padStart(2, '0')} ${t.nombre_track || ''}`;
+  };
+  return tracks.slice().sort((a, b) => (clave(a) < clave(b) ? -1 : 1));
+}
+
 function statsTrack(t) {
   const insc = DB.inscripciones.filter((i) => i.track_id === t.id && i.activo);
   const costoOperacion = (+t.costo_mensual_cancha || 0) + costoEntrenadores(t);
@@ -562,7 +581,7 @@ const SCREENS = {
         </div>` : '';
       })()}
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        ${tracksDash.length ? tracksDash.map(trackCard).join('') : '<p class="text-sm text-slate-400">Sin tracks.</p>'}
+        ${tracksDash.length ? ordenarPorHorario(tracksDash).map(trackCard).join('') : '<p class="text-sm text-slate-400">Sin tracks.</p>'}
       </div>`;
   },
 
@@ -770,31 +789,54 @@ const SCREENS = {
     if (TRACK_SEL) { renderTrackDetalle(); return; }
     // Dashboard de la sede: totales de todos sus tracks
     const unicos = new Set();   // un alumno con 2 tracks cuenta una sola vez
+    const porProfesor = {};     // costo total por cada profesor (suma de sus tracks)
     const tot = tracksSede().reduce((a, t) => {
       const st = statsTrack(t);
       st.insc.forEach((i) => unicos.add(i.jugador_id));
       a.util += st.utilidad; a.ing += st.ingresos; a.cos += st.costoOperacion;
       a.al += st.insc.length; a.cap += (+t.capacidad_maxima || 0); a.n++;
       a.pot += st.potencial; a.cupos += st.cuposLibres;
+      a.cancha += (+t.costo_mensual_cancha || 0);
+      const es = entrenadoresDe(t.id);
+      if (es.length) {
+        es.forEach((x) => {
+          const s = staffDe(x.staff_id);
+          const nom2 = s ? `${s.nombre} ${s.apellido}` : 'Sin asignar';
+          porProfesor[nom2] = (porProfesor[nom2] || 0) + (+x.costo || 0);
+          a.profes += (+x.costo || 0);
+        });
+      } else if (+t.costo_mensual_profesores) {
+        const nom2 = coachesNombres(t)[0] || 'Sin asignar';
+        porProfesor[nom2] = (porProfesor[nom2] || 0) + (+t.costo_mensual_profesores);
+        a.profes += (+t.costo_mensual_profesores);
+      }
       return a;
-    }, { util: 0, ing: 0, cos: 0, al: 0, cap: 0, n: 0, pot: 0, cupos: 0 });
+    }, { util: 0, ing: 0, cos: 0, al: 0, cap: 0, n: 0, pot: 0, cupos: 0, cancha: 0, profes: 0 });
     const utilCls = tot.util > 0 ? 'text-emerald-600' : tot.util < 0 ? 'text-rose-600' : 'text-slate-700';
     const ocup = tot.cap ? Math.round(tot.al * 100 / tot.cap) : 0;
+    const desgloseProf = Object.entries(porProfesor).sort((a, b) => b[1] - a[1])
+      .map(([n2, c2]) => `${n2} <b>${S(c2)}</b>`).join(' · ');
     el('content').innerHTML = `
-      <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:max-w-4xl">
+      <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         ${card('Utilidad total', `<span class="${utilCls}">${tot.util < 0 ? '−' : ''}${S(Math.abs(tot.util))}</span>`,
           `ingresos ${S(tot.ing)} − costos ${S(tot.cos)}`)}
         ${card('Alumnos', `${unicos.size}`,
           `${tot.al}/${tot.cap} cupos ocupados · ${ocup}% · ${tot.n} track(s)`)}
         ${card('Potencial adicional', `<span class="text-indigo-600">+${S(tot.pot)}</span>`,
           `${tot.cupos} cupo(s) por vender`)}
+        ${card('Costo cancha', S(tot.cancha), 'mensual · suma de tracks')}
+        ${card('Costo profesores', S(tot.profes), 'mensual · suma de tracks')}
       </div>
+      ${desgloseProf ? `
+      <div class="mb-4 rounded-xl bg-white ring-1 ring-slate-200 px-4 py-2.5 text-xs text-slate-600">
+        <span class="font-semibold text-slate-500 uppercase tracking-wide text-[10px] mr-2">Por profesor</span>${desgloseProf}
+      </div>` : ''}
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center">
         <p class="text-sm text-slate-500">Toca un track para ver sus alumnos · equilibrio = ⌈costo ÷ mensualidad⌉</p>
         <button onclick="formTrack()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Nuevo track</button>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        ${tracksSede().map(trackCard).join('') || '<p class="text-sm text-slate-400">Esta sede aún no tiene tracks.</p>'}
+        ${ordenarPorHorario(tracksSede()).map(trackCard).join('') || '<p class="text-sm text-slate-400">Esta sede aún no tiene tracks.</p>'}
       </div>`;
   },
 
