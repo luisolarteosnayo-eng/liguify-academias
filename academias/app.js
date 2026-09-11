@@ -1080,11 +1080,28 @@ function renderAsisList() {
   el('asisList').innerHTML = alumnos.length ? alumnos.map((a) => {
     const cur = getAsis(ASIS_TRACK, a.id, ASIS_FECHA);
     const ini = ((a.nombre[0] || '') + (a.apellido[0] || '')).toUpperCase();
+    // Validación de deuda: todos los cargos del alumno con saldo pendiente
+    const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+    const pendJ = DB.cargos.filter((c) => c.jugador_id === a.id && saldoC(c) > 0.001);
+    const deuda = pendJ.reduce((s, c) => s + saldoC(c), 0);
+    const vencida = pendJ.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY);
+    const deudaHTML = deuda > 0
+      ? `<details class="mb-2 rounded-lg ring-1 px-2.5 py-1.5 text-xs ${vencida ? 'bg-rose-50 ring-rose-200' : 'bg-amber-50 ring-amber-200'}">
+          <summary class="cursor-pointer font-semibold ${vencida ? 'text-rose-700' : 'text-amber-700'}">⚠ Debe ${S(deuda)}${vencida ? ' · deuda vencida' : ''} <span class="font-normal opacity-70">(ver detalle)</span></summary>
+          <div class="mt-1.5 space-y-1 border-t ${vencida ? 'border-rose-200' : 'border-amber-200'} pt-1.5">
+            ${pendJ.map((c) => { const v = c.fecha_vencimiento && c.fecha_vencimiento < HOY; return `<div class="flex justify-between gap-2">
+              <span class="min-w-0 truncate">${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${descCargo(c)}${c.fecha_vencimiento ? ` <span class="${v ? 'text-rose-600 font-medium' : 'text-slate-400'}">· vence ${fmtDMY(c.fecha_vencimiento)}</span>` : ''}</span>
+              <span class="shrink-0 font-semibold">${S(saldoC(c))}</span></div>`; }).join('')}
+            <div class="pt-0.5 text-right"><button onclick="formEditarAlumno('${a.id}')" class="text-indigo-600 hover:underline">Abrir cuenta →</button></div>
+          </div>
+        </details>`
+      : '<div class="mb-2 text-xs font-semibold text-emerald-600">✓ Alumno OK · sin deuda</div>';
     return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-3">
       <div class="flex items-center gap-2 mb-2">
         ${a.foto_url ? `<img src="${a.foto_url}" class="h-9 w-9 rounded-full object-cover">` : `<span class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-medium">${ini}</span>`}
         <div class="font-medium text-slate-700">${nom(a)} <span class="ml-1 rounded bg-amber-100 text-amber-700 px-1.5 py-0.5 text-xs">${anio(a.fecha_nacimiento)}</span></div>
       </div>
+      ${deudaHTML}
       <div class="grid grid-cols-4 gap-1.5">
         ${ASIS_ESTADOS.map(([v, lbl]) => `<button onclick="marcarAsistencia('${a.id}','${v}')"
           class="py-2.5 rounded-lg text-xs font-semibold transition ${cur === v ? `bg-${clrAsis[v]}-500 text-white shadow` : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">${lbl}</button>`).join('')}
