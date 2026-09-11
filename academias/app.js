@@ -4035,8 +4035,10 @@ async function entrarConectado() {
       if (!d) return;
       d.classList.remove('hidden', 'bg-emerald-400', 'bg-amber-400', 'bg-rose-500', 'animate-pulse');
       if (st === 'saving') { d.classList.add('bg-amber-400', 'animate-pulse'); d.title = 'Guardando...'; }
-      else if (st === 'error') { d.classList.add('bg-rose-500'); d.title = 'Error al guardar: ' + ((err && err.message) || ''); toast('⚠ Error al sincronizar: ' + ((err && err.message) || '')); }
-      else { d.classList.add('bg-emerald-400'); d.title = 'Sincronizado'; }
+      else if (st === 'error') {
+        d.classList.add('bg-rose-500'); d.title = 'Error al guardar: ' + ((err && err.message) || '');
+        if (!d.dataset.enError) { toast('⚠ Error al sincronizar: ' + ((err && err.message) || '')); d.dataset.enError = '1'; }
+      } else { d.classList.add('bg-emerald-400'); d.title = 'Sincronizado'; delete d.dataset.enError; }
     });
     AcademiasDB.sync.start(DB);
     el('syncDot').classList.remove('hidden');

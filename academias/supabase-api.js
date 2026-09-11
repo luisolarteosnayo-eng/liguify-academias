@@ -367,17 +367,20 @@ window.AcademiasDB = (() => {
     async tick() {
       if (this.busy || !this.db) return;
       this.busy = true;
-      try {
-        let wrote = false;
-        for (const key of Object.keys(T)) wrote = (await this._syncTable(key)) || wrote;
-        wrote = (await this._syncAcademia()) || wrote;
-        wrote = (await this._syncTrackStaff()) || wrote;
-        wrote = (await this._syncAsistencias()) || wrote;
-        if (wrote || this.status !== 'ok') this._set('ok');
-      } catch (e) {
-        console.error('[sync]', e);
-        this._set('error', e);
-      } finally { this.busy = false; }
+      // Cada tabla se sincroniza aunque otra falle: un error en una tabla
+      // no debe bloquear el guardado del resto (se reintenta al siguiente tick).
+      let wrote = false, firstErr = null;
+      const paso = async (fn) => {
+        try { wrote = (await fn()) || wrote; }
+        catch (e) { console.error('[sync]', e); if (!firstErr) firstErr = e; }
+      };
+      for (const key of Object.keys(T)) await paso(() => this._syncTable(key));
+      await paso(() => this._syncAcademia());
+      await paso(() => this._syncTrackStaff());
+      await paso(() => this._syncAsistencias());
+      if (firstErr) this._set('error', firstErr);
+      else if (wrote || this.status !== 'ok') this._set('ok');
+      this.busy = false;
     },
 
     async _syncTable(key) {
