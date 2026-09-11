@@ -389,7 +389,9 @@ function statsTorneo(t) {
   const totalInsc = jugs.reduce((s, x) => s + (+x.precio_inscripcion || 0), 0);
   const conCNR = jugs.filter((x) => x.cargo_id);
   const montoCNR = conCNR.reduce((s, x) => s + (+x.precio_inscripcion || 0), 0);
-  return { cats, jugs, costoTotal, totalInsc, nConCNR: conCNR.length, montoCNR,
+  // Pagado a la fecha: suma de lo abonado en los CNRs generados del torneo
+  const totalPagado = conCNR.reduce((s, x) => { const c = DB.cargos.find((cc) => cc.id === x.cargo_id); return s + (c ? Math.min(+c.pagado_monto || 0, +c.monto || 0) : 0); }, 0);
+  return { cats, jugs, costoTotal, totalInsc, nConCNR: conCNR.length, montoCNR, totalPagado,
     pendientes: jugs.length - conCNR.length, rentabilidad: montoCNR - costoTotal };
 }
 
@@ -3593,17 +3595,21 @@ function renderTorneoDetalle() {
           ${jugs.length ? '' : `<button onclick="eliminarCatTorneo('${c.id}')" class="text-rose-500 hover:underline">Eliminar</button>`}
         </div>
       </div>
-      ${jugs.length ? table(['Alumno', 'Inscripción S/', 'CNR', ''],
+      ${jugs.length ? table(['Alumno', 'Inscripción S/', 'Pagado S/', 'CNR', ''],
         jugs.map((x) => {
           const j = jugador(x.jugador_id);
           const cargo = x.cargo_id ? DB.cargos.find((cc) => cc.id === x.cargo_id) : null;
+          const pagadoJ = cargo ? Math.min(+cargo.pagado_monto || 0, +cargo.monto || 0) : 0;
           const estadoCNR = !x.cargo_id
             ? badge('Pendiente', 'amber')
-            : (cargo && cargo.estado === 'pagado' ? badge('Generado · Pagado', 'emerald') : badge('Generado · Por pagar', 'indigo'));
+            : (cargo && cargo.estado === 'pagado' ? badge('Generado · Pagado', 'emerald')
+              : cargo && cargo.estado === 'parcial' ? badge('Generado · Parcial', 'amber')
+              : badge('Generado · Por pagar', 'indigo'));
           return [
             `<span class="cursor-pointer hover:text-indigo-600" onclick="formEditarAlumno('${x.jugador_id}')">${j ? nom(j) : '?'}</span>`,
             x.cargo_id ? S(x.precio_inscripcion) : `<input type="number" step="0.01" value="${x.precio_inscripcion || ''}" placeholder="0.00"
               onchange="editarPrecioTorneoJug('${x.id}', this.value)" class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">`,
+            cargo ? `<span class="${pagadoJ >= (+cargo.monto || 0) && pagadoJ > 0 ? 'text-emerald-600 font-medium' : pagadoJ > 0 ? 'text-amber-600 font-medium' : 'text-slate-400'}">${S(pagadoJ)}</span>` : '<span class="text-slate-300">—</span>',
             estadoCNR,
             x.cargo_id ? '' : `<button onclick="quitarJugadorTorneo('${x.id}')" class="text-rose-500 hover:underline text-xs">Quitar</button>`,
           ];
@@ -3625,10 +3631,11 @@ function renderTorneoDetalle() {
         class="rounded-lg px-4 py-2.5 text-sm font-medium ${st.pendientes ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">
         GENERAR CNRs PENDIENTES${st.pendientes ? ` (${st.pendientes})` : ''}</button>
     </div>
-    <div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       ${card('Alumnos', st.jugs.length, `en ${st.cats.length} categoría(s)`)}
       ${card('Total inscripciones', S(st.totalInsc), 'asignado a alumnos')}
       ${card('CNRs generados', S(st.montoCNR), `${st.nConCNR} de ${st.jugs.length} alumnos`)}
+      ${card('Pagado a la fecha', `<span class="text-emerald-600">${S(st.totalPagado)}</span>`, `pendiente ${S(st.montoCNR - st.totalPagado)}`)}
       ${card('Costo del torneo', S(st.costoTotal), 'suma de categorías')}
       ${card('Rentabilidad', `<span class="${rentCls}">${st.rentabilidad < 0 ? '−' : ''}${S(Math.abs(st.rentabilidad))}</span>`, 'CNRs − costo del torneo')}
     </div>
