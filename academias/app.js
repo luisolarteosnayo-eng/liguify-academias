@@ -3553,6 +3553,7 @@ function renderTorneoDetalle() {
   const rentCls = st.rentabilidad > 0 ? 'text-emerald-600' : st.rentabilidad < 0 ? 'text-rose-600' : 'text-slate-700';
   const catHTML = (c) => {
     const jugs = DB.torneoJugadores.filter((x) => x.categoria_id === c.id);
+    const pendCat = jugs.filter((x) => !x.cargo_id).length;
     return `
     <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
       <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -3566,6 +3567,7 @@ function renderTorneoDetalle() {
           <input type="number" step="0.01" value="${c.costo_inscripcion}" onchange="editarCostoCatTorneo('${c.id}', this.value)"
             class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">
           <button onclick="formAgregarJugTorneo('${c.id}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ Agregar jugadores</button>
+          ${pendCat ? `<button onclick="generarCNRsTorneo('${t.id}','${c.id}')" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Generar CNRs (${pendCat})</button>` : ''}
           ${jugs.length ? '' : `<button onclick="eliminarCatTorneo('${c.id}')" class="text-rose-500 hover:underline">Eliminar</button>`}
         </div>
       </div>
@@ -3709,9 +3711,11 @@ window.quitarJugadorTorneo = (id) => {
 };
 
 // Genera los CNR de inscripción SOLO para los alumnos que aún no lo tienen
-window.generarCNRsTorneo = (tid) => {
+// catId opcional: si viene, genera solo los CNRs pendientes de esa categoría
+window.generarCNRsTorneo = (tid, catId) => {
   const t = DB.torneos.find((x) => x.id === tid);
-  const pend = DB.torneoJugadores.filter((x) => x.torneo_id === tid && !x.cargo_id);
+  const cat = catId ? DB.torneoCategorias.find((c) => c.id === catId) : null;
+  const pend = DB.torneoJugadores.filter((x) => x.torneo_id === tid && !x.cargo_id && (!catId || x.categoria_id === catId));
   if (!pend.length) { toast('No hay CNRs pendientes de generar'); return; }
   const sinPrecio = pend.filter((x) => !(+x.precio_inscripcion > 0));
   if (sinPrecio.length) { toast(`⚠ ${sinPrecio.length} alumno(s) sin precio de inscripción; asígnalo primero`); return; }
@@ -3727,7 +3731,7 @@ window.generarCNRsTorneo = (tid) => {
     DB.cargos.push(cargo);
     x.cargo_id = cargo.id;
   });
-  toast(`✓ ${pend.length} CNR generados · "Inscripción a torneo ${glosa}"`);
+  toast(`✓ ${pend.length} CNR generados${cat ? ` · Categoría ${cat.nombre}` : ''} · "Inscripción a torneo ${glosa}"`);
   renderTorneoDetalle();
 };
 
