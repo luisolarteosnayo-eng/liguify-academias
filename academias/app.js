@@ -2755,6 +2755,7 @@ window.guardarEdicionTrack = (e, tid) => {
   });
   DB.trackEntrenadores = (DB.trackEntrenadores || []).filter((x) => x.track_id !== tid)
     .concat(TRACK_EDIT_COACHES.map((x) => ({ id: x.id || uid('te'), track_id: tid, staff_id: x.staff_id, costo: +x.costo || 0 })));
+  DB.trackStaff[tid] = [];   // limpia el cuerpo técnico legado: sin esto, un profesor quitado reaparece por el fallback
   closeModal(); toast('Track actualizado ✓');
   if (TRACK_SEL === tid) renderTrackDetalle(); else go('tracks');
 };
