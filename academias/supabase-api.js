@@ -35,9 +35,10 @@ window.AcademiasDB = (() => {
       table: 'staff',
       toRow: (s) => ({ ...pick(s, ['id', 'sede_id', 'dni', 'rol', 'modalidad_pago']),
         nombres: s.nombre ?? '', apellidos: s.apellido ?? '',
+        sede_ids: (Array.isArray(s.sede_ids) && s.sede_ids.length) ? s.sede_ids : null,
         sueldo_fijo: N(s.sueldo_fijo), tarifa_hora: N(s.tarifa_hora),
         activo: s.activo !== false, academia_id: ACADEMIA_ID }),
-      fromRow: (r) => ({ ...r, nombre: r.nombres, apellido: r.apellidos, sueldo_fijo: N(r.sueldo_fijo), tarifa_hora: N(r.tarifa_hora) }),
+      fromRow: (r) => ({ ...r, nombre: r.nombres, apellido: r.apellidos, sede_ids: r.sede_ids || null, sueldo_fijo: N(r.sueldo_fijo), tarifa_hora: N(r.tarifa_hora) }),
     },
     tracks: {
       table: 'tracks',

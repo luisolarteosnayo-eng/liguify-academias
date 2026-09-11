@@ -207,6 +207,9 @@ const track   = (id) => DB.tracks.find((t) => t.id === id);
 const tutor   = (id) => DB.tutores.find((t) => t.id === id);
 const jugador = (id) => DB.jugadores.find((j) => j.id === id);
 const staffDe = (id) => DB.staff.find((s) => s.id === id);
+// Sedes de un profesor: sede_ids (multi) con fallback al sede_id legado; vacío = todas
+const staffSedes = (s) => (Array.isArray(s.sede_ids) && s.sede_ids.length) ? s.sede_ids : (s.sede_id ? [s.sede_id] : []);
+const staffEnSede = (s, sedeId) => { const ids = staffSedes(s); return !ids.length || ids.includes(sedeId); };
 // Fechas: ISO <-> dd/mm/yyyy, y cálculo del ciclo mensual siguiente
 const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const fmtDMY = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
@@ -2474,7 +2477,7 @@ const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 window.formTrack = () => {
   TRACK_HORARIOS = {};
   const coaches = DB.staff.filter((s) => (s.rol === 'profesor' || s.rol === 'coordinador')
-    && s.activo !== false && (!s.sede_id || s.sede_id === SEDE_ACTUAL));
+    && s.activo !== false && staffEnSede(s, SEDE_ACTUAL));
   openModal('Nuevo track', `
     <form onsubmit="guardarTrack(event)">
       <p class="mb-4 text-xs text-slate-500">Sede: <b class="text-slate-700">${sede(SEDE_ACTUAL).nombre_sede}</b></p>
@@ -2634,7 +2637,7 @@ function renderTecList() {
   if (!box) return;
   const usados = new Set(TRACK_EDIT_COACHES.map((x) => x.staff_id));
   const disponibles = DB.staff.filter((s) => (s.rol === 'profesor' || s.rol === 'coordinador')
-    && s.activo !== false && (!s.sede_id || s.sede_id === SEDE_ACTUAL) && !usados.has(s.id));
+    && s.activo !== false && staffEnSede(s, SEDE_ACTUAL) && !usados.has(s.id));
   const total = TRACK_EDIT_COACHES.reduce((s, x) => s + (+x.costo || 0), 0);
   box.innerHTML = (TRACK_EDIT_COACHES.map((x, i) => {
     const s = staffDe(x.staff_id);
@@ -3057,7 +3060,11 @@ const CONFIG_TABS = {
   staff() {
     const e = STAFF_EDIT ? staffDe(STAFF_EDIT) : null;
     const g = (k, def = '') => (e ? (e[k] ?? '') : def);
-    const sedeNom = (id) => { const s = id && sede(id); return s ? s.nombre_sede : 'Todas'; };
+    const marcadas = e ? staffSedes(e) : [];
+    const sedesNom = (s) => {
+      const noms = staffSedes(s).map((id) => { const x = sede(id); return x ? x.nombre_sede : '?'; });
+      return noms.length ? noms.join(', ') : 'Todas';
+    };
     el('configTab').innerHTML = `
       <p class="text-xs text-slate-500 mb-4">Catálogo de profesores y coordinadores para asignarlos a los tracks. <b>No necesitan acceso al sistema</b>; si alguno lo requiere, invítalo aparte en la pestaña Invitaciones.</p>
       <div class="rounded-xl bg-white ring-1 ring-slate-200 p-5 mb-6">
@@ -3067,9 +3074,17 @@ const CONFIG_TABS = {
             ${field('Nombre *', input('st_nombre', `required value="${g('nombre')}"`))}
             ${field('Apellido *', input('st_apellido', `required value="${g('apellido')}"`))}
           </div>
-          <div class="grid grid-cols-2 gap-3">
-            ${field('Rol', select('st_rol', [{ v: 'profesor', t: 'Profesor' }, { v: 'coordinador', t: 'Coordinador' }], g('rol', 'profesor')))}
-            ${field('Sede', select('st_sede', [{ v: '', t: 'Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], g('sede_id', '')))}
+          ${field('Rol', select('st_rol', [{ v: 'profesor', t: 'Profesor' }, { v: 'coordinador', t: 'Coordinador' }], g('rol', 'profesor')))}
+          <div class="mb-3">
+            <div class="text-xs font-medium text-slate-500 mb-1.5">Sedes</div>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              ${sedesActivas().map((s) => `
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" class="st-sede-chk h-4 w-4 rounded accent-indigo-600" value="${s.id}" ${marcadas.includes(s.id) ? 'checked' : ''}>
+                  <span class="truncate">${s.nombre_sede}</span>
+                </label>`).join('')}
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5">Sin marcar ninguna = disponible en <b>todas las sedes</b>.</p>
           </div>
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
@@ -3077,11 +3092,11 @@ const CONFIG_TABS = {
           </div>
         </form>
       </div>
-      ${table(['Nombre', 'Rol', 'Sede', 'Estado', ''],
-        DB.staff.map((s) => [
+      ${table(['Nombre', 'Rol', 'Sedes', 'Estado', ''],
+        DB.staff.slice().sort((a, b) => `${a.nombre} ${a.apellido}`.localeCompare(`${b.nombre} ${b.apellido}`, 'es')).map((s) => [
           `<b>${s.nombre} ${s.apellido}</b>`,
           s.rol === 'coordinador' ? 'Coordinador' : 'Profesor',
-          sedeNom(s.sede_id),
+          sedesNom(s),
           s.activo === false ? '<span class="text-slate-400">Inactivo</span>' : '<span class="text-emerald-600">Activo</span>',
           `<button onclick="editarStaff('${s.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="toggleStaff('${s.id}')" class="text-slate-500 hover:underline text-xs mr-3">${s.activo === false ? 'Activar' : 'Inactivar'}</button>
@@ -3268,7 +3283,9 @@ window.guardarConceptoCNR = (ev) => {
 // ---------- Catálogo de profesores / staff ----------
 window.guardarStaffInline = (e) => {
   e.preventDefault();
-  const data = { nombre: val('st_nombre'), apellido: val('st_apellido'), rol: val('st_rol'), sede_id: val('st_sede') || null };
+  const sedeIds = [...document.querySelectorAll('.st-sede-chk:checked')].map((c) => c.value);
+  const data = { nombre: val('st_nombre'), apellido: val('st_apellido'), rol: val('st_rol'),
+    sede_ids: sedeIds, sede_id: sedeIds[0] || null };
   if (STAFF_EDIT) {
     Object.assign(staffDe(STAFF_EDIT), data); STAFF_EDIT = null; toast('Profesor actualizado');
   } else {
@@ -3292,7 +3309,7 @@ window.coachRapido = () => {
   const nom = (el('f_coach_nuevo').value || '').trim();
   if (!nom) return;
   const partes = nom.split(/\s+/);
-  const s = { id: uid('st'), nombre: partes[0], apellido: partes.slice(1).join(' ') || '', rol: 'profesor', sede_id: SEDE_ACTUAL, activo: true };
+  const s = { id: uid('st'), nombre: partes[0], apellido: partes.slice(1).join(' ') || '', rol: 'profesor', sede_id: SEDE_ACTUAL, sede_ids: [SEDE_ACTUAL], activo: true };
   DB.staff.push(s);
   const selCoach = el('f_coach');
   selCoach.insertAdjacentHTML('beforeend', `<option value="${s.id}">${s.nombre} ${s.apellido}</option>`);
