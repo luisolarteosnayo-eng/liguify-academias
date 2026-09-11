@@ -1594,6 +1594,12 @@ function fichaTracksHTML(jid) {
           <button type="button" onclick="quitarInscripcion('${i.id}','${jid}')" class="text-rose-600 hover:underline text-xs">Quitar</button>
         </div>
       </div>
+      <div class="mt-1.5 flex items-center gap-1.5">
+        <span class="text-xs shrink-0" title="Observaciones">📝</span>
+        <input value="${(i.observaciones || '').replace(/"/g, '&quot;')}" placeholder="Observaciones (ej. precio especial por…)"
+          onchange="editarObsTrack('${i.id}','${jid}',this.value)"
+          class="w-full rounded border border-slate-200 px-2 py-1 text-xs ${i.observaciones ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-slate-500'}">
+      </div>
       ${FICHA_CR_INSC === i.id ? crFormPanelHTML(i, jid) : ''}
     </div>`;
   }).join('') || '<p class="text-xs text-slate-400">Sin tracks asignados. Agrégalo abajo.</p>';
@@ -1611,9 +1617,12 @@ function fichaTracksHTML(jid) {
            </select>
            <input id="nj_addcosto" type="number" step="0.01" placeholder="Costo (opc.)" class="w-28 rounded border border-slate-300 px-2 py-1.5 text-sm">
          </div>
-         <div class="flex items-center gap-2">
+         <div class="flex items-center gap-2 mb-2">
            <label class="text-xs text-slate-500 shrink-0">Fecha de inicio</label>
            <input id="nj_addfecha" type="date" value="${HOY}" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+         </div>
+         <div class="flex items-center gap-2">
+           <input id="nj_addobs" placeholder="Observaciones (opcional, ej. precio especial por convenio)" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm">
            <button type="button" onclick="agregarInscripcion('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
          </div>
        </div>`
@@ -1624,6 +1633,13 @@ window.renderFichaTracks = (jid) => { if (el('nj_tracks')) el('nj_tracks').inner
 window.quitarInscripcion = (iid, jid) => {
   const i = DB.inscripciones.find((x) => x.id === iid);
   if (i) { i.activo = false; toast('Track quitado'); renderFichaTracks(jid); renderCuenta(jid); }
+};
+window.editarObsTrack = (iid, jid, valor) => {
+  const i = DB.inscripciones.find((x) => x.id === iid);
+  if (!i) return;
+  i.observaciones = (valor || '').trim() || null;
+  toast(i.observaciones ? 'Observación guardada' : 'Observación eliminada');
+  renderFichaTracks(jid);
 };
 window.editarCostoTrack = (iid, jid, valor) => {
   const i = DB.inscripciones.find((x) => x.id === iid);
@@ -1639,12 +1655,14 @@ window.agregarInscripcion = (jid) => {
   const t = track(tid); const j = jugador(jid);
   const costo = val('nj_addcosto') ? num('nj_addcosto') : null;
   const inicio = val('nj_addfecha') || HOY;   // fecha de inicio en el track (base del primer CR)
+  const obs = ((el('nj_addobs') && val('nj_addobs')) || '').trim() || null;
   let insc = DB.inscripciones.find((x) => x.jugador_id === jid && x.track_id === tid);
   if (insc) {
     insc.activo = true; insc.costo_mensual_personalizado = costo;
+    if (obs) insc.observaciones = obs;
     if (!insc.ultima_fecha_corte) insc.fecha_inscripcion = inicio;
   } else {
-    DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: inicio, ultima_fecha_corte: null });
+    DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: inicio, ultima_fecha_corte: null, observaciones: obs });
   }
   toast(`Agregado a ${t.nombre_track} (genera su CR desde Estado de cuenta)`); renderFichaTracks(jid); renderCuenta(jid);
 };
