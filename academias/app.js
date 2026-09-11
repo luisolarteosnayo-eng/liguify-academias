@@ -1653,7 +1653,7 @@ function estadoCuentaHTML(jid) {
         : '—',
       saldoC(c) === 0
         ? `<span class="text-emerald-600 text-xs font-medium">${c.gratis ? 'Gratis' : 'Beca'}</span>`
-        : S(saldoC(c)),
+        : `${S(saldoC(c))}${c.pagado_monto > 0 ? `<span class="block text-[11px] text-amber-600">parcial · pagado ${S(c.pagado_monto)} de ${S(c.monto)}</span>` : ''}`,
     ];
   });
 
@@ -1753,7 +1753,7 @@ function cnrFormHTML(jid) {
     <div class="text-xs font-medium text-slate-500 mb-2">CNRs del alumno (${cnrs.length})</div>
     ${cnrs.length ? table(['Concepto', 'Vence', 'Monto', 'Estado'],
       cnrs.map((c) => [descCargo(c), c.fecha_vencimiento ? fmtDMY(c.fecha_vencimiento) : '—', S(c.monto),
-        c.estado === 'pagado' ? badge('Pagado', 'emerald') : saldoC(c) > 0 && c.fecha_vencimiento && c.fecha_vencimiento < HOY ? badge('Vencido', 'rose') : badge('Por pagar', 'amber')]))
+        c.estado === 'pagado' ? badge('Pagado', 'emerald') : saldoC(c) > 0 && c.fecha_vencimiento && c.fecha_vencimiento < HOY ? badge('Vencido', 'rose') : c.estado === 'parcial' ? badge('Parcial', 'amber') : badge('Por pagar', 'amber')]))
       : '<p class="text-sm text-slate-400">Sin CNRs registrados.</p>'}`;
 }
 window.renderFichaCNR = (jid) => { if (el('nj_cnr')) el('nj_cnr').innerHTML = cnrFormHTML(jid); };
@@ -2016,14 +2016,17 @@ window.formPagoAlumno = (jid) => {
   const medios = mediosPagoSede();
   openModal(`Registrar pago · ${nom(j)}`, `
     <form onsubmit="guardarPagoAlumno(event,'${jid}')">
-      <p class="text-xs text-slate-500 mb-2">Marca los cargos a pagar. Desmarca los que no entran en este pago.</p>
+      <p class="text-xs text-slate-500 mb-2">Marca los cargos a pagar. Puedes editar el monto para un <b>pago parcial</b>; el resto queda pendiente en el cargo.</p>
       <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3 max-h-52 overflow-y-auto">
-        ${pend.map((c) => `<label class="flex items-center gap-2.5 px-3 py-3 text-sm cursor-pointer active:bg-slate-50">
-          <input type="checkbox" class="pgChk h-5 w-5 accent-indigo-600 shrink-0" value="${c.id}" data-monto="${c.monto - (c.pagado_monto || 0)}" checked onchange="pagoTotal()">
+        ${pend.map((c) => { const pendM = c.monto - (c.pagado_monto || 0); return `<label class="flex items-center gap-2.5 px-3 py-3 text-sm cursor-pointer active:bg-slate-50">
+          <input type="checkbox" class="pgChk h-5 w-5 accent-indigo-600 shrink-0" value="${c.id}" data-monto="${pendM}" checked onchange="pagoChk(this)">
           ${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')}
-          <span class="flex-1 min-w-0">${descCargo(c)}</span>
-          <span class="font-medium shrink-0">${S(c.monto - (c.pagado_monto || 0))}</span>
-        </label>`).join('')}
+          <span class="flex-1 min-w-0">${descCargo(c)}${c.pagado_monto > 0 ? `<span class="block text-[11px] text-amber-600">parcial: pagado ${S(c.pagado_monto)} de ${S(c.monto)}</span>` : ''}</span>
+          <span class="text-xs text-slate-400 shrink-0">S/</span>
+          <input type="number" id="pgm_${c.id}" step="0.01" min="0.01" max="${pendM}" value="${pendM}"
+            oninput="pagoTotal()" onclick="event.preventDefault()"
+            class="w-24 shrink-0 rounded border border-slate-300 px-2 py-1 text-sm text-right font-medium">
+        </label>`; }).join('')}
       </div>
       <div class="mb-3 flex items-center justify-between px-1">
         <span class="text-sm text-slate-500">Total a pagar</span>
@@ -2039,9 +2042,17 @@ window.formPagoAlumno = (jid) => {
   pagoTotal();
   pgVoucher();
 };
+window.pagoChk = (chk) => {
+  const inp = el('pgm_' + chk.value);
+  if (inp) { inp.disabled = !chk.checked; inp.classList.toggle('opacity-40', !chk.checked); }
+  pagoTotal();
+};
 window.pagoTotal = () => {
   let t = 0;
-  document.querySelectorAll('.pgChk:checked').forEach((c) => { t += parseFloat(c.dataset.monto) || 0; });
+  document.querySelectorAll('.pgChk:checked').forEach((c) => {
+    const inp = el('pgm_' + c.value);
+    t += Math.min(parseFloat(inp && inp.value) || 0, parseFloat(c.dataset.monto) || 0);
+  });
   if (el('pgTotal')) el('pgTotal').textContent = S(t);
 };
 // Voucher obligatorio salvo efectivo
@@ -2065,13 +2076,24 @@ window.guardarPagoAlumno = (e, jid) => {
   const efectivo = medio && medio.nombre.toLowerCase() === 'efectivo';
   if (!efectivo && !PAGO_VOUCHER) { toast('Sube el voucher del pago'); return; }
   const j = jugador(jid);
+  // Monto por cargo: editable (pago parcial); tope = lo pendiente del cargo
+  let invalido = null;
   const detalle = sel.map((cid) => {
     const c = DB.cargos.find((x) => x.id === cid);
-    return { cargo_id: cid, concepto: descCargo(c), cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), tipo: c.tipo, monto: c.monto - (c.pagado_monto || 0) };
+    const pendM = c.monto - (c.pagado_monto || 0);
+    const m = parseFloat(el('pgm_' + cid) && el('pgm_' + cid).value);
+    if (!(m > 0)) invalido = `Ingresa un monto mayor a 0 en "${descCargo(c)}"`;
+    else if (m > pendM + 0.001) invalido = `El monto de "${descCargo(c)}" supera lo pendiente (${S(pendM)})`;
+    return { cargo_id: cid, concepto: descCargo(c), cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), tipo: c.tipo, monto: Math.round(m * 100) / 100 };
   });
+  if (invalido) { toast('⚠ ' + invalido); return; }
   const total = detalle.reduce((s, d) => s + d.monto, 0);
-  // Marcar los cargos como Pagados
-  sel.forEach((cid) => { const c = DB.cargos.find((x) => x.id === cid); c.pagado_monto = c.monto; c.estado = 'pagado'; });
+  // Aplicar el pago a cada cargo: completo → Pagado; parcial → queda el resto pendiente
+  detalle.forEach((d) => {
+    const c = DB.cargos.find((x) => x.id === d.cargo_id);
+    c.pagado_monto = Math.min(c.monto, Math.round(((c.pagado_monto || 0) + d.monto) * 100) / 100);
+    c.estado = c.pagado_monto >= c.monto ? 'pagado' : 'parcial';
+  });
   DB.pagos.push({ id: uid('pg'), jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL, fecha: HOY,
     medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: PAGO_VOUCHER,
     total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
