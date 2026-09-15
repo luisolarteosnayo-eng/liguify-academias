@@ -4030,6 +4030,25 @@ window.doLogoutAcademias = async () => {
   if (window.AcademiasDB && AcademiasDB.on) await AcademiasDB.auth.signOut();
   location.reload();
 };
+// Multi-empresa: crear una NUEVA empresa desde una sesión ya activa.
+// El usuario queda como admin de la nueva y esta pasa a ser la activa.
+window.formNuevaEmpresa = () => {
+  openModal('Nueva empresa', `
+    <form onsubmit="crearNuevaEmpresaUI(event)">
+      <p class="mb-3 text-xs text-slate-500">Crea otra empresa (marca) bajo tu mismo correo. Quedarás como <b>Administrador</b> de la nueva y podrás cambiar entre empresas desde el selector del menú.</p>
+      ${field('Nombre de la empresa *', input('ne_nombre', 'required placeholder="Ej: SPORT BOYS SANTA ROSA"'))}
+      ${field('Primera sede *', input('ne_sede', 'required placeholder="Ej: Sede Principal"'))}
+      <p class="mb-3 text-xs text-slate-400">Después podrás agregar más sedes en Configuración → Sedes, e invitar usuarios en la pantalla Usuarios.</p>
+      ${submitBar('Crear empresa')}
+    </form>`);
+};
+window.crearNuevaEmpresaUI = async (ev) => {
+  ev.preventDefault();
+  try {
+    await AcademiasDB.crearAcademia(val('ne_nombre').trim(), val('ne_sede').trim());
+    location.reload();   // la nueva empresa queda activa; recarga limpia
+  } catch (e) { toast('⚠ ' + ((e && e.message) || e)); }
+};
 // Multi-empresa: marca la empresa activa en el servidor y recarga limpio
 window.cambiarEmpresaUI = async (academiaId) => {
   try {
@@ -4064,7 +4083,8 @@ async function entrarConectado() {
           ? `<select onchange="cambiarEmpresaUI(this.value)" class="w-full bg-white/10 text-sm text-white rounded-md px-2 py-2 border border-white/20 [&>option]:text-slate-800">
               ${MIS_EMPRESAS.map((e2) => `<option value="${e2.id}" ${e2.id === DB.academia.id ? 'selected' : ''}>${e2.nombre}</option>`).join('')}
             </select>`
-          : `<div class="font-display text-lg tracking-wide">${DB.academia.nombre_academia || ''}</div>`}`;
+          : `<div class="font-display text-lg tracking-wide">${DB.academia.nombre_academia || ''}</div>`}
+        <button onclick="formNuevaEmpresa()" class="mt-1 text-[11px] text-white/40 hover:text-white/80">➕ Nueva empresa…</button>`;
     }
     // Backfill: perfiles creados antes de v3 no tienen email guardado
     if (PERFIL && !PERFIL.email) {
