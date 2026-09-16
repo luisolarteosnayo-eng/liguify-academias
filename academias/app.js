@@ -336,9 +336,11 @@ function statsTrack(t) {
   // Potencial de ganancia adicional: lo que falta vender = mensualidad × cupos libres
   const cuposLibres = Math.max(0, (+t.capacidad_maxima || 0) - insc.length);
   const potencial = cuposLibres * (+t.mensualidad_sugerida || 0);
-  const rentable = insc.length >= puntoEquilibrio;
-  // color: verde rentable; ámbar si hay algún alumno pero bajo umbral; rojo si muy por debajo
-  const ratio = puntoEquilibrio ? insc.length / puntoEquilibrio : 0;
+  // Rentable = por utilidad REAL (ingresos efectivos, con becas/precios personalizados),
+  // no por conteo de alumnos: con precios rebajados puede haber cupo lleno y pérdida.
+  const rentable = utilidad >= 0;
+  // color: verde rentable; ámbar si los ingresos cubren al menos la mitad del costo; rojo si menos
+  const ratio = costoOperacion ? ingresos / costoOperacion : 1;
   const color = rentable ? 'emerald' : ratio >= 0.5 ? 'amber' : 'rose';
   const etiqueta = rentable ? 'Track Rentable' : ratio >= 0.5 ? 'Operando a pérdida' : 'Déficit crítico';
   // CR promedio: suma de precios efectivos por alumno ÷ alumnos del track
