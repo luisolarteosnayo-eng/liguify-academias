@@ -444,6 +444,7 @@ let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
 let TORNEO_SEL = null;         // torneo abierto en el detalle (o null = lista)
 let ASIS_TRACK = null;         // track activo en Asistencia
 let ASIS_FECHA = null;         // fecha activa en Asistencia
+let AL_FILTRO = 'activos';     // filtro de la lista de Alumnos: activos | prospectos | bajas | todos
 let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
 // Conectado: fecha real del dispositivo · demo: fecha fija de los datos mock
@@ -869,8 +870,16 @@ const SCREENS = {
     el('content').innerHTML = `
       <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-sm text-slate-500"><b id="alCount">${alumnosSede().length}</b> alumnos en <b>${sede(SEDE_ACTUAL).nombre_sede}</b></p>
-        <button onclick="formRegistroExpress()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Registro cero fricción</button>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="formClasePrueba()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">🎈 Clase de prueba</button>
+          <button onclick="formRegistroExpress()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Registro cero fricción</button>
+        </div>
       </div>
+      <div class="mb-3 flex flex-wrap items-center gap-1.5" id="alFiltros">
+        ${[['activos', 'Activos'], ['prospectos', 'Prospectos'], ['bajas', 'Bajas'], ['todos', 'Todos']].map(([v, t]) =>
+          `<button onclick="alFiltro('${v}')" class="rounded-full px-3 py-1.5 text-xs font-medium ${AL_FILTRO === v ? 'bg-indigo-600 text-white' : 'bg-white ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50'}">${t}</button>`).join('')}
+      </div>
+      <div id="alEmbudo"></div>
       <input id="al_q" oninput="renderAlumnosList()" placeholder="Buscar alumno por nombre..."
         class="w-full mb-3 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
       <div id="alumnosList" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>`;
@@ -1081,6 +1090,10 @@ window.marcarAsistencia = (jid, estado) => {
 function renderAsisList() {
   const q = (el('asis_q') ? el('asis_q').value : '').toLowerCase();
   let alumnos = DB.inscripciones.filter((i) => i.track_id === ASIS_TRACK && i.activo).map((i) => jugador(i.jugador_id));
+  // Prospectos con clase de prueba en este track y fecha (marcados PRUEBA)
+  const enLista = new Set(alumnos.map((a) => a.id));
+  DB.jugadores.filter((j) => esProspecto(j) && j.prueba_track_id === ASIS_TRACK && j.prueba_fecha === ASIS_FECHA && !enLista.has(j.id))
+    .forEach((j) => alumnos.push(j));
   if (q) alumnos = alumnos.filter((a) => nom(a).toLowerCase().includes(q));
   const total = alumnos.length;
   const marcados = alumnos.filter((a) => getAsis(ASIS_TRACK, a.id, ASIS_FECHA)).length;
@@ -1108,7 +1121,7 @@ function renderAsisList() {
     return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-3">
       <div class="flex items-center gap-2 mb-2">
         ${a.foto_url ? `<img src="${a.foto_url}" class="h-9 w-9 rounded-full object-cover">` : `<span class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-medium">${ini}</span>`}
-        <div class="font-medium text-slate-700">${nom(a)} <span class="ml-1 rounded bg-amber-100 text-amber-700 px-1.5 py-0.5 text-xs">${anio(a.fecha_nacimiento)}</span></div>
+        <div class="font-medium text-slate-700">${nom(a)} <span class="ml-1 rounded bg-amber-100 text-amber-700 px-1.5 py-0.5 text-xs">${anio(a.fecha_nacimiento)}</span>${esProspecto(a) ? ' <span class="ml-1 rounded bg-fuchsia-100 text-fuchsia-700 px-1.5 py-0.5 text-xs font-semibold">🎈 PRUEBA</span>' : ''}</div>
       </div>
       ${deudaHTML}
       <div class="grid grid-cols-4 gap-1.5">
@@ -1120,28 +1133,61 @@ function renderAsisList() {
 }
 
 // ---------- Lista de alumnos (tarjetas, mobile-first) ----------
+window.alFiltro = (v) => { AL_FILTRO = v; SCREENS.alumnos(); };
+const esProspecto = (j) => j.estado_alumno === 'prospecto';
+// Estado del embudo de un prospecto: Agendado o Asistió (según la asistencia de su clase de prueba)
+function pruebaEstado(j) {
+  const asis = j.prueba_track_id && j.prueba_fecha
+    && DB.asistencias.find((a) => a.track_id === j.prueba_track_id && a.jugador_id === j.id && a.fecha === j.prueba_fecha);
+  if (asis && (asis.estado === 'presente' || asis.estado === 'tardanza')) return 'asistio';
+  return 'agendado';
+}
 function renderAlumnosList() {
   const q = (el('al_q') ? el('al_q').value : '').toLowerCase();
   let als = alumnosSede();
+  if (AL_FILTRO === 'activos') als = als.filter((j) => j.estado_alumno === 'activo');
+  else if (AL_FILTRO === 'prospectos') als = als.filter(esProspecto);
+  else if (AL_FILTRO === 'bajas') als = als.filter((j) => j.estado_alumno === 'baja');
   if (q) als = als.filter((j) => nom(j).toLowerCase().includes(q));
   if (el('alCount')) el('alCount').textContent = als.length;
+  // Embudo de clases de prueba (visible en la pestaña Prospectos)
+  if (el('alEmbudo')) {
+    if (AL_FILTRO === 'prospectos') {
+      const todos = alumnosSede().filter((j) => j.fue_prospecto || esProspecto(j));
+      const pend = todos.filter(esProspecto);
+      const conv = todos.filter((j) => j.estado_alumno === 'activo');
+      const desc = todos.filter((j) => j.estado_alumno === 'baja');
+      const cerrados = conv.length + desc.length;
+      const tasa = cerrados ? Math.round(conv.length * 100 / cerrados) : null;
+      el('alEmbudo').innerHTML = `<div class="mb-3 flex flex-wrap gap-2 text-xs">
+        <span class="rounded-lg bg-fuchsia-50 ring-1 ring-fuchsia-200 text-fuchsia-700 px-2.5 py-1.5">En prueba: <b>${pend.length}</b> (${pend.filter((j) => pruebaEstado(j) === 'asistio').length} asistieron)</span>
+        <span class="rounded-lg bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 px-2.5 py-1.5">Convertidos: <b>${conv.length}</b></span>
+        <span class="rounded-lg bg-slate-100 ring-1 ring-slate-200 text-slate-600 px-2.5 py-1.5">Descartados: <b>${desc.length}</b></span>
+        ${tasa !== null ? `<span class="rounded-lg bg-indigo-50 ring-1 ring-indigo-200 text-indigo-700 px-2.5 py-1.5">Conversión: <b>${tasa}%</b></span>` : ''}
+      </div>`;
+    } else el('alEmbudo').innerHTML = '';
+  }
   el('alumnosList').innerHTML = als.length ? als.map((j) => {
     const t = tutor(j.tutor_id);
     const trks = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo).map((i) => track(i.track_id).nombre_track).join(', ') || 'sin track';
     const ini = ((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase();
-    const baja = j.estado_alumno !== 'activo';
+    const baja = j.estado_alumno === 'baja';
+    const pros = esProspecto(j);
     const perfil = t.perfil_reclamado
       ? '<span class="text-emerald-500">✓ perfil</span>'
       : `<button onclick="event.stopPropagation(); formOnboarding('${t.id}')" class="text-amber-500 underline">reclamar perfil</button>`;
-    return `<div onclick="formEditarAlumno('${j.id}')" class="cursor-pointer rounded-xl bg-white ring-1 ring-slate-200 p-3 hover:ring-indigo-300 hover:shadow-sm transition ${baja ? 'opacity-60' : ''}">
+    const pruebaInfo = pros
+      ? `<div class="mt-2 text-xs truncate">${pruebaEstado(j) === 'asistio' ? '<span class="text-emerald-600 font-medium">✓ Asistió a su clase de prueba</span>' : `<span class="text-fuchsia-600">🎈 Prueba: ${j.prueba_fecha ? fmtDMY(j.prueba_fecha) : 'sin fecha'}${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}</span>`}</div>`
+      : `<div class="mt-2 text-xs text-slate-500 truncate">🎯 ${trks}</div>`;
+    return `<div onclick="formEditarAlumno('${j.id}')" class="cursor-pointer rounded-xl bg-white ring-1 ${pros ? 'ring-fuchsia-200' : 'ring-slate-200'} p-3 hover:ring-indigo-300 hover:shadow-sm transition ${baja ? 'opacity-60' : ''}">
       <div class="flex items-center gap-2">
         ${j.foto_url ? `<img src="${j.foto_url}" class="h-10 w-10 rounded-full object-cover">` : `<span class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-sm font-medium">${ini}</span>`}
         <div class="min-w-0 flex-1">
-          <div class="font-medium text-slate-800 truncate">${nom(j)}${baja ? ' ' + badge('Baja', 'slate') : ''}</div>
+          <div class="font-medium text-slate-800 truncate">${nom(j)}${baja ? ' ' + badge('Baja', 'slate') : ''}${pros ? ' ' + badge('Prospecto', 'fuchsia') : ''}</div>
           <div class="text-xs text-slate-400">Cat. ${anio(j.fecha_nacimiento)}${j.posicion_juego ? ' · ' + j.posicion_juego : ''}${j.numero_camiseta != null ? ' · #' + j.numero_camiseta : ''}</div>
         </div>
       </div>
-      <div class="mt-2 text-xs text-slate-500 truncate">🎯 ${trks}</div>
+      ${pruebaInfo}
       <div class="text-xs text-slate-400 mt-0.5">Tutor DNI ${t.dni_tutor} · ${perfil}</div>
     </div>`;
   }).join('') : '<p class="text-sm text-slate-400 p-2 col-span-full">No hay alumnos que coincidan.</p>';
@@ -2325,12 +2371,18 @@ window.formEditarAlumno = (jid) => {
   openModal(nom(j), `
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
-        · Estado: ${badge(j.estado_alumno === 'activo' ? 'Activo' : 'Baja', j.estado_alumno === 'activo' ? 'emerald' : 'slate')}</p>
+        · Estado: ${badge(j.estado_alumno === 'activo' ? 'Activo' : j.estado_alumno === 'prospecto' ? 'Prospecto' : 'Baja', j.estado_alumno === 'activo' ? 'emerald' : j.estado_alumno === 'prospecto' ? 'fuchsia' : 'slate')}
+        ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <b>${fmtDMY(j.prueba_fecha)}</b>${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}` : ''}</p>
       ${njFormBody(j, jid)}
       <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
-        <button type="button" onclick="toggleBajaAlumno('${jid}')"
+        ${j.estado_alumno === 'prospecto'
+          ? `<div class="flex gap-2">
+              <button type="button" onclick="convertirProspecto('${jid}')" class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">✓ Convertir en alumno</button>
+              <button type="button" onclick="descartarProspecto('${jid}')" class="rounded-lg px-3 py-2 text-sm text-rose-600 hover:bg-rose-50">Descartar</button>
+            </div>`
+          : `<button type="button" onclick="toggleBajaAlumno('${jid}')"
           class="rounded-lg px-3 py-2 text-sm ${j.estado_alumno === 'activo' ? 'text-rose-600 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}">
-          ${j.estado_alumno === 'activo' ? 'Dar de baja' : 'Reactivar'}</button>
+          ${j.estado_alumno === 'activo' ? 'Dar de baja' : 'Reactivar'}</button>`}
         <div class="flex gap-2">
           <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
           <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar</button>
@@ -2826,6 +2878,84 @@ window.guardarEdicionTrack = (e, tid) => {
   DB.trackStaff[tid] = [];   // limpia el cuerpo técnico legado: sin esto, un profesor quitado reaparece por el fallback
   closeModal(); toast('Track actualizado ✓');
   if (TRACK_SEL === tid) renderTrackDetalle(); else go('tracks');
+};
+
+// ---------- Clase de prueba: registro de prospectos ----------
+window.formClasePrueba = () => {
+  const trks = tracksSede();
+  if (!trks.length) { toast('Esta sede no tiene tracks para la clase de prueba'); return; }
+  const cn = DB.conceptosCNR.find((c) => c.activo && /clase de prueba/i.test(c.nombre));
+  openModal('🎈 Clase de prueba (prospecto)', `
+    <form onsubmit="guardarClasePrueba(event)">
+      <p class="text-xs text-slate-400 mb-3">Registra al interesado como <b>Prospecto</b>: no cuenta como alumno ni ocupa cupo. Si se queda, lo conviertes en alumno con un clic desde su ficha.</p>
+      <div class="grid grid-cols-2 gap-3">
+        ${field('Nombre', input('cp_nombre', 'required'))}
+        ${field('Apellido', input('cp_apellido', 'required'))}
+      </div>
+      ${field('Fecha de nacimiento', input('cp_fnac', 'type="date" required'))}
+      <div class="grid grid-cols-2 gap-3">
+        ${field('DNI del tutor', input('cp_dni', 'required'))}
+        ${field('Celular del tutor', input('cp_tel', 'required'))}
+      </div>
+      ${field('Email del tutor (opcional)', input('cp_email', 'type="email" placeholder="se puede completar luego"'))}
+      <div class="grid grid-cols-2 gap-3">
+        ${field('Fecha de la clase', input('cp_fecha', `type="date" required value="${HOY}"`))}
+        ${field('Track que visitará', select('cp_track', trks.map((t) => ({ v: t.id, t: `${t.nombre_track}${t.dias_horario ? ' · ' + t.dias_horario : ''}` }))))}
+      </div>
+      <div class="mb-3">
+        <div class="text-xs font-medium text-slate-500 mb-1.5">Costo de la clase</div>
+        <div class="flex items-center gap-4 text-sm">
+          <label class="flex items-center gap-2"><input type="radio" name="cp_costo" value="gratis" checked class="accent-indigo-600" onchange="el('cp_montoBox').classList.add('hidden')"> Gratis</label>
+          <label class="flex items-center gap-2"><input type="radio" name="cp_costo" value="pago" class="accent-indigo-600" onchange="el('cp_montoBox').classList.remove('hidden')"> Con costo</label>
+          <span id="cp_montoBox" class="hidden flex items-center gap-1.5"><span class="text-xs text-slate-400">S/</span>
+            <input id="cp_monto" type="number" step="0.01" value="${cn ? cn.precio : 20}" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right"></span>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1.5">Con costo genera un CNR "Clase de prueba" que se cobra con el flujo normal de pagos.</p>
+      </div>
+      ${submitBar('Registrar prospecto')}
+    </form>`);
+};
+window.guardarClasePrueba = (e) => {
+  e.preventDefault();
+  // Tutor: reusar por DNI o crear (mismo criterio que el registro cero fricción)
+  let t = DB.tutores.find((x) => x.dni_tutor === val('cp_dni'));
+  if (!t) {
+    t = { id: uid('tu'), dni_tutor: val('cp_dni'), telefono_celular: val('cp_tel'),
+      email_tutor: val('cp_email') || null, perfil_reclamado: !!val('cp_email') };
+    DB.tutores.push(t);
+  } else if (val('cp_email') && !t.email_tutor) { t.email_tutor = val('cp_email'); }
+  const j = { id: uid('j'), tutor_id: t.id, sede_id: SEDE_ACTUAL, nombre: val('cp_nombre'), apellido: val('cp_apellido'),
+    fecha_nacimiento: val('cp_fnac'), estado_alumno: 'prospecto', fue_prospecto: true, fecha_registro: HOY,
+    prueba_fecha: val('cp_fecha') || HOY, prueba_track_id: val('cp_track'), atributos: null };
+  DB.jugadores.push(j);
+  const conCosto = document.querySelector('input[name="cp_costo"]:checked').value === 'pago';
+  if (conCosto) {
+    const monto = num('cp_monto') || 20;
+    // Concepto "Clase de prueba" del catálogo (se crea si no existe, compartido con todas las sedes)
+    let cn = DB.conceptosCNR.find((c) => c.activo && /clase de prueba/i.test(c.nombre));
+    if (!cn) { cn = { id: uid('cn'), nombre: 'Clase de prueba', precio: monto, sede_id: null, sede_ids: [], maneja_stock: false, es_torneo: false, activo: true }; DB.conceptosCNR.push(cn); }
+    DB.cargos.push({ id: uid('c'), tutor_id: t.id, jugador_id: j.id, tipo: 'CNR', concepto_cnr_id: cn.id,
+      concepto: 'Clase de prueba', descripcion: null, periodo: HOY.slice(0, 7),
+      fecha_vencimiento: j.prueba_fecha, monto, pagado_monto: 0, estado: 'por_pagar' });
+  }
+  closeModal();
+  toast(`🎈 ${nom(j)} registrado como prospecto${conCosto ? ' · CNR generado' : ' · clase gratis'}`);
+  AL_FILTRO = 'prospectos';
+  go('alumnos');
+};
+// Conversión del prospecto (desde su ficha)
+window.convertirProspecto = (jid) => {
+  const j = jugador(jid); if (!j) return;
+  j.estado_alumno = 'activo';
+  toast(`✓ ${nom(j)} ahora es alumno · asígnale su track`);
+  formEditarAlumno(jid);
+  njTab('tracks');   // directo a asignarle track + CR
+};
+window.descartarProspecto = (jid) => {
+  const j = jugador(jid); if (!j) return;
+  if (!confirm(`¿Descartar a ${nom(j)}? Queda en Bajas con su historial y el contacto del tutor.`)) return;
+  j.estado_alumno = 'baja';
+  closeModal(); toast('Prospecto descartado'); go('alumnos');
 };
 
 // ---------- Registro cero fricción (Flujo A) ----------
