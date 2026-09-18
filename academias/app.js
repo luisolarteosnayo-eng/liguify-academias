@@ -2142,6 +2142,8 @@ window.formPagoAlumno = (jid) => {
         ${field('Medio de pago', select('pg_medio', medios.map((m) => ({ v: m.id, t: m.nombre })), 'onchange="pgVoucher()"'))}
         ${field('N° de operación', input('pg_op', 'placeholder="Ej: 000123456"'))}
       </div>
+      ${field('Fecha de pago', input('pg_fecha', `type="date" required value="${HOY}" max="${HOY}"`) +
+        '<p class="-mt-2 mb-3 text-[11px] text-slate-400">Cámbiala solo para <b>regularizar</b> un pago de días anteriores; la fecha de registro en el sistema se guarda aparte.</p>')}
       <div id="pgVoucherBox">${field('Voucher del pago', input('pg_voucher', 'type="file" accept="image/*" onchange="pgVoucherFile(this)"'))}</div>
       ${submitBar('Registrar pago')}
     </form>`);
@@ -2200,7 +2202,9 @@ window.guardarPagoAlumno = (e, jid) => {
     c.pagado_monto = Math.min(c.monto, Math.round(((c.pagado_monto || 0) + d.monto) * 100) / 100);
     c.estado = c.pagado_monto >= c.monto ? 'pagado' : 'parcial';
   });
-  DB.pagos.push({ id: uid('pg'), jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL, fecha: HOY,
+  DB.pagos.push({ id: uid('pg'), jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL,
+    fecha: val('pg_fecha') || HOY,                 // fecha de PAGO (editable para regularizaciones)
+    created_at: new Date().toISOString(),          // fecha de REGISTRO en el sistema (la BD guarda la suya al insertar)
     medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: PAGO_VOUCHER,
     total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
   closeModal();
@@ -2216,7 +2220,7 @@ function pagoAprobCard(p) {
     <div class="flex items-start justify-between gap-2">
       <div class="min-w-0">
         <div class="font-medium truncate">${j ? nom(j) : 'DNI ' + ((tutor(p.tutor_id) || {}).dni_tutor || '—')}</div>
-        <div class="text-xs text-slate-400">${p.medio || '—'}${p.num_operacion ? ' · Op. ' + p.num_operacion : ''} · ${fmtDMY(p.fecha)}${p.voucher_url ? ' · voucher ✔' : ''}</div>
+        <div class="text-xs text-slate-400">${p.medio || '—'}${p.num_operacion ? ' · Op. ' + p.num_operacion : ''} · pagado ${fmtDMY(p.fecha)}${regDMY(p) && regDMY(p) !== fmtDMY(p.fecha) ? ` · <span class="text-amber-600">reg. ${regDMY(p)}</span>` : ''}${p.voucher_url ? ' · voucher ✔' : ''}</div>
       </div>
       <div class="text-lg font-bold text-slate-800">${S(p.total ?? p.monto ?? 0)}</div>
     </div>
@@ -2235,7 +2239,7 @@ window.gestionarPago = (id) => {
   const medios = mediosPagoSede();
   openModal('Aprobar / Rechazar pago', `
     <p class="text-sm mb-1">${j ? nom(j) : ''} · <b>${S(p.total ?? p.monto ?? 0)}</b></p>
-    <p class="text-xs text-slate-400 mb-3">${p.num_operacion ? 'Op. ' + p.num_operacion + ' · ' : ''}${fmtDMY(p.fecha)}${p.voucher_url ? ' · voucher adjunto' : ' · sin voucher'}</p>
+    <p class="text-xs text-slate-400 mb-3">${p.num_operacion ? 'Op. ' + p.num_operacion + ' · ' : ''}pagado ${fmtDMY(p.fecha)}${regDMY(p) && regDMY(p) !== fmtDMY(p.fecha) ? ` · <span class="text-amber-600">registrado ${regDMY(p)}</span>` : ''}${p.voucher_url ? ' · voucher adjunto' : ' · sin voucher'}</p>
     <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3">
       ${(p.detalle || []).map((d) => `<div class="flex justify-between px-3 py-2 text-sm"><span>${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span><span>${S(d.monto)}</span></div>`).join('')}
     </div>
@@ -2283,6 +2287,12 @@ window.verComprobante = (id) => {
 };
 
 // Documentos de pago del alumno
+// Fecha de registro del sistema de un pago (created_at de la BD), en dd/mm/yyyy
+function regDMY(p) {
+  if (!p.created_at) return '';
+  const d = new Date(p.created_at);
+  return isNaN(d) ? '' : fmtDMY(isoDate(d));
+}
 function pagosDocsHTML(jid) {
   const pagos = DB.pagos.filter((p) => p.jugador_id === jid).sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   if (!pagos.length) return '<p class="text-sm text-slate-400">Sin documentos de pago aún.</p>';
@@ -2292,6 +2302,7 @@ function pagosDocsHTML(jid) {
         <div>
           <div class="font-semibold">Documento de pago · ${fmtDMY(p.fecha)}</div>
           <div class="text-xs text-slate-500">${p.medio || ''}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}${p.voucher_url ? ' · voucher ✔' : ''}</div>
+          <div class="text-[11px] text-slate-400">Fecha de pago: ${fmtDMY(p.fecha)}${regDMY(p) ? ` · Registrado en sistema: ${regDMY(p)}${regDMY(p) !== fmtDMY(p.fecha) ? ' <span class="text-amber-600">(regularización)</span>' : ''}` : ''}</div>
         </div>
         <div class="text-lg font-bold text-emerald-600">${S(p.total ?? p.monto ?? 0)}</div>
       </div>
