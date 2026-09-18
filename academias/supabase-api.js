@@ -115,8 +115,9 @@ window.AcademiasDB = (() => {
     conceptosCNR: {
       table: 'conceptos_cnr',
       toRow: (c) => ({ ...pick(c, ['id', 'nombre', 'sede_id']), precio: N(c.precio) || 0, maneja_stock: !!c.maneja_stock,
+        sede_ids: (Array.isArray(c.sede_ids) && c.sede_ids.length) ? c.sede_ids : null,
         es_torneo: !!c.es_torneo, activo: c.activo !== false, academia_id: ACADEMIA_ID }),
-      fromRow: (r) => ({ ...r, precio: N(r.precio) }),
+      fromRow: (r) => ({ ...r, precio: N(r.precio), sede_ids: r.sede_ids || null }),
     },
     trackCierres: {
       table: 'track_cierres',

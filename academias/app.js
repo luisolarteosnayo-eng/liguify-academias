@@ -197,7 +197,14 @@ const sede    = (id) => DB.sedes.find((s) => s.id === id);
 // Solo las sedes ACTIVAS operan: selectores, dashboards y reportes las usan
 const sedesActivas = () => DB.sedes.filter((s) => s.activo !== false);
 // Catálogos financieros por sede: sede_id vacío = compartido con todas las sedes
-const esDeSede = (x) => !x.sede_id || x.sede_id === SEDE_ACTUAL;
+// Alcance por sede de un ítem de catálogo: sede_ids (multi) con fallback al
+// sede_id legado; lista vacía = compartido con todas las sedes.
+const scopeSedes = (x) => (Array.isArray(x.sede_ids) && x.sede_ids.length) ? x.sede_ids : (x.sede_id ? [x.sede_id] : []);
+const esDeSede = (x) => { const ids = scopeSedes(x); return !ids.length || ids.includes(SEDE_ACTUAL); };
+const sedesScopeNom = (x) => {
+  const noms = scopeSedes(x).map((id) => { const s = sede(id); return s ? s.nombre_sede : '?'; });
+  return noms.length ? noms.join(', ') : '🌐 Todas';
+};
 const conceptosCNRSede = () => DB.conceptosCNR.filter((c) => c.activo && esDeSede(c));
 const mediosPagoSede   = () => DB.mediosPago.filter((m) => m.activo && esDeSede(m));
 const ciclosPagoSede   = () => DB.ciclosPago.filter((c) => c.activo && esDeSede(c));
@@ -3175,7 +3182,17 @@ const CONFIG_TABS = {
             ${field('Concepto (nombre del cargo) *', input('cn_nombre', `required value="${e ? e.nombre.replace(/"/g, '&quot;') : ''}" placeholder="Ej: Uniforme"`))}
             ${field('Precio unitario (S/.)', input('cn_precio', `type="number" step="0.01" value="${e ? e.precio : ''}" placeholder="0.00"`))}
           </div>
-          ${field('Sede', select('cn_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
+          <div class="mb-3">
+            <div class="text-xs font-medium text-slate-500 mb-1.5">Sedes</div>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              ${(() => { const marcadas = e ? scopeSedes(e) : [SEDE_ACTUAL]; return sedesActivas().map((s) => `
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" class="cn-sede-chk h-4 w-4 rounded accent-indigo-600" value="${s.id}" ${marcadas.includes(s.id) ? 'checked' : ''}>
+                  <span class="truncate">${s.nombre_sede}</span>
+                </label>`).join(''); })()}
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1.5">Sin marcar ninguna = disponible en <b>🌐 todas las sedes</b>.</p>
+          </div>
           <div class="flex flex-wrap gap-5 mb-3">
             <label class="flex items-center gap-2 text-sm">
               <input type="checkbox" id="cn_stock" class="h-4 w-4 rounded accent-indigo-600" ${e && e.maneja_stock ? 'checked' : ''}>
@@ -3193,9 +3210,9 @@ const CONFIG_TABS = {
         </form>
       </div>
       <p class="text-xs text-slate-400 mb-2">Estos conceptos aparecen al generar un Cargo No Recurrente y autocompletan el precio. <b>Stock</b> = descuenta inventario · <b>Torneo</b> = seguimiento especial.</p>
-      ${table(['Concepto', 'Precio unitario', 'Sede', 'Stock', 'Torneo', 'Estado', ''],
+      ${table(['Concepto', 'Precio unitario', 'Sedes', 'Stock', 'Torneo', 'Estado', ''],
         DB.conceptosCNR.map((c) => [
-          `<b>${c.nombre}</b>`, S(c.precio), sedeScopeNom(c.sede_id),
+          `<b>${c.nombre}</b>`, S(c.precio), sedesScopeNom(c),
           c.maneja_stock ? badge('Stock', 'sky') : '—',
           c.es_torneo ? badge('Torneo', 'fuchsia') : '—',
           badge(c.activo ? 'Activo' : 'Inactivo', c.activo ? 'emerald' : 'slate'),
@@ -3331,8 +3348,9 @@ SCREENS.usuarios = function () {
 
 window.guardarConceptoCNR = (ev) => {
   ev.preventDefault();
+  const sedeIds = [...document.querySelectorAll('.cn-sede-chk:checked')].map((c) => c.value);
   const data = {
-    nombre: val('cn_nombre'), precio: num('cn_precio'), sede_id: val('cn_sede') || null,
+    nombre: val('cn_nombre'), precio: num('cn_precio'), sede_ids: sedeIds, sede_id: sedeIds[0] || null,
     maneja_stock: el('cn_stock').checked, es_torneo: el('cn_torneo').checked,
   };
   if (CNR_EDIT) {
