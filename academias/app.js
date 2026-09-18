@@ -205,6 +205,20 @@ const sedesScopeNom = (x) => {
   const noms = scopeSedes(x).map((id) => { const s = sede(id); return s ? s.nombre_sede : '?'; });
   return noms.length ? noms.join(', ') : '🌐 Todas';
 };
+// Bloque de checkboxes de sedes para formularios de catálogo (multi-sede)
+const sedesChecksHTML = (cls, marcadas) => `
+  <div class="mb-3">
+    <div class="text-xs font-medium text-slate-500 mb-1.5">Sedes</div>
+    <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
+      ${sedesActivas().map((s) => `
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" class="${cls} h-4 w-4 rounded accent-indigo-600" value="${s.id}" ${marcadas.includes(s.id) ? 'checked' : ''}>
+          <span class="truncate">${s.nombre_sede}</span>
+        </label>`).join('')}
+    </div>
+    <p class="text-[11px] text-slate-400 mt-1.5">Sin marcar ninguna = disponible en <b>🌐 todas las sedes</b>.</p>
+  </div>`;
+const sedesChecksVal = (cls) => [...document.querySelectorAll('.' + cls + ':checked')].map((c) => c.value);
 const conceptosCNRSede = () => DB.conceptosCNR.filter((c) => c.activo && esDeSede(c));
 const mediosPagoSede   = () => DB.mediosPago.filter((m) => m.activo && esDeSede(m));
 const ciclosPagoSede   = () => DB.ciclosPago.filter((c) => c.activo && esDeSede(c));
@@ -3312,17 +3326,7 @@ const CONFIG_TABS = {
             ${field('Concepto (nombre del cargo) *', input('cn_nombre', `required value="${e ? e.nombre.replace(/"/g, '&quot;') : ''}" placeholder="Ej: Uniforme"`))}
             ${field('Precio unitario (S/.)', input('cn_precio', `type="number" step="0.01" value="${e ? e.precio : ''}" placeholder="0.00"`))}
           </div>
-          <div class="mb-3">
-            <div class="text-xs font-medium text-slate-500 mb-1.5">Sedes</div>
-            <div class="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              ${(() => { const marcadas = e ? scopeSedes(e) : [SEDE_ACTUAL]; return sedesActivas().map((s) => `
-                <label class="flex items-center gap-2 text-sm">
-                  <input type="checkbox" class="cn-sede-chk h-4 w-4 rounded accent-indigo-600" value="${s.id}" ${marcadas.includes(s.id) ? 'checked' : ''}>
-                  <span class="truncate">${s.nombre_sede}</span>
-                </label>`).join(''); })()}
-            </div>
-            <p class="text-[11px] text-slate-400 mt-1.5">Sin marcar ninguna = disponible en <b>🌐 todas las sedes</b>.</p>
-          </div>
+          ${sedesChecksHTML('cn-sede-chk', e ? scopeSedes(e) : [SEDE_ACTUAL])}
           <div class="flex flex-wrap gap-5 mb-3">
             <label class="flex items-center gap-2 text-sm">
               <input type="checkbox" id="cn_stock" class="h-4 w-4 rounded accent-indigo-600" ${e && e.maneja_stock ? 'checked' : ''}>
@@ -3358,7 +3362,7 @@ const CONFIG_TABS = {
         <div class="text-sm font-semibold text-slate-700 mb-3">${e ? 'Editar medio de pago' : 'Nuevo medio de pago'}</div>
         <form onsubmit="guardarMedioPago(event)">
           ${field('Nombre del medio *', input('mp_nombre', `required value="${e ? e.nombre.replace(/"/g, '&quot;') : ''}" placeholder="Ej: Yape"`))}
-          ${field('Sede', select('mp_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
+          ${sedesChecksHTML('mp-sede-chk', e ? scopeSedes(e) : [SEDE_ACTUAL])}
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
             ${e ? `<button type="button" onclick="cancelMPEdit()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>` : ''}
@@ -3366,9 +3370,9 @@ const CONFIG_TABS = {
         </form>
       </div>
       <p class="text-xs text-slate-400 mb-2">Los medios <b>activos</b> aparecen al registrar un pago.</p>
-      ${table(['Medio', 'Sede', 'Estado', ''],
+      ${table(['Medio', 'Sedes', 'Estado', ''],
         DB.mediosPago.map((m) => [
-          `<b>${m.nombre}</b>`, sedeScopeNom(m.sede_id),
+          `<b>${m.nombre}</b>`, sedesScopeNom(m),
           badge(m.activo ? 'Activo' : 'Inactivo', m.activo ? 'emerald' : 'slate'),
           `<button onclick="editarMedioPago('${m.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="toggleMedioPago('${m.id}')" class="text-slate-500 hover:underline text-xs mr-3">${m.activo ? 'Desactivar' : 'Activar'}</button>
@@ -3384,7 +3388,7 @@ const CONFIG_TABS = {
             ${field('Día del mes (corte) *', input('ci_dia', `type="number" min="1" max="28" required value="${e ? e.dia : ''}" placeholder="Ej: 1"`))}
             ${field('Día de vencimiento *', input('ci_venc', `type="number" min="1" max="28" required value="${e ? (e.dia_venc ?? '') : ''}" placeholder="Ej: 5"`))}
           </div>
-          ${field('Sede', select('ci_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
+          ${sedesChecksHTML('ci-sede-chk', e ? scopeSedes(e) : [SEDE_ACTUAL])}
           <label class="flex items-center gap-2 text-sm mb-3">
             <input type="checkbox" id="ci_default" class="h-4 w-4 rounded accent-indigo-600" ${e && e.es_default ? 'checked' : ''}>
             Predeterminado <span class="text-xs text-slate-400">(se usa por defecto al generar CR)</span>
@@ -3396,9 +3400,9 @@ const CONFIG_TABS = {
         </form>
       </div>
       <p class="text-xs text-slate-400 mb-2">El <b>día de corte</b> marca el fin del ciclo (día − 1). El <b>vencimiento</b> es ese día dentro del mes del ciclo (ej. ciclo 01/08–31/08 con venc. día 5 → 05/08).</p>
-      ${table(['Ciclo', 'Corte', 'Vencimiento', 'Sede', 'Predeterminado', 'Estado', ''],
+      ${table(['Ciclo', 'Corte', 'Vencimiento', 'Sedes', 'Predeterminado', 'Estado', ''],
         DB.ciclosPago.map((c) => [
-          `<b>${nombreCiclo(c)}</b>`, `día ${c.dia}`, `día ${c.dia_venc ?? '—'}`, sedeScopeNom(c.sede_id),
+          `<b>${nombreCiclo(c)}</b>`, `día ${c.dia}`, `día ${c.dia_venc ?? '—'}`, sedesScopeNom(c),
           c.es_default ? badge('Por defecto', 'indigo') : '—',
           badge(c.activo ? 'Activo' : 'Inactivo', c.activo ? 'emerald' : 'slate'),
           `<button onclick="editarCicloPago('${c.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
@@ -3416,7 +3420,7 @@ const CONFIG_TABS = {
             ${field('Meses total *', input('pr_total', `type="number" min="1" required value="${e ? e.meses_total : ''}" placeholder="3"`))}
             ${field('Meses pagados *', input('pr_pagados', `type="number" min="0" required value="${e ? e.meses_pagados : ''}" placeholder="2"`))}
           </div>
-          ${field('Sede', select('pr_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], e ? (e.sede_id || '') : SEDE_ACTUAL))}
+          ${sedesChecksHTML('pr-sede-chk', e ? scopeSedes(e) : [SEDE_ACTUAL])}
           <p class="text-xs text-slate-400 mb-3">Los últimos <b>(total − pagados)</b> meses van gratis.</p>
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
@@ -3426,7 +3430,7 @@ const CONFIG_TABS = {
       </div>
       ${table(['Promoción', 'Meses', 'Pagados', 'Gratis', 'Sede', 'Estado', ''],
         DB.promociones.map((p) => [
-          `<b>${p.nombre}</b>`, p.meses_total, p.meses_pagados, p.meses_total - p.meses_pagados, sedeScopeNom(p.sede_id),
+          `<b>${p.nombre}</b>`, p.meses_total, p.meses_pagados, p.meses_total - p.meses_pagados, sedesScopeNom(p),
           badge(p.activo ? 'Activo' : 'Inactivo', p.activo ? 'emerald' : 'slate'),
           `<button onclick="editarPromo('${p.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="togglePromo('${p.id}')" class="text-slate-500 hover:underline text-xs mr-3">${p.activo ? 'Desactivar' : 'Activar'}</button>
@@ -3625,9 +3629,10 @@ window.quitarUsuarioUI = async (userId, email) => {
 window.guardarMedioPago = (ev) => {
   ev.preventDefault();
   const nombre = val('mp_nombre');
-  const sedeId = val('mp_sede') || null;
-  if (MP_EDIT) { Object.assign(DB.mediosPago.find((m) => m.id === MP_EDIT), { nombre, sede_id: sedeId }); MP_EDIT = null; toast('Medio actualizado'); }
-  else { DB.mediosPago.push({ id: uid('mp'), nombre, sede_id: sedeId, activo: true }); toast('Medio agregado'); }
+  const sedeIds = sedesChecksVal('mp-sede-chk');
+  const data = { nombre, sede_ids: sedeIds, sede_id: sedeIds[0] || null };
+  if (MP_EDIT) { Object.assign(DB.mediosPago.find((m) => m.id === MP_EDIT), data); MP_EDIT = null; toast('Medio actualizado'); }
+  else { DB.mediosPago.push({ id: uid('mp'), activo: true, ...data }); toast('Medio agregado'); }
   SCREENS.config();
 };
 window.editarMedioPago = (id) => { MP_EDIT = id; SCREENS.config(); };
@@ -3646,8 +3651,9 @@ window.guardarCicloPago = (ev) => {
   const diaVenc = parseInt(val('ci_venc'), 10) || dia;
   const esDefault = el('ci_default').checked;
   if (esDefault) DB.ciclosPago.forEach((c) => { c.es_default = false; });
-  if (CICLO_EDIT) { Object.assign(DB.ciclosPago.find((c) => c.id === CICLO_EDIT), { dia, dia_venc: diaVenc, es_default: esDefault, sede_id: val('ci_sede') || null }); CICLO_EDIT = null; toast('Ciclo actualizado'); }
-  else { DB.ciclosPago.push({ id: uid('ci'), dia, dia_venc: diaVenc, es_default: esDefault, sede_id: val('ci_sede') || null, activo: true }); toast('Ciclo agregado'); }
+  const sedeIds = sedesChecksVal('ci-sede-chk');
+  if (CICLO_EDIT) { Object.assign(DB.ciclosPago.find((c) => c.id === CICLO_EDIT), { dia, dia_venc: diaVenc, es_default: esDefault, sede_ids: sedeIds, sede_id: sedeIds[0] || null }); CICLO_EDIT = null; toast('Ciclo actualizado'); }
+  else { DB.ciclosPago.push({ id: uid('ci'), dia, dia_venc: diaVenc, es_default: esDefault, sede_ids: sedeIds, sede_id: sedeIds[0] || null, activo: true }); toast('Ciclo agregado'); }
   // Garantiza al menos un predeterminado
   if (!DB.ciclosPago.some((c) => c.es_default) && DB.ciclosPago[0]) DB.ciclosPago[0].es_default = true;
   SCREENS.config();
@@ -3668,7 +3674,8 @@ window.guardarPromo = (ev) => {
   const total = parseInt(val('pr_total'), 10) || 1;
   const pagados = parseInt(val('pr_pagados'), 10);
   if (pagados > total) { toast('Meses pagados no puede superar al total'); return; }
-  const data = { nombre: val('pr_nombre'), meses_total: total, meses_pagados: isNaN(pagados) ? 0 : pagados, sede_id: val('pr_sede') || null };
+  const sedeIds = sedesChecksVal('pr-sede-chk');
+  const data = { nombre: val('pr_nombre'), meses_total: total, meses_pagados: isNaN(pagados) ? 0 : pagados, sede_ids: sedeIds, sede_id: sedeIds[0] || null };
   if (PROMO_EDIT) { Object.assign(DB.promociones.find((p) => p.id === PROMO_EDIT), data); PROMO_EDIT = null; toast('Promoción actualizada'); }
   else { DB.promociones.push({ id: uid('pr'), activo: true, ...data }); toast('Promoción agregada'); }
   SCREENS.config();

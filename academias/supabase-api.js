@@ -99,20 +99,23 @@ window.AcademiasDB = (() => {
     },
     mediosPago: {
       table: 'medios_pago',
-      toRow: (m) => ({ ...pick(m, ['id', 'nombre', 'sede_id']), activo: m.activo !== false, academia_id: ACADEMIA_ID }),
-      fromRow: (r) => r,
+      toRow: (m) => ({ ...pick(m, ['id', 'nombre', 'sede_id']), activo: m.activo !== false,
+        sede_ids: (Array.isArray(m.sede_ids) && m.sede_ids.length) ? m.sede_ids : null, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, sede_ids: r.sede_ids || null }),
     },
     ciclosPago: {
       table: 'ciclos_pago',
       toRow: (c) => ({ ...pick(c, ['id', 'sede_id']), dia: N(c.dia), dia_venc: N(c.dia_venc), es_default: !!c.es_default,
+        sede_ids: (Array.isArray(c.sede_ids) && c.sede_ids.length) ? c.sede_ids : null,
         activo: c.activo !== false, academia_id: ACADEMIA_ID }),
-      fromRow: (r) => ({ ...r, dia: N(r.dia), dia_venc: N(r.dia_venc) }),
+      fromRow: (r) => ({ ...r, dia: N(r.dia), dia_venc: N(r.dia_venc), sede_ids: r.sede_ids || null }),
     },
     promociones: {
       table: 'promociones',
       toRow: (p) => ({ ...pick(p, ['id', 'nombre', 'sede_id']), meses_total: N(p.meses_total), meses_pagados: N(p.meses_pagados),
+        sede_ids: (Array.isArray(p.sede_ids) && p.sede_ids.length) ? p.sede_ids : null,
         activo: p.activo !== false, academia_id: ACADEMIA_ID }),
-      fromRow: (r) => ({ ...r, meses_total: N(r.meses_total), meses_pagados: N(r.meses_pagados) }),
+      fromRow: (r) => ({ ...r, meses_total: N(r.meses_total), meses_pagados: N(r.meses_pagados), sede_ids: r.sede_ids || null }),
     },
     conceptosCNR: {
       table: 'conceptos_cnr',
