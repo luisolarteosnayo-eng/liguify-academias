@@ -82,6 +82,15 @@ window.AcademiasDB = (() => {
         costo_mensual_personalizado: N(i.costo_mensual_personalizado), activo: i.activo !== false }),
       fromRow: (r) => ({ ...r, costo_mensual_personalizado: N(r.costo_mensual_personalizado) }),
     },
+    // OJO con el orden: procesosCR va ANTES que cargos porque cargos.proceso_id
+    // referencia procesos_facturacion (FK); el sync respeta el orden de estas claves.
+    procesosCR: {
+      table: 'procesos_facturacion',
+      toRow: (p) => ({ ...pick(p, ['id', 'sede_id', 'corte', 'vencimiento', 'fecha', 'cargo_ids']),
+        ciclo_dia: N(p.ciclo_dia) || 0, total_monto: N(p.total) || 0,
+        total_crs: (p.cargo_ids || []).length, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, total: N(r.total_monto), ciclo_dia: N(r.ciclo_dia) }),
+    },
     cargos: {
       table: 'cargos',
       toRow: (c) => ({ ...pick(c, ['id', 'tutor_id', 'jugador_id', 'inscripcion_id', 'tipo', 'origen', 'proceso_id',
@@ -168,13 +177,6 @@ window.AcademiasDB = (() => {
       toRow: (m) => ({ ...pick(m, ['id', 'sede_id', 'concepto_cnr_id', 'talla', 'tipo', 'motivo', 'jugador_id', 'cargo_id', 'pedido_id', 'fecha']),
         cantidad: N(m.cantidad) || 0, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, cantidad: N(r.cantidad) }),
-    },
-    procesosCR: {
-      table: 'procesos_facturacion',
-      toRow: (p) => ({ ...pick(p, ['id', 'sede_id', 'corte', 'vencimiento', 'fecha', 'cargo_ids']),
-        ciclo_dia: N(p.ciclo_dia) || 0, total_monto: N(p.total) || 0,
-        total_crs: (p.cargo_ids || []).length, academia_id: ACADEMIA_ID }),
-      fromRow: (r) => ({ ...r, total: N(r.total_monto), ciclo_dia: N(r.ciclo_dia) }),
     },
   };
 
