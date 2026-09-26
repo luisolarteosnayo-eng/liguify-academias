@@ -477,7 +477,15 @@ const alumnosSede  = () => DB.jugadores.filter((j) => j.sede_id === SEDE_ACTUAL)
 const cargosSede   = () => { const ids = new Set(alumnosSede().map((j) => j.id)); const ts = tutoresSede();
   return DB.cargos.filter((c) => (c.jugador_id ? ids.has(c.jugador_id) : ts.has(c.tutor_id))); };
 const tutoresSede  = () => new Set(alumnosSede().map((j) => j.tutor_id));
-const pagosSede    = () => { const ts = tutoresSede(); return DB.pagos.filter((p) => ts.has(p.tutor_id)); };
+// Pagos de la sede: por la sede donde se registró el pago (p.sede_id); los
+// legados sin sede caen a la sede del alumno y, sin alumno, al tutor.
+// Antes se filtraba solo por tutor y un tutor con hijos en 2 sedes contaminaba ambas.
+const pagosSede    = () => {
+  const ids = new Set(alumnosSede().map((j) => j.id));
+  const ts = tutoresSede();
+  return DB.pagos.filter((p) => p.sede_id ? p.sede_id === SEDE_ACTUAL
+    : (p.jugador_id ? ids.has(p.jugador_id) : ts.has(p.tutor_id)));
+};
 
 function renderNav() {
   el('nav').innerHTML = MENU.filter((m) => m.roles.includes(ROL)).map((m) => `
