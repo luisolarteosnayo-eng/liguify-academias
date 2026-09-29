@@ -924,6 +924,7 @@ const SCREENS = {
         <label class="flex items-center gap-1.5 text-xs text-slate-500">Ordenar por
           <select onchange="AL_ORDEN = this.value; renderAlumnosList()" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
             <option value="nombre" ${AL_ORDEN === 'nombre' ? 'selected' : ''}>Nombre (A–Z)</option>
+            <option value="reciente" ${AL_ORDEN === 'reciente' ? 'selected' : ''}>Más recientes (recién matriculados)</option>
             <option value="deuda" ${AL_ORDEN === 'deuda' ? 'selected' : ''}>Mayor deuda primero</option>
             <option value="corte" ${AL_ORDEN === 'corte' ? 'selected' : ''}>Últ. corte de CR (sin generar / más antiguo primero)</option>
           </select>
@@ -1235,6 +1236,7 @@ function renderAlumnosList() {
   };
   if (AL_ORDEN === 'deuda') als = als.slice().sort((a, b) => deudaDe(b.id) - deudaDe(a.id));
   else if (AL_ORDEN === 'corte') als = als.slice().sort((a, b) => (corteDe(a.id) < corteDe(b.id) ? -1 : 1));
+  else if (AL_ORDEN === 'reciente') als = als.slice().sort((a, b) => ((b.fecha_registro || '') < (a.fecha_registro || '') ? -1 : 1));
   else als = als.slice().sort((a, b) => nom(a).localeCompare(nom(b), 'es'));
   if (el('alCount')) el('alCount').textContent = als.length;
   // Embudo de clases de prueba (visible en la pestaña Prospectos)
@@ -1276,7 +1278,7 @@ function renderAlumnosList() {
         ${j.foto_url ? `<img src="${j.foto_url}" class="h-10 w-10 rounded-full object-cover">` : `<span class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-sm font-medium">${ini}</span>`}
         <div class="min-w-0 flex-1">
           <div class="font-medium ${deuda > 0 ? 'text-rose-700' : 'text-slate-800'} truncate">${nom(j)}${baja ? ' ' + badge('Baja', 'slate') : ''}${pros ? ' ' + badge('Prospecto', 'fuchsia') : ''}</div>
-          <div class="text-xs text-slate-400">Cat. ${anio(j.fecha_nacimiento)}${j.posicion_juego ? ' · ' + j.posicion_juego : ''}${j.numero_camiseta != null ? ' · #' + j.numero_camiseta : ''}</div>
+          <div class="text-xs text-slate-400">Cat. ${anio(j.fecha_nacimiento)}${j.fecha_registro ? ' · Inscrito ' + fmtDMY(j.fecha_registro) : ''}${j.posicion_juego ? ' · ' + j.posicion_juego : ''}${j.numero_camiseta != null ? ' · #' + j.numero_camiseta : ''}</div>
         </div>
         ${deuda > 0 ? `<div class="shrink-0 text-right"><div class="text-[10px] uppercase tracking-wide text-rose-400">Debe</div><div class="text-sm font-bold text-rose-600">${S0(deuda)}</div></div>` : ''}
       </div>
@@ -2477,6 +2479,7 @@ window.formEditarAlumno = (jid) => {
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
         · Estado: ${badge(j.estado_alumno === 'activo' ? 'Activo' : j.estado_alumno === 'prospecto' ? 'Prospecto' : 'Baja', j.estado_alumno === 'activo' ? 'emerald' : j.estado_alumno === 'prospecto' ? 'fuchsia' : 'slate')}
+        ${j.fecha_registro ? `· Inscrito: <b>${fmtDMY(j.fecha_registro)}</b>` : ''}
         ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <b>${fmtDMY(j.prueba_fecha)}</b>${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}` : ''}</p>
       ${njFormBody(j, jid)}
       <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
