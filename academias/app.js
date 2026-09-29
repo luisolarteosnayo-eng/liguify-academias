@@ -920,6 +920,14 @@ const SCREENS = {
       <div class="mb-3 flex flex-wrap items-center gap-1.5" id="alFiltros">
         ${[['activos', 'Activos'], ['prospectos', 'Prospectos'], ['bajas', 'Bajas'], ['todos', 'Todos']].map(([v, t]) =>
           `<button onclick="alFiltro('${v}')" class="rounded-full px-3 py-1.5 text-xs font-medium ${AL_FILTRO === v ? 'bg-indigo-600 text-white' : 'bg-white ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50'}">${t}</button>`).join('')}
+        <span class="mx-1 h-4 w-px bg-slate-300"></span>
+        <span class="text-[11px] uppercase tracking-wide font-semibold text-amber-600">Por revisar</span>
+        ${(() => { const pr = alumnosPorRevisar(); return [
+          ['sintrack', 'Sin track', pr.sintrack.length],
+          ['sincr', 'Sin CR', pr.sincr.length],
+          ['sincorte', 'Sin fecha corte', pr.sincorte.length],
+        ].map(([v, t, n]) => `<button onclick="alFiltro('${v}')"
+          class="rounded-full px-3 py-1.5 text-xs font-medium ${AL_FILTRO === v ? 'bg-amber-500 text-white' : n > 0 ? 'bg-amber-50 ring-1 ring-amber-300 text-amber-700 hover:bg-amber-100' : 'bg-white ring-1 ring-slate-200 text-slate-400'}">${t} (${n})</button>`).join(''); })()}
         <span class="flex-1"></span>
         <label class="flex items-center gap-1.5 text-xs text-slate-500">Ordenar por
           <select onchange="AL_ORDEN = this.value; renderAlumnosList()" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
@@ -1209,6 +1217,17 @@ function renderAsisList() {
 // ---------- Lista de alumnos (tarjetas, mobile-first) ----------
 window.alFiltro = (v) => { AL_FILTRO = v; SCREENS.alumnos(); };
 const esProspecto = (j) => j.estado_alumno === 'prospecto';
+// "Por revisar": casos de error de configuración/cobranza entre los alumnos ACTIVOS de la sede
+function alumnosPorRevisar() {
+  const activos = alumnosSede().filter((j) => j.estado_alumno === 'activo');
+  const inscDe = (jid) => DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
+  return {
+    sintrack: activos.filter((j) => inscDe(j.id).length === 0),
+    sincr: activos.filter((j) => { const ins = inscDe(j.id);
+      return ins.length > 0 && ins.some((i) => !DB.cargos.some((c) => c.inscripcion_id === i.id && c.tipo === 'CR')); }),
+    sincorte: activos.filter((j) => inscDe(j.id).some((i) => !i.ultima_fecha_corte)),
+  };
+}
 // Estado del embudo de un prospecto: Agendado o Asistió (según la asistencia de su clase de prueba)
 function pruebaEstado(j) {
   const asis = j.prueba_track_id && j.prueba_fecha
@@ -1222,6 +1241,10 @@ function renderAlumnosList() {
   if (AL_FILTRO === 'activos') als = als.filter((j) => j.estado_alumno === 'activo');
   else if (AL_FILTRO === 'prospectos') als = als.filter(esProspecto);
   else if (AL_FILTRO === 'bajas') als = als.filter((j) => j.estado_alumno === 'baja');
+  else if (AL_FILTRO === 'sintrack' || AL_FILTRO === 'sincr' || AL_FILTRO === 'sincorte') {
+    const ids = new Set(alumnosPorRevisar()[AL_FILTRO].map((j) => j.id));
+    als = als.filter((j) => ids.has(j.id));
+  }
   if (q) als = als.filter((j) => nom(j).toLowerCase().includes(q));
   // Deuda total del alumno (todos sus cargos con saldo)
   const deudaDe = (jid) => DB.cargos.filter((c) => c.jugador_id === jid)
@@ -1270,7 +1293,7 @@ function renderAlumnosList() {
     const pruebaInfo = pros
       ? `<div class="mt-2 text-xs truncate">${pruebaEstado(j) === 'asistio' ? '<span class="text-emerald-600 font-medium">✓ Asistió a su clase de prueba</span>' : `<span class="text-fuchsia-600">🎈 Prueba: ${j.prueba_fecha ? fmtDMY(j.prueba_fecha) : 'sin fecha'}${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}</span>`}</div>`
       : `<div class="mt-2 text-xs text-slate-500 truncate">🎯 ${trks}</div>`;
-    const corteInfo = AL_ORDEN === 'corte' && !pros
+    const corteInfo = (AL_ORDEN === 'corte' || AL_FILTRO === 'sincr' || AL_FILTRO === 'sincorte') && !pros
       ? `<div class="text-xs mt-0.5 ${corte === '' ? 'text-rose-600 font-medium' : 'text-slate-400'}">${corte === '' ? '⚠ Track sin CR generado' : corte === '9999-99-99' ? 'Sin tracks' : 'Últ. corte: ' + fmtDMY(corte)}</div>`
       : '';
     return `<div onclick="formEditarAlumno('${j.id}')" class="cursor-pointer rounded-xl p-3 hover:shadow-sm transition ${deuda > 0 ? 'bg-rose-50 ring-1 ring-rose-300 hover:ring-rose-400' : `bg-white ring-1 ${pros ? 'ring-fuchsia-200' : 'ring-slate-200'} hover:ring-indigo-300`} ${baja ? 'opacity-60' : ''}">
