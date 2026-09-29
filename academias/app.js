@@ -837,6 +837,14 @@ const SCREENS = {
           <p class="text-sm text-slate-400">Ajustes de la empresa (marca) y sus sedes</p>
           <span class="mt-2 inline-block rounded-lg bg-indigo-50 px-3 py-1 text-xs text-slate-600">
             Plan actual: <b class="text-indigo-600 capitalize">${a.plan_suscripcion}</b></span>
+          ${(() => {
+            if (!window.AcademiasDB || !AcademiasDB.on || ROL !== 'admin') return '';
+            const n = DB.pagos.filter((p) => esDataURL(p.voucher_url)).length
+              + DB.jugadores.filter((j) => esDataURL(j.foto_url)).length
+              + DB.sedes.filter((s) => esDataURL(s.logo_url) || esDataURL(s.cabecera_url)).length
+              + (esDataURL(DB.academia.logo_url) ? 1 : 0);
+            return n ? `<button onclick="migrarImagenesStorage()" class="mt-2 ml-2 inline-block rounded-lg bg-amber-50 ring-1 ring-amber-300 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100">🖼️ Optimizar imágenes (${n} por migrar a Storage)</button>` : '';
+          })()}
         </div>
         <div class="flex gap-1 border-b border-slate-200 mb-6 text-sm overflow-x-auto">
           ${tabs.map((t) => `
@@ -1620,6 +1628,34 @@ window.removerInscripcion = (id) => {
   const i = DB.inscripciones.find((x) => x.id === id);
   if (i) { i.activo = false; toast('Alumno removido del track'); renderTrackRows(); }
 };
+// ---------- Media en Supabase Storage ----------
+// Fotos de alumnos y logos → bucket público 'academias-media' (URL pública en la fila).
+// Vouchers de pago → bucket privado 'academias-vouchers': la fila guarda 'vstore:<ruta>'
+// y al visualizar se resuelve una URL firmada. En modo demo todo queda como dataURL.
+const esDataURL = (x) => typeof x === 'string' && x.startsWith('data:');
+async function subirMediaPublica(dataUrl, ruta) {
+  if (!window.AcademiasDB || !AcademiasDB.on) return dataUrl;
+  const blob = await (await fetch(dataUrl)).blob();
+  const { error } = await AcademiasDB.sb.storage.from('academias-media').upload(ruta, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
+  if (error) throw error;
+  return AcademiasDB.sb.storage.from('academias-media').getPublicUrl(ruta).data.publicUrl;
+}
+async function subirVoucher(dataUrl, ruta) {
+  if (!window.AcademiasDB || !AcademiasDB.on) return dataUrl;
+  const blob = await (await fetch(dataUrl)).blob();
+  const { error } = await AcademiasDB.sb.storage.from('academias-vouchers').upload(ruta, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
+  if (error) throw error;
+  return 'vstore:' + ruta;
+}
+async function urlVoucher(v) {
+  if (!v) return null;
+  if (v.startsWith('vstore:')) {
+    const { data, error } = await AcademiasDB.sb.storage.from('academias-vouchers').createSignedUrl(v.slice(7), 300);
+    if (error) throw error;
+    return data.signedUrl;
+  }
+  return esDataURL(v) ? v : VOUCHER_DEMO;
+}
 let NJ_FOTO = null;   // dataURL de la foto del nuevo jugador
 const PAISES_TEL = [{ v: '+51', t: 'Perú (+51)' }, { v: '+56', t: 'Chile (+56)' }, { v: '+57', t: 'Colombia (+57)' },
   { v: '+593', t: 'Ecuador (+593)' }, { v: '+54', t: 'Argentina (+54)' }];
@@ -2281,7 +2317,7 @@ window.pgVoucherFile = (inp) => {
   r.onload = () => { PAGO_VOUCHER = r.result; };
   r.readAsDataURL(f);
 };
-window.guardarPagoAlumno = (e, jid) => {
+window.guardarPagoAlumno = async (e, jid) => {
   e.preventDefault();
   const sel = [...document.querySelectorAll('.pgChk:checked')].map((c) => c.value);
   if (!sel.length) { toast('Selecciona al menos un cargo'); return; }
@@ -2307,10 +2343,17 @@ window.guardarPagoAlumno = (e, jid) => {
     c.pagado_monto = Math.min(c.monto, Math.round(((c.pagado_monto || 0) + d.monto) * 100) / 100);
     c.estado = c.pagado_monto >= c.monto ? 'pagado' : 'parcial';
   });
-  DB.pagos.push({ id: uid('pg'), jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL,
+  // Voucher al Storage privado (la fila guarda solo la ruta); si falla, queda embebido
+  const pid = uid('pg');
+  let voucherFinal = PAGO_VOUCHER;
+  if (esDataURL(PAGO_VOUCHER) && window.AcademiasDB && AcademiasDB.on) {
+    try { voucherFinal = await subirVoucher(PAGO_VOUCHER, `${AcademiasDB.academiaId}/vouchers/${pid}.jpg`); }
+    catch (ex) { console.warn('[voucher] fallback dataURL:', ex); }
+  }
+  DB.pagos.push({ id: pid, jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL,
     fecha: val('pg_fecha') || HOY,                 // fecha de PAGO (editable para regularizaciones)
     created_at: new Date().toISOString(),          // fecha de REGISTRO en el sistema (la BD guarda la suya al insertar)
-    medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: PAGO_VOUCHER,
+    medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: voucherFinal,
     total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
   closeModal();
   toast(`✓ Pago registrado · ${S(total)}`);
@@ -2350,13 +2393,21 @@ window.gestionarPago = (id) => {
     </div>
     ${voucherSrc(p)
       ? `<div class="mb-3"><div class="text-xs font-medium text-slate-500 mb-1">Comprobante</div><img src="${voucherSrc(p)}" onclick="verComprobante('${id}')" class="w-full max-h-52 object-contain rounded-lg ring-1 ring-slate-200 cursor-zoom-in" title="Clic para ampliar"></div>`
-      : '<p class="text-xs text-amber-600 mb-3">⚠️ Este pago no tiene comprobante adjunto.</p>'}
+      : p.voucher_url && String(p.voucher_url).startsWith('vstore:')
+        ? `<div class="mb-3"><div class="text-xs font-medium text-slate-500 mb-1">Comprobante</div><div id="apVoucherBox" class="rounded-lg ring-1 ring-slate-200 p-6 text-center text-xs text-slate-400">⏳ cargando comprobante…</div></div>`
+        : '<p class="text-xs text-amber-600 mb-3">⚠️ Este pago no tiene comprobante adjunto.</p>'}
     ${field('Medio de pago', select('ap_medio', medios.map((m) => ({ v: m.nombre, t: m.nombre })), ''))}
     <div class="mt-3 flex items-center justify-between gap-2">
       <button type="button" onclick="rechazarPagoDoc('${id}')" class="rounded-lg px-4 py-2.5 text-sm font-medium text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">Rechazar</button>
       <button type="button" onclick="aprobarPagoDoc('${id}')" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">Aprobar</button>
     </div>`);
   if (el('ap_medio')) el('ap_medio').value = p.medio || (medios[0] && medios[0].nombre) || '';
+  // Voucher en Storage: resolver la URL firmada después de abrir el modal
+  if (p.voucher_url && String(p.voucher_url).startsWith('vstore:')) {
+    urlVoucher(p.voucher_url)
+      .then((u) => { if (el('apVoucherBox')) el('apVoucherBox').outerHTML = `<img src="${u}" onclick="verComprobante('${id}')" class="w-full max-h-52 object-contain rounded-lg ring-1 ring-slate-200 cursor-zoom-in" title="Clic para ampliar">`; })
+      .catch((e) => { if (el('apVoucherBox')) el('apVoucherBox').textContent = '⚠ No se pudo cargar: ' + (e.message || e); });
+  }
 };
 window.aprobarPagoDoc = (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p || p.estado !== 'pendiente') return; // sin reversión: solo pendientes
@@ -2379,11 +2430,18 @@ function revertirCargosPago(p) {
     c.estado = (c.monto > 0 && c.pagado_monto >= c.monto) ? 'pagado' : (c.pagado_monto > 0 ? 'parcial' : 'por_pagar');
   });
 }
-const voucherSrc = (p) => p && p.voucher_url ? (String(p.voucher_url).startsWith('data:') ? p.voucher_url : VOUCHER_DEMO) : null;
-window.verComprobante = (id) => {
+// data:/demo se resuelve al instante; 'vstore:' requiere URL firmada (async)
+const voucherSrc = (p) => {
+  if (!p || !p.voucher_url) return null;
+  const v = String(p.voucher_url);
+  return v.startsWith('data:') ? v : v.startsWith('vstore:') ? null : VOUCHER_DEMO;
+};
+window.verComprobante = async (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p) return;
-  const src = voucherSrc(p);
-  if (!src) { toast('Este pago no tiene comprobante'); return; }
+  if (!p.voucher_url) { toast('Este pago no tiene comprobante'); return; }
+  let src;
+  try { src = await urlVoucher(p.voucher_url); }
+  catch (e) { toast('⚠ No se pudo cargar el comprobante: ' + (e.message || e)); return; }
   openModal('Comprobante de pago', `
     <div class="text-center">
       <img src="${src}" class="mx-auto max-h-[70vh] rounded-lg ring-1 ring-slate-200">
@@ -2521,10 +2579,15 @@ window.formEditarAlumno = (jid) => {
       </div>
     </form>`);
 };
-window.guardarEdicionAlumno = (e, jid) => {
+window.guardarEdicionAlumno = async (e, jid) => {
   e.preventDefault();
   if (!val('nj_nombre') || !val('nj_apellido') || !val('nj_fnac')) { toast('Completa nombre, apellido y fecha'); njTab('personal'); return; }
   const j = jugador(jid);
+  // Foto nueva al Storage público (la fila guarda solo la URL); si falla, queda embebida
+  if (esDataURL(NJ_FOTO) && window.AcademiasDB && AcademiasDB.on) {
+    try { NJ_FOTO = await subirMediaPublica(NJ_FOTO, `${AcademiasDB.academiaId}/fotos/alumno-${jid}.jpg`); }
+    catch (ex) { console.warn('[foto] fallback dataURL:', ex); }
+  }
   const consEd = el('nj_consent') ? el('nj_consent').checked : !!j.consentimiento_imagen;
   Object.assign(j, {
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
@@ -2620,12 +2683,17 @@ window.njVerDoc = async (ruta) => {
   } catch (e) { toast('⚠ ' + (e.message || e)); }
 };
 
-window.guardarNuevoJugador = (e, tid) => {
+window.guardarNuevoJugador = async (e, tid) => {
   e.preventDefault();
   if (!val('nj_nombre') || !val('nj_apellido') || !val('nj_fnac')) {
     toast('Completa nombre, apellido y fecha de nacimiento'); njTab('personal'); return;
   }
   const t = track(tid);
+  const jidNuevo = uid('j');
+  if (esDataURL(NJ_FOTO) && window.AcademiasDB && AcademiasDB.on) {
+    try { NJ_FOTO = await subirMediaPublica(NJ_FOTO, `${AcademiasDB.academiaId}/fotos/alumno-${jidNuevo}.jpg`); }
+    catch (ex) { console.warn('[foto] fallback dataURL:', ex); }
+  }
   // Tutor responsable: reusar por documento o crear uno nuevo
   const doc = val('nj_numdoc');
   const tel = `${val('nj_paistel')} ${val('nj_tel')}`.trim();
@@ -2637,7 +2705,7 @@ window.guardarNuevoJugador = (e, tid) => {
     DB.tutores.push(tut);
   }
   const consNu = el('nj_consent') ? el('nj_consent').checked : false;
-  const j = { id: uid('j'), tutor_id: tut.id, sede_id: SEDE_ACTUAL,
+  const j = { id: jidNuevo, tutor_id: tut.id, sede_id: SEDE_ACTUAL,
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
     sexo: val('nj_sexo') || null, tipo_documento: val('nj_tipodoc') || null, num_documento: doc || null,
     pais_documento: (el('nj_paisdoc') && val('nj_paisdoc')) || 'PE',
@@ -3853,7 +3921,14 @@ window.cambiarLogo = (inp) => {
   const f = inp.files && inp.files[0];
   if (!f) return;
   const r = new FileReader();
-  r.onload = () => { DB.academia.logo_url = r.result; SCREENS.config(); };
+  r.onload = async () => {
+    let url = r.result;
+    if (window.AcademiasDB && AcademiasDB.on) {
+      try { url = await subirMediaPublica(r.result, `${AcademiasDB.academiaId}/logos/empresa-${Date.now()}.jpg`); }
+      catch (ex) { console.warn('[logo] fallback dataURL:', ex); }
+    }
+    DB.academia.logo_url = url; SCREENS.config();
+  };
   r.readAsDataURL(f);
 };
 
@@ -3881,8 +3956,14 @@ window.cambiarLogoSede = (inp) => {
   r.onload = () => { SEDE_LOGO = r.result; SCREENS.config(); };
   r.readAsDataURL(f);
 };
-window.guardarSedeInline = (e) => {
+window.guardarSedeInline = async (e) => {
   e.preventDefault();
+  // Logo y cabecera nuevos al Storage público; si falla, quedan embebidos
+  if (window.AcademiasDB && AcademiasDB.on) {
+    const sid = SEDE_EDIT || 'nueva';
+    if (esDataURL(SEDE_LOGO)) { try { SEDE_LOGO = await subirMediaPublica(SEDE_LOGO, `${AcademiasDB.academiaId}/logos/sede-${sid}-logo-${Date.now()}.jpg`); } catch (ex) { console.warn('[logo sede]', ex); } }
+    if (esDataURL(SEDE_CABECERA)) { try { SEDE_CABECERA = await subirMediaPublica(SEDE_CABECERA, `${AcademiasDB.academiaId}/logos/sede-${sid}-cab-${Date.now()}.jpg`); } catch (ex) { console.warn('[cabecera sede]', ex); } }
+  }
   const data = {
     nombre_sede: val('sd_nombre'), direccion1: val('sd_dir1'), direccion2: val('sd_dir2'),
     ciudad: val('sd_ciudad'), pais: val('sd_pais'), codigo_postal: val('sd_cp'),
@@ -3914,6 +3995,33 @@ window.eliminarSede = (id) => {
   DB.sedes = DB.sedes.filter((s) => s.id !== id);
   if (SEDE_EDIT === id) SEDE_EDIT = null;
   renderSedeSelect(); toast('Sede eliminada'); SCREENS.config();
+};
+
+// ---------- Migración de imágenes embebidas (dataURL) a Supabase Storage ----------
+// Las filas con fotos/vouchers en base64 hacen lento el arranque: esta utilidad
+// las sube a Storage y deja en la fila solo la URL/ruta (el sync guarda el cambio).
+window.migrarImagenesStorage = async () => {
+  if (!window.AcademiasDB || !AcademiasDB.on) { toast('Solo disponible en modo conectado'); return; }
+  const aid = AcademiasDB.academiaId;
+  const vouchers = DB.pagos.filter((p) => esDataURL(p.voucher_url));
+  const fotos = DB.jugadores.filter((j) => esDataURL(j.foto_url));
+  const sedesImg = DB.sedes.filter((s) => esDataURL(s.logo_url) || esDataURL(s.cabecera_url));
+  const logoEmp = esDataURL(DB.academia.logo_url) ? 1 : 0;
+  const total = vouchers.length + fotos.length + sedesImg.length + logoEmp;
+  if (!total) { toast('✓ No hay imágenes embebidas: todo ya está en Storage'); return; }
+  if (!confirm(`Se migrarán ${total} imagen(es) a Storage:\n· ${vouchers.length} voucher(s) de pago\n· ${fotos.length} foto(s) de alumnos\n· ${sedesImg.length} sede(s) con logo/cabecera${logoEmp ? '\n· logo de la empresa' : ''}\n\nLas filas quedan ligeras y el sistema cargará mucho más rápido. No cierres la pestaña hasta el aviso final. ¿Continuar?`)) return;
+  let ok = 0, err = 0, i = 0;
+  const paso = async (fn) => { try { await fn(); ok++; } catch (ex) { err++; console.warn('[migrar]', ex); }
+    if (++i % 10 === 0) toast(`Migrando… ${i}/${total}`); };
+  for (const p of vouchers) await paso(async () => { p.voucher_url = await subirVoucher(p.voucher_url, `${aid}/vouchers/${p.id}.jpg`); });
+  for (const j of fotos) await paso(async () => { j.foto_url = await subirMediaPublica(j.foto_url, `${aid}/fotos/alumno-${j.id}.jpg`); });
+  for (const s of sedesImg) await paso(async () => {
+    if (esDataURL(s.logo_url)) s.logo_url = await subirMediaPublica(s.logo_url, `${aid}/logos/sede-${s.id}-logo.jpg`);
+    if (esDataURL(s.cabecera_url)) s.cabecera_url = await subirMediaPublica(s.cabecera_url, `${aid}/logos/sede-${s.id}-cab.jpg`);
+  });
+  if (logoEmp) await paso(async () => { DB.academia.logo_url = await subirMediaPublica(DB.academia.logo_url, `${aid}/logos/empresa.jpg`); });
+  toast(err ? `Migración: ${ok} ok · ${err} con error — vuelve a ejecutarla para reintentar` : `✓ ${ok} imagen(es) migradas · espera el punto verde (sync) antes de cerrar`);
+  SCREENS.config();
 };
 
 // =====================================================================
