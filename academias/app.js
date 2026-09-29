@@ -1009,13 +1009,17 @@ const SCREENS = {
           </select></label>
         ${TES_MES || TES_MEDIO ? `<button onclick="TES_MES=''; TES_MEDIO=''; SCREENS.tesoreria()" class="text-indigo-600 hover:underline">✕ Quitar filtros</button>` : ''}
         <span class="text-slate-400">· ${pagosFil.length} documento(s)</span>
+        <span class="flex-1"></span>
+        <button onclick="exportarSunat()" class="rounded-lg bg-white ring-1 ring-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">📄 Exportar para SUNAT (<span id="tesSelN">0</span>)</button>
       </div>
       <div class="mb-6">
-      ${pagosFil.length ? table(['Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado', 'Voucher'],
+      ${pagosFil.length ? table([`<input type="checkbox" onchange="document.querySelectorAll('.tesChk').forEach(c => { c.checked = this.checked; }); tesSelCount()" class="h-4 w-4 accent-indigo-600" title="Seleccionar todos">`, 'Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado', 'SUNAT', 'Voucher'],
         pagosFil.map((p) => [
+          `<input type="checkbox" class="tesChk h-4 w-4 accent-indigo-600" value="${p.id}" onchange="tesSelCount()">`,
           p.jugador_id ? nom(jugador(p.jugador_id)) : `DNI ${tutor(p.tutor_id).dni_tutor}`,
           S(p.total ?? p.monto ?? 0), p.medio || '—', p.num_operacion || '—', fmtDMY(p.fecha),
           badge(p.estado, estadoColor[p.estado] || 'emerald'),
+          p.sunat_exportado ? `<span class="text-xs text-emerald-600" title="Exportado para SUNAT">📄 ${fmtDMY(p.sunat_exportado)}</span>` : '<span class="text-slate-300">—</span>',
           p.voucher_url ? `<button onclick="verComprobante('${p.id}')" class="text-indigo-600 hover:underline text-xs">🖼️ Ver</button>` : '<span class="text-slate-300">—</span>']))
         : '<p class="text-sm text-slate-400">Sin documentos de pago con esos filtros.</p>'}
       </div>`;
@@ -2359,6 +2363,39 @@ window.guardarPagoAlumno = async (e, jid) => {
   toast(`✓ Pago registrado · ${S(total)}`);
   formEditarAlumno(jid);   // reabre la ficha del alumno...
   njTab('pagos');          // ...en la pestaña Pagos, con el documento recién creado
+};
+
+// ---------- Exportación de pagos para SUNAT (documentos fiscales) ----------
+window.tesSelCount = () => {
+  const n = document.querySelectorAll('.tesChk:checked').length;
+  if (el('tesSelN')) el('tesSelN').textContent = n;
+};
+window.exportarSunat = () => {
+  const ids = [...document.querySelectorAll('.tesChk:checked')].map((c) => c.value);
+  if (!ids.length) { toast('Marca al menos un documento de pago'); return; }
+  const filas = ids.map((id) => DB.pagos.find((p) => p.id === id)).filter(Boolean);
+  const noAprob = filas.filter((p) => p.estado !== 'aprobado').length;
+  if (noAprob && !confirm(`${noAprob} de los seleccionados NO están aprobados en Tesorería. ¿Exportarlos igual?`)) return;
+  const yaExp = filas.filter((p) => p.sunat_exportado).length;
+  if (yaExp && !confirm(`${yaExp} de los seleccionados ya fueron exportados antes (📄). ¿Volver a exportarlos?`)) return;
+  const esc = (x) => '"' + String(x ?? '').replace(/"/g, '""') + '"';
+  const cab = ['fecha_pago', 'tipo_sugerido', 'doc_cliente', 'cliente', 'descripcion', 'moneda', 'total', 'medio_pago', 'num_operacion', 'estado', 'sede', 'id_pago'];
+  const lineas = filas.map((p) => {
+    const j = p.jugador_id ? jugador(p.jugador_id) : null;
+    const t = tutor(p.tutor_id) || {};
+    const dni = (t.dni_tutor || '').startsWith('S/D') ? '' : (t.dni_tutor || '');
+    const desc = (p.detalle || []).map((d) => `${d.concepto} S/ ${(+d.monto).toFixed(2)}`).join(' | ') || 'Servicios deportivos';
+    return [p.fecha, 'BOLETA', dni, j ? nom(j) : '', desc, 'PEN', (p.total ?? p.monto ?? 0).toFixed(2),
+      p.medio || '', p.num_operacion || '', p.estado, sede(p.sede_id) ? sede(p.sede_id).nombre_sede : '', p.id].map(esc).join(',');
+  });
+  const csv = '﻿' + cab.join(',') + '\n' + lineas.join('\n');   // BOM para Excel
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `sunat_pagos_${((sede(SEDE_ACTUAL) || {}).nombre_sede || 'sede').replace(/\s+/g, '_')}_${HOY}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  filas.forEach((p) => { p.sunat_exportado = HOY; });   // marca de control anti doble emisión
+  toast(`✓ ${filas.length} pago(s) exportados para SUNAT · quedan marcados 📄`);
+  SCREENS.tesoreria();
 };
 
 // ---------- Aprobación de pagos (Tesorería) ----------

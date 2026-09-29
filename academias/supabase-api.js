@@ -101,7 +101,7 @@ window.AcademiasDB = (() => {
     pagos: {
       table: 'pagos',
       toRow: (p) => ({ ...pick(p, ['id', 'tutor_id', 'jugador_id', 'sede_id', 'fecha', 'medio', 'num_operacion',
-        'voucher_url', 'estado', 'fecha_aprobacion', 'fecha_rechazo']),
+        'voucher_url', 'estado', 'fecha_aprobacion', 'fecha_rechazo', 'sunat_exportado']),
         monto: N(p.total) || 0,
         _detalle: (p.detalle || []).map((d) => ({ cargo_id: d.cargo_id, concepto: d.concepto ?? null, cat: d.cat ?? null, tipo: d.tipo ?? null, monto: N(d.monto) || 0 })) }),
       fromRow: (r) => ({ ...r, total: N(r.monto), detalle: [] }),
