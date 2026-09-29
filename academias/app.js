@@ -455,6 +455,8 @@ let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (
 let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto en la pestaña Tracks
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 let GASTO_MES = null;          // mes visible de la pantalla de Gastos; null = mes de HOY
+let TES_MES = '';              // filtro de periodo en Documentos de pago ('' = todos, 'YYYY-MM')
+let TES_MEDIO = '';            // filtro de medio de pago en Documentos de pago ('' = todos)
 const CONCEPTOS_EGRESO = [['cancha', 'Cancha'], ['materiales', 'Materiales'], ['uniformes', 'Uniformes'], ['nomina', 'Nómina'], ['otro', 'Otro']];
 // Conceptos de gasto configurables (catálogo por sede); si el catálogo está
 // vacío se usan los conceptos legados de CONCEPTOS_EGRESO como fallback.
@@ -955,11 +957,14 @@ const SCREENS = {
         <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
         <button onclick="formPago()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Registrar pago</button>
       </div>
-      <div class="grid gap-4 md:grid-cols-3 mb-6">
+      ${(() => {
+        const pagosFil = pagosS.filter((p) => (!TES_MES || (p.fecha || '').startsWith(TES_MES)) && (!TES_MEDIO || p.medio === TES_MEDIO));
+        return `<div class="grid gap-4 md:grid-cols-3 mb-6">
         ${card('Por cobrar', S(porCobrar.reduce((s, c) => s + saldoC(c), 0)), `${porCobrar.length} cargos`)}
-        ${card('Documentos de pago', pagosS.length, `${S(pagosS.filter((p) => p.estado === 'aprobado').reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0))} recaudado`)}
-        ${card('Periodo', 'Julio 2026')}
-      </div>
+        ${card('Documentos de pago', pagosFil.length, `${S(pagosFil.filter((p) => p.estado === 'aprobado').reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0))} recaudado`)}
+        ${card('Periodo', TES_MES ? mesLabelDe(TES_MES) : 'Todos', TES_MEDIO ? 'medio: ' + TES_MEDIO : 'todos los medios')}
+      </div>`;
+      })()}
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Estado de cuenta consolidado (por familia/tutor)</h3>
       <div class="mb-6">
@@ -971,13 +976,33 @@ const SCREENS = {
       </div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Documentos de pago</h3>
+      ${(() => {
+        const medios = [...new Set(pagosS.map((p) => p.medio).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+        const pagosFil = pagosS.filter((p) => (!TES_MES || (p.fecha || '').startsWith(TES_MES)) && (!TES_MEDIO || p.medio === TES_MEDIO))
+          .slice().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+        return `
+      <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
+        <label class="flex items-center gap-1.5 text-slate-500">Periodo
+          <input type="month" value="${TES_MES}" onchange="TES_MES = this.value; SCREENS.tesoreria()"
+            class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
+        <label class="flex items-center gap-1.5 text-slate-500">Medio
+          <select onchange="TES_MEDIO = this.value; SCREENS.tesoreria()" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
+            <option value="">Todos</option>
+            ${medios.map((m) => `<option value="${m.replace(/"/g, '&quot;')}" ${TES_MEDIO === m ? 'selected' : ''}>${m}</option>`).join('')}
+          </select></label>
+        ${TES_MES || TES_MEDIO ? `<button onclick="TES_MES=''; TES_MEDIO=''; SCREENS.tesoreria()" class="text-indigo-600 hover:underline">✕ Quitar filtros</button>` : ''}
+        <span class="text-slate-400">· ${pagosFil.length} documento(s)</span>
+      </div>
       <div class="mb-6">
-      ${table(['Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado'],
-        pagosS.map((p) => [
+      ${pagosFil.length ? table(['Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado', 'Voucher'],
+        pagosFil.map((p) => [
           p.jugador_id ? nom(jugador(p.jugador_id)) : `DNI ${tutor(p.tutor_id).dni_tutor}`,
           S(p.total ?? p.monto ?? 0), p.medio || '—', p.num_operacion || '—', fmtDMY(p.fecha),
-          badge(p.estado, estadoColor[p.estado] || 'emerald')]))}
-      </div>
+          badge(p.estado, estadoColor[p.estado] || 'emerald'),
+          p.voucher_url ? `<button onclick="verComprobante('${p.id}')" class="text-indigo-600 hover:underline text-xs">🖼️ Ver</button>` : '<span class="text-slate-300">—</span>']))
+        : '<p class="text-sm text-slate-400">Sin documentos de pago con esos filtros.</p>'}
+      </div>`;
+      })()}
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Procesos de facturación (CR por ciclo)</h3>
       ${DB.procesosCR.filter((p) => p.sede_id === SEDE_ACTUAL).length
