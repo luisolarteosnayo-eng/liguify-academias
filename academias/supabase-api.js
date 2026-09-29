@@ -126,6 +126,13 @@ window.AcademiasDB = (() => {
         activo: p.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, meses_total: N(r.meses_total), meses_pagados: N(r.meses_pagados), sede_ids: r.sede_ids || null }),
     },
+    conceptosGasto: {
+      table: 'conceptos_gasto',
+      toRow: (c) => ({ ...pick(c, ['id', 'nombre', 'sede_id']),
+        sede_ids: (Array.isArray(c.sede_ids) && c.sede_ids.length) ? c.sede_ids : null,
+        activo: c.activo !== false, academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, sede_ids: r.sede_ids || null }),
+    },
     conceptosCNR: {
       table: 'conceptos_cnr',
       toRow: (c) => ({ ...pick(c, ['id', 'nombre', 'sede_id']), precio: N(c.precio) || 0, maneja_stock: !!c.maneja_stock,
@@ -269,13 +276,15 @@ window.AcademiasDB = (() => {
     const perfiles = perfilQ.data || [];
     const perfil = perfiles[0] || null;
     const sel = (t) => sb.from(t).select('*');
-    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci] = await Promise.all([
+    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci, cg] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
       sel('medios_pago'), sel('ciclos_pago'), sel('promociones'), sel('conceptos_cnr'),
       sel('procesos_facturacion'), sel('asistencias'), sel('inv_pedidos'), sel('inv_movimientos'),
       sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'), sel('egresos'), sel('track_entrenadores'),
       sel('track_cierres'),
+      // tolerante: si la migración v18 aún no se aplicó, el catálogo va vacío (fallback en la app)
+      sel('conceptos_gasto').then((r) => (r.error ? { data: [] } : r)),
     ]);
     const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci].find((r) => r.error);
     if (err) throw err.error;
@@ -323,6 +332,7 @@ window.AcademiasDB = (() => {
       egresos: eg.data.map(T.egresos.fromRow),
       trackEntrenadores: te.data.map(T.trackEntrenadores.fromRow),
       trackCierres: tci.data.map(T.trackCierres.fromRow),
+      conceptosGasto: cg.data.map(T.conceptosGasto.fromRow),
     };
   }
 

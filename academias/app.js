@@ -191,6 +191,9 @@ const DB = {
     { id: 'cn3', nombre: 'Exámen médico', precio: 100, maneja_stock: false, es_torneo: false, activo: true },
     { id: 'cn4', nombre: 'Carta Pase', precio: 100, maneja_stock: false, es_torneo: false, activo: true },
   ],
+
+  // Catálogo configurable de conceptos de gasto (vacío = usa los legados de CONCEPTOS_EGRESO)
+  conceptosGasto: [],
 };
 
 // ---------- Lookups ----------
@@ -453,6 +456,13 @@ let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 let GASTO_MES = null;          // mes visible de la pantalla de Gastos; null = mes de HOY
 const CONCEPTOS_EGRESO = [['cancha', 'Cancha'], ['materiales', 'Materiales'], ['uniformes', 'Uniformes'], ['nomina', 'Nómina'], ['otro', 'Otro']];
+// Conceptos de gasto configurables (catálogo por sede); si el catálogo está
+// vacío se usan los conceptos legados de CONCEPTOS_EGRESO como fallback.
+const conceptosGastoSede = () => {
+  const cat = (DB.conceptosGasto || []).filter((c) => c.activo !== false && esDeSede(c));
+  return cat.length ? cat : CONCEPTOS_EGRESO.map(([v, t]) => ({ id: v, nombre: t }));
+};
+let GASTOCAT_EDIT = null;      // concepto de gasto en edición (o null)
 const nombreCiclo = (c) => c ? `Ciclo al ${c.dia}` : '';
 let SEDE_ACTUAL = 's1';        // sede activa: cada sede se opera de forma independiente
 let TRACK_SEL = null;          // track abierto en el detalle (o null = lista)
@@ -717,6 +727,7 @@ const SCREENS = {
     const delMes = DB.egresos.filter((e) => e.sede_id === SEDE_ACTUAL && (e.fecha || '').startsWith(GASTO_MES))
       .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
     const totGastos = delMes.reduce((s, e) => s + (+e.monto || 0), 0);
+    // Nombre del concepto: los gastos nuevos guardan el nombre; los legados, el slug
     const nomCat = (k) => (CONCEPTOS_EGRESO.find((c) => c[0] === k) || ['', k])[1];
     const porCat = {};
     delMes.forEach((e) => { porCat[e.concepto] = (porCat[e.concepto] || 0) + (+e.monto || 0); });
@@ -744,7 +755,7 @@ const SCREENS = {
       <div class="mb-5 rounded-xl bg-white ring-1 ring-slate-200 p-4">
         <div class="text-sm font-semibold text-slate-700 mb-3">Registrar gasto</div>
         <form onsubmit="guardarGasto(event)" class="grid gap-2 sm:grid-cols-[auto_1fr_auto_auto_auto] items-end">
-          ${field('Concepto', select('g_concepto', CONCEPTOS_EGRESO.map(([v, t]) => ({ v, t }))))}
+          ${field('Concepto', select('g_concepto', conceptosGastoSede().map((c) => ({ v: c.nombre, t: c.nombre }))))}
           ${field('Descripción', input('g_desc', 'placeholder="Ej: Alquiler de cancha"'))}
           ${field('Monto S/ *', input('g_monto', 'type="number" step="0.01" required class-extra'))}
           ${field('Fecha', input('g_fecha', `type="date" value="${HOY}"`))}
@@ -813,6 +824,7 @@ const SCREENS = {
     const a = DB.academia;
     const tabs = [
       { id: 'perfil', t: 'Empresa' }, { id: 'sedes', t: 'Sedes' }, { id: 'cnr', t: 'Conceptos CNR' },
+      { id: 'gastocat', t: 'Conceptos de gasto' },
       { id: 'staff', t: 'Profesores' },
       { id: 'pagos', t: 'Medios de pago' }, { id: 'ciclos', t: 'Ciclos de pago' }, { id: 'promos', t: 'Promociones' }, { id: 'publica', t: 'Página pública' },
     ];
@@ -3206,7 +3218,7 @@ window.obGuardar = (e, tid) => {
 // =====================================================================
 // CONFIGURACIÓN (Módulo I) — pestañas
 // =====================================================================
-window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; STAFF_EDIT = null; SCREENS.config(); };
+window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; STAFF_EDIT = null; GASTOCAT_EDIT = null; SCREENS.config(); };
 
 const stub = (txt) => `<div class="rounded-xl border-2 border-dashed border-slate-200 p-10 text-center text-slate-400">${txt}<br><span class="text-xs">Próximamente</span></div>`;
 
@@ -3407,6 +3419,31 @@ const CONFIG_TABS = {
           `<button onclick="editarConceptoCNR('${c.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="toggleConceptoCNR('${c.id}')" class="text-slate-500 hover:underline text-xs mr-3">${c.activo ? 'Desactivar' : 'Activar'}</button>
            <button onclick="eliminarConceptoCNR('${c.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))}`;
+  },
+
+  gastocat() {
+    const e = GASTOCAT_EDIT ? DB.conceptosGasto.find((c) => c.id === GASTOCAT_EDIT) : null;
+    el('configTab').innerHTML = `
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 p-5 mb-6">
+        <div class="text-sm font-semibold text-slate-700 mb-3">${e ? 'Editar concepto de gasto' : 'Nuevo concepto de gasto'}</div>
+        <form onsubmit="guardarConceptoGasto(event)">
+          ${field('Nombre del concepto *', input('gc_nombre', `required value="${e ? e.nombre.replace(/"/g, '&quot;') : ''}" placeholder="Ej: Alquiler de cancha"`))}
+          ${sedesChecksHTML('gc-sede-chk', e ? scopeSedes(e) : [SEDE_ACTUAL])}
+          <div class="flex gap-2">
+            <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
+            ${e ? `<button type="button" onclick="cancelGastoCatEdit()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>` : ''}
+          </div>
+        </form>
+      </div>
+      <p class="text-xs text-slate-400 mb-2">Estos conceptos aparecen al registrar un gasto en la pantalla Gastos. Mientras el catálogo esté vacío se usan los conceptos estándar (Cancha, Materiales, Uniformes, Nómina, Otro).</p>
+      ${DB.conceptosGasto.length ? table(['Concepto', 'Sedes', 'Estado', ''],
+        DB.conceptosGasto.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map((c) => [
+          `<b>${c.nombre}</b>`, sedesScopeNom(c),
+          badge(c.activo !== false ? 'Activo' : 'Inactivo', c.activo !== false ? 'emerald' : 'slate'),
+          `<button onclick="editarConceptoGasto('${c.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
+           <button onclick="toggleConceptoGasto('${c.id}')" class="text-slate-500 hover:underline text-xs mr-3">${c.activo !== false ? 'Desactivar' : 'Activar'}</button>
+           <button onclick="eliminarConceptoGasto('${c.id}')" class="text-rose-600 hover:underline text-xs">Eliminar</button>`]))
+        : '<p class="text-sm text-slate-400">Catálogo vacío · se usan los conceptos estándar.</p>'}`;
   },
 
   pagos() {
@@ -3680,6 +3717,24 @@ window.quitarUsuarioUI = async (userId, email) => {
 };
 
 // ---------- Medios de pago (config) ----------
+// ---------- Catálogo de conceptos de gasto ----------
+window.guardarConceptoGasto = (ev) => {
+  ev.preventDefault();
+  const sedeIds = sedesChecksVal('gc-sede-chk');
+  const data = { nombre: val('gc_nombre').trim(), sede_ids: sedeIds, sede_id: sedeIds[0] || null };
+  if (!data.nombre) return;
+  if (GASTOCAT_EDIT) { Object.assign(DB.conceptosGasto.find((c) => c.id === GASTOCAT_EDIT), data); GASTOCAT_EDIT = null; toast('Concepto actualizado'); }
+  else { DB.conceptosGasto.push({ id: uid('gc'), activo: true, ...data }); toast('Concepto agregado'); }
+  SCREENS.config();
+};
+window.editarConceptoGasto = (id) => { GASTOCAT_EDIT = id; SCREENS.config(); };
+window.cancelGastoCatEdit = () => { GASTOCAT_EDIT = null; SCREENS.config(); };
+window.toggleConceptoGasto = (id) => { const c = DB.conceptosGasto.find((x) => x.id === id); if (c) { c.activo = c.activo === false; SCREENS.config(); } };
+window.eliminarConceptoGasto = (id) => {
+  DB.conceptosGasto = DB.conceptosGasto.filter((c) => c.id !== id);
+  if (GASTOCAT_EDIT === id) GASTOCAT_EDIT = null;
+  toast('Concepto eliminado · los gastos ya registrados conservan su texto'); SCREENS.config();
+};
 window.guardarMedioPago = (ev) => {
   ev.preventDefault();
   const nombre = val('mp_nombre');
