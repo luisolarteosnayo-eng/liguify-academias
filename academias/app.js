@@ -6,6 +6,7 @@
 
 // ---------- Utilidades ----------
 const S = (n) => 'S/ ' + Number(n || 0).toFixed(2);
+const S0 = (n) => 'S/ ' + Math.round(Number(n) || 0);   // montos sin decimales (dashboard)
 const el = (id) => document.getElementById(id);
 const nom = (p) => `${p.nombre} ${p.apellido}`;
 const ceil = Math.ceil;
@@ -573,12 +574,17 @@ const SCREENS = {
       <p class="text-xs text-slate-400 mb-4">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'}</p>
 
       <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-6">
+        ${(() => {
+          const capTotal = tracksDash.reduce((s, t) => s + (+t.capacidad_maxima || 0), 0);
+          const pct = capTotal ? Math.round(activos * 100 / capTotal) : 0;
+          const cls = pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
+          return card('% Alumnos activos', `<span class="${cls}">${pct}%</span>`, `${activos} activos de ${capTotal} cupos`);
+        })()}
+        ${card('Recaudado', S0(totalIngresos), porAprobar > 0 ? `+ <b class="text-amber-600">${S0(porAprobar)}</b> por aprobar` : 'pagos del periodo')}
+        ${card('Gastos', `<span class="text-rose-600">${S0(gastosPeriodo)}</span>`, 'del periodo')}
+        ${card('Utilidad', `<span class="${totalIngresos - gastosPeriodo > 0 ? 'text-emerald-600' : totalIngresos - gastosPeriodo < 0 ? 'text-rose-600' : 'text-slate-700'}">${totalIngresos - gastosPeriodo < 0 ? '−' : ''}${S0(Math.abs(totalIngresos - gastosPeriodo))}</span>`, 'recaudado − gastos')}
+        ${card('Por cobrar', S0(totalPorCobrar), 'pendiente total')}
         ${card('Alumnos nuevos', nuevos.length, 'en el periodo')}
-        ${card('Recaudado', S(totalIngresos), porAprobar > 0 ? `+ <b class="text-amber-600">${S(porAprobar)}</b> por aprobar` : 'pagos del periodo')}
-        ${card('Gastos', `<span class="text-rose-600">${S(gastosPeriodo)}</span>`, 'del periodo')}
-        ${card('Utilidad', `<span class="${totalIngresos - gastosPeriodo > 0 ? 'text-emerald-600' : totalIngresos - gastosPeriodo < 0 ? 'text-rose-600' : 'text-slate-700'}">${totalIngresos - gastosPeriodo < 0 ? '−' : ''}${S(Math.abs(totalIngresos - gastosPeriodo))}</span>`, 'recaudado − gastos')}
-        ${card('Por cobrar', S(totalPorCobrar), 'pendiente total')}
-        ${card('Alumnos activos', activos)}
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2 mb-6">
@@ -613,7 +619,6 @@ const SCREENS = {
           return { nombre: s.nombre_sede, n: tks.length, al: ids.size, ...a };
         }).filter((f) => f.n > 0);
         if (!filas.length) return '<p class="text-sm text-slate-400">Sin tracks.</p>';
-        const S0 = (n) => 'S/ ' + Math.round(n);   // sin decimales
         const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S0(Math.abs(u))}</b>`;
         const rows = filas.map((f) => [
           `<b>${f.nombre}</b>`, `${f.al}/${f.cap}`, S0(f.ing), S0(f.cancha), S0(f.profes),
@@ -1278,20 +1283,20 @@ function donaPorCategoria(items, emptyMsg) {
     const start = (acc / total) * 360; acc += totals[c];
     const end = (acc / total) * 360;
     const color = palette[i % palette.length];
-    if (cats.length === 1) return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"><title>${c}: ${S(totals[c])}</title></circle>`;
+    if (cats.length === 1) return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"><title>${c}: ${S0(totals[c])}</title></circle>`;
     const x1 = (cx + r * Math.cos(rad(start))).toFixed(2), y1 = (cy + r * Math.sin(rad(start))).toFixed(2);
     const x2 = (cx + r * Math.cos(rad(end))).toFixed(2), y2 = (cy + r * Math.sin(rad(end))).toFixed(2);
     const large = end - start > 180 ? 1 : 0;
-    return `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}"><title>${c}: ${S(totals[c])}</title></path>`;
+    return `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${color}"><title>${c}: ${S0(totals[c])}</title></path>`;
   }).join('');
   const donut = `<circle cx="${cx}" cy="${cy}" r="${rInner}" fill="white"/>
     <text x="${cx}" y="${cy - 3}" text-anchor="middle" font-size="9" fill="#94a3b8">Total</text>
-    <text x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">${S(total)}</text>`;
+    <text x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">${S0(total)}</text>`;
   const legend = cats.map((c, i) => {
     const pctTot = Math.round((totals[c] / total) * 100);
     return `<div class="flex items-center justify-between gap-2 text-xs py-1">
       <span class="flex items-center gap-1.5 min-w-0"><span class="inline-block h-3 w-3 rounded-sm shrink-0" style="background:${palette[i % palette.length]}"></span><span class="truncate text-slate-600">${c}</span></span>
-      <span class="font-medium shrink-0">${S(totals[c])} · ${pctTot}%</span>
+      <span class="font-medium shrink-0">${S0(totals[c])} · ${pctTot}%</span>
     </div>`;
   }).join('');
   return `
