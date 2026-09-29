@@ -57,7 +57,7 @@ window.AcademiasDB = (() => {
     },
     tutores: {
       table: 'tutores',
-      toRow: (t) => ({ ...pick(t, ['id', 'dni_tutor', 'telefono_celular', 'email_tutor']),
+      toRow: (t) => ({ ...pick(t, ['id', 'dni_tutor', 'telefono_celular', 'email_tutor', 'nombres', 'ruc', 'razon_social']),
         perfil_reclamado: !!t.perfil_reclamado, academia_id: ACADEMIA_ID }),
       fromRow: (r) => r,
     },

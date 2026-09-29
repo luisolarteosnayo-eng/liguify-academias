@@ -1319,7 +1319,7 @@ function renderAlumnosList() {
       </div>
       ${pruebaInfo}
       ${corteInfo}
-      <div class="text-xs text-slate-400 mt-0.5">Tutor DNI ${t.dni_tutor} · ${perfil}</div>
+      <div class="text-xs text-slate-400 mt-0.5">Tutor ${t.nombres ? t.nombres + ' · ' : ''}DNI ${t.dni_tutor}${t.ruc ? ' · ' + badge('RUC', 'sky') : ''} · ${perfil}</div>
     </div>`;
   }).join('') : '<p class="text-sm text-slate-400 p-2 col-span-full">No hay alumnos que coincidan.</p>';
 }
@@ -1747,6 +1747,18 @@ function njFormBody(j, tracksJid) {
         <input type="checkbox" id="nj_consent" ${g.consentimiento_imagen ? 'checked' : ''} class="mt-1 h-4 w-4 accent-indigo-600">
       </label>
       ${field('Teléfono', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
+      ${(() => {
+        const t = g.tutor_id ? tutor(g.tutor_id) : null;
+        if (!t) return '';
+        return `<div class="mb-3 rounded-lg ring-1 ring-slate-200 p-3">
+          <div class="mb-2 text-xs font-medium text-slate-500">Tutor · DNI ${t.dni_tutor} <span class="text-slate-400">(datos para boleta/factura)</span></div>
+          ${field('Nombre completo del tutor', input('tut_nombre', `value="${esc(t.nombres)}" placeholder="Como irá en la boleta"`))}
+          <div class="grid grid-cols-2 gap-3">
+            ${field('RUC (solo si pide factura)', input('tut_ruc', `value="${esc(t.ruc)}" placeholder="20XXXXXXXXX"`))}
+            ${field('Razón social', input('tut_razon', `value="${esc(t.razon_social)}" placeholder="Empresa S.A.C."`))}
+          </div>
+        </div>`;
+      })()}
       ${showTracks ? field('Sede del alumno', `${sel('nj_sede', DB.sedes.filter((s) => s.activo !== false || s.id === g.sede_id).map((s) => ({ v: s.id, t: s.nombre_sede + (s.activo === false ? ' (inactiva)' : '') })), g.sede_id)}
         <p class="mt-1 text-xs text-slate-400">Cambiar la sede mueve al alumno (Alumnos y Por cobrar de esa sede); sus tracks actuales no se modifican.</p>`) : ''}
       ${!showTracks ? field('Fecha de inicio en el track', input('nj_iniciotrack', `type="date" value="${HOY}"`)) : ''}
@@ -2379,13 +2391,18 @@ window.exportarSunat = () => {
   const yaExp = filas.filter((p) => p.sunat_exportado).length;
   if (yaExp && !confirm(`${yaExp} de los seleccionados ya fueron exportados antes (📄). ¿Volver a exportarlos?`)) return;
   const esc = (x) => '"' + String(x ?? '').replace(/"/g, '""') + '"';
-  const cab = ['fecha_pago', 'tipo_sugerido', 'doc_cliente', 'cliente', 'descripcion', 'moneda', 'total', 'medio_pago', 'num_operacion', 'estado', 'sede', 'id_pago'];
+  const cab = ['fecha_pago', 'tipo_sugerido', 'doc_cliente', 'cliente', 'alumno', 'descripcion', 'moneda', 'total', 'medio_pago', 'num_operacion', 'estado', 'sede', 'id_pago'];
   const lineas = filas.map((p) => {
     const j = p.jugador_id ? jugador(p.jugador_id) : null;
     const t = tutor(p.tutor_id) || {};
     const dni = (t.dni_tutor || '').startsWith('S/D') ? '' : (t.dni_tutor || '');
+    // Tutor con RUC → FACTURA (RUC + razón social); si no → BOLETA (DNI + nombre del tutor)
+    const esFactura = !!t.ruc;
+    const tipo = esFactura ? 'FACTURA' : 'BOLETA';
+    const docCliente = esFactura ? t.ruc : dni;
+    const cliente = esFactura ? (t.razon_social || '') : (t.nombres || '');
     const desc = (p.detalle || []).map((d) => `${d.concepto} S/ ${(+d.monto).toFixed(2)}`).join(' | ') || 'Servicios deportivos';
-    return [p.fecha, 'BOLETA', dni, j ? nom(j) : '', desc, 'PEN', (p.total ?? p.monto ?? 0).toFixed(2),
+    return [p.fecha, tipo, docCliente, cliente, j ? nom(j) : '', desc, 'PEN', (p.total ?? p.monto ?? 0).toFixed(2),
       p.medio || '', p.num_operacion || '', p.estado, sede(p.sede_id) ? sede(p.sede_id).nombre_sede : '', p.id].map(esc).join(',');
   });
   const csv = '﻿' + cab.join(',') + '\n' + lineas.join('\n');   // BOM para Excel
@@ -2626,6 +2643,13 @@ window.guardarEdicionAlumno = async (e, jid) => {
     catch (ex) { console.warn('[foto] fallback dataURL:', ex); }
   }
   const consEd = el('nj_consent') ? el('nj_consent').checked : !!j.consentimiento_imagen;
+  // Datos de facturación del tutor (compartidos entre hermanos)
+  const tEd = tutor(j.tutor_id);
+  if (tEd && el('tut_nombre')) {
+    tEd.nombres = val('tut_nombre').trim() || null;
+    tEd.ruc = val('tut_ruc').trim() || null;
+    tEd.razon_social = val('tut_razon').trim() || null;
+  }
   Object.assign(j, {
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
     sede_id: (el('nj_sede') && val('nj_sede')) || j.sede_id,
@@ -3133,6 +3157,7 @@ window.formClasePrueba = () => {
         ${field('DNI del tutor', input('cp_dni', 'required'))}
         ${field('Celular del tutor', input('cp_tel', 'required'))}
       </div>
+      ${field('Nombre del tutor (opcional)', input('cp_tutnom', 'placeholder="para la boleta; se puede completar luego"'))}
       ${field('Email del tutor (opcional)', input('cp_email', 'type="email" placeholder="se puede completar luego"'))}
       <div class="grid grid-cols-2 gap-3">
         ${field('Fecha de la clase', input('cp_fecha', `type="date" required value="${HOY}"`))}
@@ -3157,9 +3182,13 @@ window.guardarClasePrueba = (e) => {
   let t = DB.tutores.find((x) => x.dni_tutor === val('cp_dni'));
   if (!t) {
     t = { id: uid('tu'), dni_tutor: val('cp_dni'), telefono_celular: val('cp_tel'),
+      nombres: (el('cp_tutnom') && val('cp_tutnom').trim()) || null,
       email_tutor: val('cp_email') || null, perfil_reclamado: !!val('cp_email') };
     DB.tutores.push(t);
-  } else if (val('cp_email') && !t.email_tutor) { t.email_tutor = val('cp_email'); }
+  } else {
+    if (val('cp_email') && !t.email_tutor) t.email_tutor = val('cp_email');
+    if (el('cp_tutnom') && val('cp_tutnom').trim() && !t.nombres) t.nombres = val('cp_tutnom').trim();
+  }
   const j = { id: uid('j'), tutor_id: t.id, sede_id: SEDE_ACTUAL, nombre: val('cp_nombre'), apellido: val('cp_apellido'),
     fecha_nacimiento: val('cp_fnac'), estado_alumno: 'prospecto', fue_prospecto: true, fecha_registro: HOY,
     prueba_fecha: val('cp_fecha') || HOY, prueba_track_id: val('cp_track'), atributos: null };
@@ -3209,6 +3238,7 @@ window.formRegistroExpress = () => {
         ${field('DNI del tutor', input('f_dni', 'required'))}
         ${field('Celular del tutor', input('f_tel', 'required'))}
       </div>
+      ${field('Nombre del tutor (opcional)', input('f_tutnom', 'placeholder="para la boleta; se puede completar luego"'))}
       ${field('Email del tutor (opcional)', input('f_email', 'type="email" placeholder="se puede completar luego"'))}
       ${field('Sede', select('f_sede',
         [sede(SEDE_ACTUAL), ...sedesActivas().filter((s) => s.id !== SEDE_ACTUAL)]
@@ -3243,9 +3273,10 @@ window.guardarRegistro = (e) => {
   let t = DB.tutores.find((x) => x.dni_tutor === val('f_dni'));
   if (!t) {
     t = { id: uid('tu'), dni_tutor: val('f_dni'), telefono_celular: val('f_tel'),
+      nombres: (el('f_tutnom') && val('f_tutnom').trim()) || null,
       email_tutor: val('f_email') || null, perfil_reclamado: !!val('f_email') };
     DB.tutores.push(t);
-  }
+  } else if (el('f_tutnom') && val('f_tutnom').trim() && !t.nombres) { t.nombres = val('f_tutnom').trim(); }
   const j = { id: uid('j'), tutor_id: t.id, sede_id: val('f_sede'), nombre: val('f_nombre'), apellido: val('f_apellido'),
     fecha_nacimiento: val('f_fnac'), estado_alumno: 'activo', fecha_registro: HOY, atributos: null };
   DB.jugadores.push(j);
