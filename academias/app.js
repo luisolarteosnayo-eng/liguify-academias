@@ -2420,66 +2420,80 @@ window.exportarSunat = () => {
 };
 
 // ---------- Reporte de tutores: datos listos para emitir boleta/factura ----------
-window.reporteTutores = () => {
-  const dniOk = (d) => /^\d{8}$/.test(d || '');   // DNI peruano válido (8 dígitos; excluye 0000 y S/D-…)
+const dniTutorOk = (d) => /^\d{8}$/.test(d || '');   // DNI peruano válido (8 dígitos; excluye 0000 y S/D-…)
+function filasReporteTutores() {
   const tIds = tutoresSede();
-  const filas = DB.tutores.filter((t) => tIds.has(t.id)).map((t) => {
+  return DB.tutores.filter((t) => tIds.has(t.id)).map((t) => {
     const hijos = alumnosSede().filter((j) => j.tutor_id === t.id);
-    const boletaOk = dniOk(t.dni_tutor) && !!t.nombres;
+    const boletaOk = dniTutorOk(t.dni_tutor) && !!t.nombres;
     const facturaOk = !!t.ruc && !!t.razon_social;
     const facturaAMedias = (!!t.ruc) !== (!!t.razon_social);
     return { t, hijos, boletaOk, facturaOk, facturaAMedias };
-  }).sort((a, b) => (a.boletaOk === b.boletaOk ? nomTut(a.t).localeCompare(nomTut(b.t), 'es') : a.boletaOk ? 1 : -1));
-  function nomTut(t) { return t.nombres || 'DNI ' + t.dni_tutor; }
+  }).sort((a, b) => (a.boletaOk === b.boletaOk
+    ? (a.t.nombres || 'zzz ' + a.t.dni_tutor).localeCompare(b.t.nombres || 'zzz ' + b.t.dni_tutor, 'es')
+    : a.boletaOk ? 1 : -1));
+}
+window.reporteTutores = () => {
+  const filas = filasReporteTutores();
   const listos = filas.filter((f) => f.boletaOk).length;
   const conRuc = filas.filter((f) => f.facturaOk).length;
   const incompletos = filas.length - listos;
-  const chip = (ok, txtOk, txtNo) => ok
-    ? `<span class="text-emerald-600 text-xs font-medium">✓ ${txtOk}</span>`
-    : `<span class="text-rose-600 text-xs font-medium">✗ ${txtNo}</span>`;
-  openModal(`👪 Tutores · datos de facturación (${sede(SEDE_ACTUAL).nombre_sede})`, `
-    <div class="mb-3 flex flex-wrap gap-2 text-xs">
-      <span class="rounded-lg bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 px-2.5 py-1.5">Listos para boleta: <b>${listos}/${filas.length}</b></span>
-      <span class="rounded-lg ${incompletos ? 'bg-rose-50 ring-rose-200 text-rose-700' : 'bg-slate-100 ring-slate-200 text-slate-500'} ring-1 px-2.5 py-1.5">Incompletos: <b>${incompletos}</b></span>
-      <span class="rounded-lg bg-sky-50 ring-1 ring-sky-200 text-sky-700 px-2.5 py-1.5">Con RUC (factura): <b>${conRuc}</b></span>
+  const ok = (v, txt) => v ? `<span class="text-emerald-600">✓ ${txt}</span>` : `<span class="text-rose-600 font-medium">✗ ${txt || 'falta'}</span>`;
+  el('content').innerHTML = `
+    <button onclick="go('tesoreria')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver a Tesorería</button>
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <h2 class="text-xl font-bold mr-2">👪 Tutores · datos de facturación</h2>
+      <span class="text-sm text-slate-400">${sede(SEDE_ACTUAL).nombre_sede}</span>
       <span class="flex-1"></span>
-      <button onclick="exportarReporteTutores()" class="rounded-lg bg-white ring-1 ring-slate-300 px-2.5 py-1.5 text-slate-700 hover:bg-slate-50">⬇ Exportar CSV</button>
+      <button onclick="exportarReporteTutores()" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">⬇ Exportar a Excel</button>
     </div>
-    <div class="max-h-[60vh] overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
-      ${filas.map((f) => `
-        <div class="px-3 py-2.5 ${f.boletaOk ? '' : 'bg-rose-50/50'}">
-          <div class="flex items-center justify-between gap-2">
-            <div class="min-w-0">
-              <b class="text-sm ${f.boletaOk ? 'text-slate-700' : 'text-rose-700'}">${f.t.nombres || '(sin nombre)'}</b>
-              <span class="text-xs text-slate-400"> · ${f.hijos.map((h) => nom(h)).join(', ') || 'sin alumnos'}</span>
-            </div>
-            ${f.hijos[0] ? `<button onclick="closeModal(); formEditarAlumno('${f.hijos[0].id}'); njTab('personal')" class="shrink-0 text-indigo-600 hover:underline text-xs">Completar →</button>` : ''}
-          </div>
-          <div class="mt-1 flex flex-wrap gap-3">
-            ${chip(dniOk(f.t.dni_tutor), 'DNI ' + f.t.dni_tutor, 'DNI ' + (f.t.dni_tutor || 'falta') + ' (corregir)')}
-            ${chip(!!f.t.nombres, 'Nombre', 'Sin nombre')}
-            ${f.t.ruc || f.t.razon_social
-              ? `${chip(!!f.t.ruc, 'RUC ' + f.t.ruc, 'Falta RUC')} ${chip(!!f.t.razon_social, f.t.razon_social, 'Falta razón social')}${f.facturaAMedias ? ' <span class="text-amber-600 text-xs">⚠ factura a medias</span>' : ''}`
-              : '<span class="text-slate-300 text-xs">— sin factura (solo boleta)</span>'}
-          </div>
-        </div>`).join('') || '<p class="p-4 text-sm text-slate-400">No hay tutores con alumnos en esta sede.</p>'}
-    </div>`);
+    <div class="mb-4 flex flex-wrap gap-2 text-xs">
+      <span class="rounded-lg bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 px-3 py-2">Listos para boleta: <b>${listos}/${filas.length}</b></span>
+      <span class="rounded-lg ${incompletos ? 'bg-rose-50 ring-rose-200 text-rose-700' : 'bg-slate-100 ring-slate-200 text-slate-500'} ring-1 px-3 py-2">Incompletos: <b>${incompletos}</b></span>
+      <span class="rounded-lg bg-sky-50 ring-1 ring-sky-200 text-sky-700 px-3 py-2">Con RUC (factura): <b>${conRuc}</b></span>
+    </div>
+    ${table(['Tutor', 'DNI', 'Teléfono', 'Email', 'RUC', 'Razón social', 'Hijos', 'Boleta', 'Factura', ''],
+      filas.map((f) => [
+        `<b class="${f.boletaOk ? 'text-slate-700' : 'text-rose-700'}">${f.t.nombres || '(sin nombre)'}</b>`,
+        dniTutorOk(f.t.dni_tutor) ? f.t.dni_tutor : `<span class="text-rose-600 font-medium">${f.t.dni_tutor || '—'} ⚠</span>`,
+        f.t.telefono_celular || '<span class="text-slate-300">—</span>',
+        f.t.email_tutor || '<span class="text-slate-300">—</span>',
+        f.t.ruc || '<span class="text-slate-300">—</span>',
+        f.t.razon_social || (f.facturaAMedias ? '<span class="text-amber-600">⚠ falta</span>' : '<span class="text-slate-300">—</span>'),
+        `<span title="${f.hijos.map((h) => nom(h)).join(', ').replace(/"/g, '&quot;')}">${f.hijos.length} 👦</span>`,
+        f.boletaOk ? '<span class="text-emerald-600 font-medium">✓</span>' : '<span class="text-rose-600 font-medium">✗</span>',
+        f.facturaOk ? '<span class="text-sky-600 font-medium">✓</span>' : (f.facturaAMedias ? '<span class="text-amber-600">⚠</span>' : '<span class="text-slate-300">—</span>'),
+        f.hijos[0] ? `<button onclick="formEditarAlumno('${f.hijos[0].id}'); njTab('personal')" class="text-indigo-600 hover:underline text-xs">Completar →</button>` : '',
+      ]))}
+    ${filas.length ? '' : '<p class="text-sm text-slate-400">No hay tutores con alumnos en esta sede.</p>'}`;
 };
+// Exportación a Excel (.xls con tabla HTML: Excel lo abre con columnas y formato)
 window.exportarReporteTutores = () => {
-  const dniOk = (d) => /^\d{8}$/.test(d || '');
-  const tIds = tutoresSede();
-  const esc = (x) => '"' + String(x ?? '').replace(/"/g, '""') + '"';
-  const cab = ['dni_tutor', 'dni_valido', 'nombre', 'ruc', 'razon_social', 'listo_boleta', 'listo_factura', 'alumnos'];
-  const lineas = DB.tutores.filter((t) => tIds.has(t.id)).map((t) => {
-    const hijos = alumnosSede().filter((j) => j.tutor_id === t.id).map((j) => nom(j)).join(' | ');
-    return [t.dni_tutor, dniOk(t.dni_tutor) ? 'SI' : 'NO', t.nombres || '', t.ruc || '', t.razon_social || '',
-      (dniOk(t.dni_tutor) && t.nombres) ? 'SI' : 'NO', (t.ruc && t.razon_social) ? 'SI' : 'NO', hijos].map(esc).join(',');
-  });
+  const filas = filasReporteTutores();
+  const esc = (x) => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const th = (t) => `<th style="background:#171e2e;color:#fff;padding:6px 10px;text-align:left">${t}</th>`;
+  const td = (t, color) => `<td style="padding:5px 10px;border:1px solid #ddd;${color ? 'color:' + color + ';font-weight:bold;' : ''}">${t}</td>`;
+  const rows = filas.map((f) => `<tr>
+    ${td(esc(f.t.nombres || '(sin nombre)'), f.boletaOk ? '' : '#c11d27')}
+    ${td(esc(f.t.dni_tutor || ''), dniTutorOk(f.t.dni_tutor) ? '' : '#c11d27')}
+    ${td(esc(f.t.telefono_celular || ''))}
+    ${td(esc(f.t.email_tutor || ''))}
+    ${td(esc(f.t.ruc || ''))}
+    ${td(esc(f.t.razon_social || ''))}
+    ${td(f.hijos.length)}
+    ${td(esc(f.hijos.map((h) => nom(h)).join(' | ')))}
+    ${td(f.boletaOk ? 'SI' : 'NO', f.boletaOk ? '#0a7d4f' : '#c11d27')}
+    ${td(f.facturaOk ? 'SI' : (f.facturaAMedias ? 'A MEDIAS' : ''), f.facturaOk ? '#0369a1' : (f.facturaAMedias ? '#b45309' : ''))}
+  </tr>`).join('');
+  const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body>
+    <table border="0" cellspacing="0"><tr><td colspan="10" style="font-size:14pt;font-weight:bold;padding:8px 10px">Tutores · datos de facturación — ${esc(sede(SEDE_ACTUAL).nombre_sede)} — ${fmtDMY(HOY)}</td></tr>
+    <tr>${['Tutor', 'DNI', 'Teléfono', 'Email', 'RUC', 'Razón social', 'N° hijos', 'Alumnos', 'Listo boleta', 'Listo factura'].map(th).join('')}</tr>
+    ${rows}</table></body></html>`;
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['﻿' + cab.join(',') + '\n' + lineas.join('\n')], { type: 'text/csv;charset=utf-8' }));
-  a.download = `tutores_facturacion_${((sede(SEDE_ACTUAL) || {}).nombre_sede || 'sede').replace(/\s+/g, '_')}_${HOY}.csv`;
+  a.href = URL.createObjectURL(new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' }));
+  a.download = `tutores_facturacion_${((sede(SEDE_ACTUAL) || {}).nombre_sede || 'sede').replace(/\s+/g, '_')}_${HOY}.xls`;
   a.click(); URL.revokeObjectURL(a.href);
-  toast('✓ Reporte de tutores exportado');
+  toast('✓ Reporte exportado a Excel');
 };
 
 // ---------- Aprobación de pagos (Tesorería) ----------
