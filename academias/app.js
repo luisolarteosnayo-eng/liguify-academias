@@ -1088,7 +1088,10 @@ const SCREENS = {
       </div>`;
 
     el('content').innerHTML = `
-      <p class="text-sm text-slate-500 mb-3">Cuentas por cobrar de <b>${sede(SEDE_ACTUAL).nombre_sede}</b></p>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm text-slate-500">Cuentas por cobrar de <b>${sede(SEDE_ACTUAL).nombre_sede}</b></p>
+        <button onclick="formCobranzaMasiva()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">📣 Recordatorios masivos</button>
+      </div>
       <div class="grid grid-cols-2 gap-3 mb-5">
         ${kpi('Vencido', S(totVenc), `${vencidos.length} alumno(s)`, 'rose')}
         ${kpi('Por vencer', S(totPorVencer), `${porVencer.length} alumno(s)`, 'amber')}
@@ -2432,6 +2435,72 @@ window.waCobroEnviar = (jid, num) => {
   j.ultimo_recordatorio = HOY;   // marca de control (visible en Por cobrar)
   closeModal(); toast('🔔 Recordatorio registrado · WhatsApp abierto');
   go('porcobrar');
+};
+
+// ---------- Cobranza masiva por WhatsApp (Twilio + plantilla aprobada) ----------
+// Candidatos: alumnos de la sede con deuda, teléfono válido y sin recordatorio
+// en los últimos 7 días. El envío real lo hace la edge function
+// 'enviar-cobranza-whatsapp' (secretos TWILIO_* en Supabase).
+function candidatosCobranzaMasiva() {
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const hace7 = isoAddDays(HOY, -7);
+  return alumnosSede().filter((j) => j.estado_alumno !== 'baja').map((j) => {
+    const pend = DB.cargos.filter((c) => c.jugador_id === j.id && saldoC(c) > 0);
+    if (!pend.length) return null;
+    const t = tutor(j.tutor_id) || {};
+    const num = waNumero(t.telefono_celular || j.telefono || '');
+    return { j, t, num, total: pend.reduce((s, c) => s + saldoC(c), 0),
+      vencido: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY),
+      reciente: !!(j.ultimo_recordatorio && j.ultimo_recordatorio >= hace7) };
+  }).filter((x) => x && x.num && !x.reciente).sort((a, b) => b.total - a.total);
+}
+window.formCobranzaMasiva = () => {
+  const cand = candidatosCobranzaMasiva();
+  if (!cand.length) { toast('No hay candidatos: sin deuda, sin teléfono válido o ya recordados esta semana'); return; }
+  openModal(`📣 Recordatorios masivos · ${sede(SEDE_ACTUAL).nombre_sede}`, `
+    <p class="mb-2 text-xs text-slate-500">Se enviará la <b>plantilla aprobada de WhatsApp</b> (vía Twilio) a los tutores marcados. Quedan fuera los que recibieron un recordatorio en los últimos 7 días.</p>
+    <div class="mb-2 max-h-72 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
+      ${cand.map((x, i) => `<label class="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer">
+        <input type="checkbox" class="cmChk h-4 w-4 accent-emerald-600" value="${i}" ${x.vencido ? 'checked' : ''} onchange="cmCount()">
+        <span class="flex-1 min-w-0 truncate">${nom(x.j)} <span class="text-xs text-slate-400">· ${x.t.nombres || 'tutor s/nombre'} · +${x.num}</span></span>
+        <b class="shrink-0 ${x.vencido ? 'text-rose-600' : 'text-slate-700'}">${S0(x.total)}</b>
+      </label>`).join('')}
+    </div>
+    <p class="mb-3 text-[11px] text-slate-400">Marcados por defecto: solo los que tienen deuda <b>vencida</b>. Costo aprox. USD 0.03 por mensaje.</p>
+    <div class="flex justify-end gap-2">
+      <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
+      <button type="button" id="cmEnviar" onclick="enviarCobranzaMasiva()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">📣 Enviar (<span id="cmN">0</span>)</button>
+    </div>`);
+  window.__cmCand = cand;
+  cmCount();
+};
+window.cmCount = () => { if (el('cmN')) el('cmN').textContent = document.querySelectorAll('.cmChk:checked').length; };
+window.enviarCobranzaMasiva = async () => {
+  if (!window.AcademiasDB || !AcademiasDB.on) { toast('El envío masivo solo funciona en modo conectado'); return; }
+  const sel = [...document.querySelectorAll('.cmChk:checked')].map((c) => window.__cmCand[+c.value]).filter(Boolean);
+  if (!sel.length) { toast('Marca al menos un tutor'); return; }
+  if (!confirm(`¿Enviar el recordatorio de WhatsApp a ${sel.length} tutor(es)?`)) return;
+  el('cmEnviar').disabled = true; el('cmEnviar').textContent = 'Enviando…';
+  const envios = sel.map((x) => ({ to: '+' + x.num, vars: {
+    '1': (x.t.nombres || 'padre de familia').split(' ')[0],
+    '2': nom(x.j), '3': x.total.toFixed(2),
+    '4': sede(x.j.sede_id) ? sede(x.j.sede_id).nombre_sede : DB.academia.nombre_academia } }));
+  try {
+    const { data, error } = await AcademiasDB.sb.functions.invoke('enviar-cobranza-whatsapp', { body: { envios } });
+    if (error) throw new Error(error.message || 'La función no está desplegada o faltan los secretos TWILIO_*');
+    if (data && data.error) throw new Error(data.error);
+    const rs = (data && data.resultados) || [];
+    let ok = 0;
+    rs.forEach((r, i) => { if (r.ok && sel[i]) { sel[i].j.ultimo_recordatorio = HOY; ok++; } });
+    const fallos = rs.filter((r) => !r.ok);
+    closeModal();
+    toast(`📣 ${ok} recordatorio(s) enviados${fallos.length ? ` · ${fallos.length} fallaron` : ''}`);
+    if (fallos.length) openModal('Envíos con error', `<div class="space-y-1 text-sm">${fallos.map((f) => `<div>• ${f.to}: <span class="text-rose-600">${f.error}</span></div>`).join('')}</div>`);
+    go('porcobrar');
+  } catch (e) {
+    toast('⚠ ' + (e.message || e));
+    if (el('cmEnviar')) { el('cmEnviar').disabled = false; el('cmEnviar').innerHTML = '📣 Enviar (<span id="cmN">' + sel.length + '</span>)'; }
+  }
 };
 
 // ---------- Exportación de pagos para SUNAT (documentos fiscales) ----------
