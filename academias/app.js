@@ -847,8 +847,8 @@ const SCREENS = {
           })()}
           ${(() => {
             if (ROL !== 'admin') return '';
-            const nDup = tutoresContaminados().length;
-            return nDup ? `<button onclick="limpiarTutoresDuplicados()" class="mt-2 ml-2 inline-block rounded-lg bg-rose-50 ring-1 ring-rose-300 px-3 py-1 text-xs text-rose-700 hover:bg-rose-100">🧽 Limpiar datos duplicados de tutores (${nDup})</button>` : '';
+            const nComp = tutoresCompartidos().length;
+            return nComp ? `<button onclick="desvincularTutores()" class="mt-2 ml-2 inline-block rounded-lg bg-rose-50 ring-1 ring-rose-300 px-3 py-1 text-xs text-rose-700 hover:bg-rose-100">🔗 Desvincular tutores compartidos (${nComp})</button>` : '';
           })()}
         </div>
         <div class="flex gap-1 border-b border-slate-200 mb-6 text-sm overflow-x-auto">
@@ -2778,46 +2778,31 @@ window.guardarEdicionAlumno = async (e, jid) => {
     catch (ex) { console.warn('[foto] fallback dataURL:', ex); }
   }
   const consEd = el('nj_consent') ? el('nj_consent').checked : !!j.consentimiento_imagen;
-  // Datos del tutor. Cada niño tiene su propio padre: si el tutor está compartido
-  // (placeholder tipo DNI 0000 con varios niños) y aquí se cambia el DNI, este
-  // alumno se SEPARA a su propio tutor y los demás conservan el registro anterior.
+  // Datos del tutor: es un DATO DEL ALUMNO (1:1), nunca una entidad compartida.
+  // Si este alumno todavía comparte el registro con otros (datos legados), al
+  // guardar se separa SIEMPRE a un tutor propio; los demás no se tocan jamás.
   const tEd = tutor(j.tutor_id);
   if (tEd && el('tut_nombre')) {
-    const nuevoDni = val('tut_dni').trim();
     const datos = {
+      dni_tutor: val('tut_dni').trim() || null,
       nombres: val('tut_nombre').trim() || null,
       email_tutor: val('tut_email').trim() || null,
       ruc: val('tut_ruc').trim() || null,
       razon_social: val('tut_razon').trim() || null,
     };
-    const telNuevo = val('tut_tel').trim() || null;
-    const hermanos = DB.jugadores.filter((x) => x.tutor_id === tEd.id && x.id !== j.id);
+    const telNuevo = val('tut_tel').trim();
+    const compartido = DB.jugadores.some((x) => x.tutor_id === tEd.id && x.id !== j.id);
     let destino = tEd;
-    if (nuevoDni && nuevoDni !== tEd.dni_tutor) {
-      const existente = DB.tutores.find((x) => x.id !== tEd.id && x.dni_tutor === nuevoDni);
-      if (existente) {
-        destino = existente;               // ya hay un tutor con ese DNI: este alumno pasa a él
-      } else if (hermanos.length) {
-        // tutor compartido: crear uno propio para ESTE alumno, sin tocar a los demás
-        destino = { id: uid('tu'), dni_tutor: nuevoDni, telefono_celular: telNuevo || '', perfil_reclamado: false };
-        DB.tutores.push(destino);
-      } else {
-        tEd.dni_tutor = nuevoDni;          // tutor con un solo hijo: corregir el DNI en el mismo registro
-      }
-      if (destino !== tEd) {
-        j.tutor_id = destino.id;
-        // los cargos y pagos de ESTE alumno siguen a su tutor real
-        DB.cargos.forEach((c) => { if (c.jugador_id === j.id) c.tutor_id = destino.id; });
-        DB.pagos.forEach((p) => { if (p.jugador_id === j.id) p.tutor_id = destino.id; });
-        toast(`👪 Tutor propio para ${nom(j)} · los otros ${hermanos.length} alumno(s) conservan su tutor`);
-      }
-    } else if (!nuevoDni && tEd.dni_tutor && !hermanos.length) {
-      tEd.dni_tutor = null;   // quitar un DNI mal registrado (tutor de un solo hijo)
-    } else if (hermanos.length && (datos.nombres !== (tEd.nombres || null) || telNuevo)) {
-      toast(`ℹ Los datos del tutor aplican también a sus otros ${hermanos.length} alumno(s); si es otro papá, cambia el DNI`);
+    if (compartido) {
+      destino = { id: uid('tu'), telefono_celular: '', perfil_reclamado: false };
+      DB.tutores.push(destino);
+      j.tutor_id = destino.id;
+      DB.cargos.forEach((c) => { if (c.jugador_id === j.id) c.tutor_id = destino.id; });
+      DB.pagos.forEach((p) => { if (p.jugador_id === j.id) p.tutor_id = destino.id; });
+      toast(`👪 ${nom(j)} ahora tiene su tutor propio (independiente de los demás alumnos)`);
     }
     Object.assign(destino, datos);
-    if (telNuevo) destino.telefono_celular = telNuevo;
+    destino.telefono_celular = telNuevo || (compartido ? '' : destino.telefono_celular);
   }
   Object.assign(j, {
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
@@ -3348,17 +3333,11 @@ window.formClasePrueba = () => {
 window.guardarClasePrueba = (e) => {
   e.preventDefault();
   // Tutor: reusar por DNI o crear (mismo criterio que el registro cero fricción)
-  const dniCp = val('cp_dni').trim() || null;
-  let t = dniCp ? DB.tutores.find((x) => x.dni_tutor === dniCp) : null;   // reusar solo con DNI real
-  if (!t) {
-    t = { id: uid('tu'), dni_tutor: dniCp, telefono_celular: val('cp_tel'),
-      nombres: (el('cp_tutnom') && val('cp_tutnom').trim()) || null,
-      email_tutor: val('cp_email') || null, perfil_reclamado: !!val('cp_email') };
-    DB.tutores.push(t);
-  } else {
-    if (val('cp_email') && !t.email_tutor) t.email_tutor = val('cp_email');
-    if (el('cp_tutnom') && val('cp_tutnom').trim() && !t.nombres) t.nombres = val('cp_tutnom').trim();
-  }
+  // El tutor es un dato del alumno (1:1): siempre se crea uno propio, sin reusar
+  const t = { id: uid('tu'), dni_tutor: val('cp_dni').trim() || null, telefono_celular: val('cp_tel'),
+    nombres: (el('cp_tutnom') && val('cp_tutnom').trim()) || null,
+    email_tutor: val('cp_email') || null, perfil_reclamado: !!val('cp_email') };
+  DB.tutores.push(t);
   const j = { id: uid('j'), tutor_id: t.id, sede_id: SEDE_ACTUAL, nombre: val('cp_nombre'), apellido: val('cp_apellido'),
     fecha_nacimiento: val('cp_fnac'), estado_alumno: 'prospecto', fue_prospecto: true, fecha_registro: HOY,
     prueba_fecha: val('cp_fecha') || HOY, prueba_track_id: val('cp_track'), atributos: null };
@@ -3440,14 +3419,11 @@ window.guardarRegistro = (e) => {
   const tracksSel = [...document.querySelectorAll('.trkChk:checked')].map((c) => c.value);
   if (!tracksSel.length) { toast('Selecciona al menos un track'); return; }
   // Tutor: reusar por DNI o crear
-  const dniReg = val('f_dni').trim() || null;
-  let t = dniReg ? DB.tutores.find((x) => x.dni_tutor === dniReg) : null;   // reusar solo con DNI real
-  if (!t) {
-    t = { id: uid('tu'), dni_tutor: dniReg, telefono_celular: val('f_tel'),
-      nombres: (el('f_tutnom') && val('f_tutnom').trim()) || null,
-      email_tutor: val('f_email') || null, perfil_reclamado: !!val('f_email') };
-    DB.tutores.push(t);
-  } else if (el('f_tutnom') && val('f_tutnom').trim() && !t.nombres) { t.nombres = val('f_tutnom').trim(); }
+  // El tutor es un dato del alumno (1:1): siempre se crea uno propio, sin reusar
+  const t = { id: uid('tu'), dni_tutor: val('f_dni').trim() || null, telefono_celular: val('f_tel'),
+    nombres: (el('f_tutnom') && val('f_tutnom').trim()) || null,
+    email_tutor: val('f_email') || null, perfil_reclamado: !!val('f_email') };
+  DB.tutores.push(t);
   const j = { id: uid('j'), tutor_id: t.id, sede_id: val('f_sede'), nombre: val('f_nombre'), apellido: val('f_apellido'),
     fecha_nacimiento: val('f_fnac'), estado_alumno: 'activo', fecha_registro: HOY, atributos: null };
   DB.jugadores.push(j);
@@ -4263,31 +4239,45 @@ window.migrarImagenesStorage = async () => {
   SCREENS.config();
 };
 
-// ---------- Limpieza de datos duplicados de tutores ----------
-// Un tutor compartido por 3+ alumnos no es una familia real: son restos de los
-// placeholders, y sus datos (nombre/teléfono/DNI copiados, ej. "Jacqueline")
-// aparecen repetidos en todos esos niños. Esta utilidad PONE EN BLANCO los
-// datos de esos tutores (no borra filas ni toca cargos/pagos/alumnos) para que
-// el operador vea "falta" y registre al papá real de cada niño desde su ficha.
-// Los tutores con 1–2 hijos (hermanos legítimos) no se tocan.
-function tutoresContaminados() {
+// ---------- Desvinculación de tutores compartidos (tutor = dato del alumno, 1:1) ----------
+// El tutor NO es una entidad compartida: cada alumno tiene el suyo. Esta utilidad
+// separa a todos los alumnos que aún comparten un registro de tutor (datos legados):
+// · tutor con 2 hijos (hermanos probables): cada niño recibe su COPIA con los mismos datos
+// · tutor con 3+ hijos (placeholder contaminado): cada niño recibe un tutor EN BLANCO
+// No se borra nada; los cargos y pagos de cada alumno siguen a su tutor nuevo.
+function tutoresCompartidos() {
   const conteo = {};
   DB.jugadores.forEach((j) => { conteo[j.tutor_id] = (conteo[j.tutor_id] || 0) + 1; });
-  return DB.tutores.filter((t) => (conteo[t.id] || 0) >= 3
-    && (t.dni_tutor || t.nombres || t.email_tutor || t.ruc || t.razon_social || (t.telefono_celular || '').replace(/\D/g, '').length >= 7))
-    .map((t) => ({ t, hijos: conteo[t.id] }));
+  return DB.tutores.filter((t) => (conteo[t.id] || 0) >= 2).map((t) => ({ t, hijos: conteo[t.id] }));
 }
-window.limpiarTutoresDuplicados = () => {
-  if (ROL !== 'admin') { toast('Solo el Administrador puede ejecutar esta limpieza'); return; }
-  const sospechosos = tutoresContaminados();
-  if (!sospechosos.length) { toast('✓ No hay tutores compartidos con datos duplicados'); return; }
-  const lista = sospechosos.map(({ t, hijos }) => `· ${t.nombres || '(sin nombre)'}${t.dni_tutor ? ' · DNI ' + t.dni_tutor : ''} — compartido por ${hijos} alumnos`).join('\n');
-  if (!confirm(`🧽 LIMPIAR DATOS DUPLICADOS DE TUTORES\n\nEstos tutores están compartidos por 3 o más alumnos (no son familias reales) y sus datos se repiten en todos ellos:\n\n${lista}\n\nSe pondrán EN BLANCO su DNI, nombre, teléfono, email, RUC y razón social, para que el operador registre al papá real de cada niño desde su ficha. No se borra ningún tutor ni se tocan cargos, pagos ni alumnos. Los tutores de 1–2 hijos (hermanos) no se modifican.\n\n¿Continuar?`)) return;
-  sospechosos.forEach(({ t }) => {
-    t.dni_tutor = null; t.nombres = null; t.telefono_celular = '';
-    t.email_tutor = null; t.ruc = null; t.razon_social = null; t.perfil_reclamado = false;
+window.desvincularTutores = () => {
+  if (ROL !== 'admin') { toast('Solo el Administrador puede ejecutar esta acción'); return; }
+  const compartidos = tutoresCompartidos();
+  if (!compartidos.length) { toast('✓ Ningún alumno comparte tutor: todos son 1 a 1'); return; }
+  const nAl = compartidos.reduce((s, x) => s + x.hijos, 0);
+  const lista = compartidos.slice(0, 12).map(({ t, hijos }) => `· ${t.nombres || '(sin nombre)'}${t.dni_tutor ? ' · DNI ' + t.dni_tutor : ''} — ${hijos} alumnos${hijos >= 3 ? ' → tutores EN BLANCO' : ' → copia para cada hermano'}`).join('\n');
+  if (!confirm(`🔗 DESVINCULAR TUTORES COMPARTIDOS\n\nEl tutor es un dato de cada alumno: ${nAl} alumno(s) aún comparten ${compartidos.length} registro(s):\n\n${lista}${compartidos.length > 12 ? `\n… y ${compartidos.length - 12} más` : ''}\n\nCada alumno quedará con su tutor propio e independiente (con 3+ alumnos los datos se consideran contaminados y quedan en blanco para registrarlos de nuevo). No se borra nada; cargos y pagos siguen a cada alumno.\n\n¿Continuar?`)) return;
+  let separados = 0;
+  compartidos.forEach(({ t, hijos }) => {
+    const kids = DB.jugadores.filter((j) => j.tutor_id === t.id);
+    const contaminado = hijos >= 3;
+    kids.forEach((j, idx) => {
+      if (idx === 0 && !contaminado) return;   // con 2 hermanos, el primero conserva el registro original
+      const nuevo = contaminado
+        ? { id: uid('tu'), dni_tutor: null, nombres: null, telefono_celular: '', email_tutor: null, ruc: null, razon_social: null, perfil_reclamado: false }
+        : { id: uid('tu'), dni_tutor: t.dni_tutor, nombres: t.nombres || null, telefono_celular: t.telefono_celular || '', email_tutor: t.email_tutor || null, ruc: t.ruc || null, razon_social: t.razon_social || null, perfil_reclamado: false };
+      DB.tutores.push(nuevo);
+      DB.cargos.forEach((c) => { if (c.jugador_id === j.id) c.tutor_id = nuevo.id; });
+      DB.pagos.forEach((p) => { if (p.jugador_id === j.id) p.tutor_id = nuevo.id; });
+      j.tutor_id = nuevo.id;
+      separados++;
+    });
+    if (contaminado) {   // el registro original (ya sin hijos) queda en blanco por higiene
+      t.dni_tutor = null; t.nombres = null; t.telefono_celular = ''; t.email_tutor = null;
+      t.ruc = null; t.razon_social = null; t.perfil_reclamado = false;
+    }
   });
-  toast(`🧽 ${sospechosos.length} tutor(es) puestos en blanco · el reporte Tutores · facturación muestra ahora lo que falta registrar`);
+  toast(`🔗 ${separados} alumno(s) desvinculados · cada uno tiene ahora su tutor propio`);
   SCREENS.config();
 };
 
