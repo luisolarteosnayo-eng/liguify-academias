@@ -988,7 +988,7 @@ const SCREENS = {
       <div class="mb-6">
       ${table(['Tutor (DNI)', 'Hijos', 'Detalle de cargos', 'Deuda total'],
         consolidado.map((x) => [
-          `DNI ${x.t.dni_tutor}`, x.hijos,
+          x.t.nombres || (x.t.dni_tutor ? `DNI ${x.t.dni_tutor}` : '<span class="text-slate-400">(tutor sin DNI)</span>'), x.hijos,
           x.cargos.map((c) => `${badge(c.tipo || 'CR', c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${c.jugador_id ? nom(jugador(c.jugador_id)) + ' · ' : ''}${descCargo(c)} · ${S(saldoC(c))}`).join('<br>'),
           `<b>${S(x.deuda)}</b>`]))}
       </div>
@@ -1017,7 +1017,7 @@ const SCREENS = {
       ${pagosFil.length ? table([`<input type="checkbox" onchange="document.querySelectorAll('.tesChk').forEach(c => { c.checked = this.checked; }); tesSelCount()" class="h-4 w-4 accent-indigo-600" title="Seleccionar todos">`, 'Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado', 'SUNAT', 'Voucher'],
         pagosFil.map((p) => [
           `<input type="checkbox" class="tesChk h-4 w-4 accent-indigo-600" value="${p.id}" onchange="tesSelCount()">`,
-          p.jugador_id ? nom(jugador(p.jugador_id)) : `DNI ${tutor(p.tutor_id).dni_tutor}`,
+          p.jugador_id ? nom(jugador(p.jugador_id)) : ((tutor(p.tutor_id) || {}).nombres || 'Tutor ' + ((tutor(p.tutor_id) || {}).dni_tutor || 's/DNI')),
           S(p.total ?? p.monto ?? 0), p.medio || '—', p.num_operacion || '—', fmtDMY(p.fecha),
           badge(p.estado, estadoColor[p.estado] || 'emerald'),
           p.sunat_exportado ? `<span class="text-xs text-emerald-600" title="Exportado para SUNAT">📄 ${fmtDMY(p.sunat_exportado)}</span>` : '<span class="text-slate-300">—</span>',
@@ -1323,7 +1323,7 @@ function renderAlumnosList() {
       </div>
       ${pruebaInfo}
       ${corteInfo}
-      <div class="text-xs text-slate-400 mt-0.5">Tutor ${t.nombres ? t.nombres + ' · ' : ''}DNI ${t.dni_tutor}${t.ruc ? ' · ' + badge('RUC', 'sky') : ''} · ${perfil}</div>
+      <div class="text-xs text-slate-400 mt-0.5">Tutor ${t.nombres ? t.nombres + ' · ' : ''}${t.dni_tutor ? 'DNI ' + t.dni_tutor : '<span class="text-amber-500">sin DNI</span>'}${t.ruc ? ' · ' + badge('RUC', 'sky') : ''} · ${perfil}</div>
     </div>`;
   }).join('') : '<p class="text-sm text-slate-400 p-2 col-span-full">No hay alumnos que coincidan.</p>';
 }
@@ -1757,7 +1757,7 @@ function njFormBody(j, tracksJid) {
         return `<div class="mb-3 rounded-lg ring-1 ring-slate-200 p-3">
           <div class="mb-2 text-xs font-medium text-slate-500">Tutor <span class="text-slate-400">(datos para boleta/factura — el documento del alumno, arriba, es otro dato)</span></div>
           <div class="grid grid-cols-2 gap-3">
-            ${field('DNI del tutor *', input('tut_dni', `value="${esc(t.dni_tutor)}" placeholder="DNI del padre/madre"`))}
+            ${field('DNI del tutor', input('tut_dni', `value="${esc(t.dni_tutor)}" placeholder="DNI del padre/madre (8 dígitos)"`))}
             ${field('Nombre completo del tutor', input('tut_nombre', `value="${esc(t.nombres)}" placeholder="Como irá en la boleta"`))}
           </div>
           <div class="grid grid-cols-2 gap-3">
@@ -2447,7 +2447,7 @@ window.exportarSunat = () => {
   const lineas = filas.map((p) => {
     const j = p.jugador_id ? jugador(p.jugador_id) : null;
     const t = tutor(p.tutor_id) || {};
-    const dni = (t.dni_tutor || '').startsWith('S/D') ? '' : (t.dni_tutor || '');
+    const dni = dniTutorOk(t.dni_tutor) ? t.dni_tutor : '';   // solo DNIs reales van al comprobante
     // Tutor con RUC → FACTURA (RUC + razón social); si no → BOLETA (DNI + nombre del tutor)
     const esFactura = !!t.ruc;
     const tipo = esFactura ? 'FACTURA' : 'BOLETA';
@@ -2806,6 +2806,8 @@ window.guardarEdicionAlumno = async (e, jid) => {
         DB.pagos.forEach((p) => { if (p.jugador_id === j.id) p.tutor_id = destino.id; });
         toast(`👪 Tutor propio para ${nom(j)} · los otros ${hermanos.length} alumno(s) conservan su tutor`);
       }
+    } else if (!nuevoDni && tEd.dni_tutor && !hermanos.length) {
+      tEd.dni_tutor = null;   // quitar un DNI mal registrado (tutor de un solo hijo)
     } else if (hermanos.length && (datos.nombres !== (tEd.nombres || null) || telNuevo)) {
       toast(`ℹ Los datos del tutor aplican también a sus otros ${hermanos.length} alumno(s); si es otro papá, cambia el DNI`);
     }
@@ -2920,11 +2922,11 @@ window.guardarNuevoJugador = async (e, tid) => {
   // Tutor responsable: reusar por documento o crear uno nuevo
   const doc = val('nj_numdoc');
   const tel = `${val('nj_paistel')} ${val('nj_tel')}`.trim();
-  // Reusar el tutor por DNI en TODA la academia (la restricción única es academia_id+dni_tutor,
-  // no por sede). Filtrar por sede aquí creaba tutores duplicados con el mismo DNI.
-  let tut = doc ? DB.tutores.find((x) => x.dni_tutor === doc) : null;
-  if (!tut) {
-    tut = { id: uid('tu'), dni_tutor: doc || `S/D-${_seq}`, telefono_celular: tel, email_tutor: null, perfil_reclamado: false };
+  // El documento del formulario es del ALUMNO, no del tutor: el tutor nace SIN DNI
+  // (null, nunca placeholders) y sus datos reales se completan en la ficha.
+  let tut = null;
+  {
+    tut = { id: uid('tu'), dni_tutor: null, telefono_celular: tel, email_tutor: null, perfil_reclamado: false };
     DB.tutores.push(tut);
   }
   const consNu = el('nj_consent') ? el('nj_consent').checked : false;
@@ -3316,7 +3318,7 @@ window.formClasePrueba = () => {
       </div>
       ${field('Fecha de nacimiento', input('cp_fnac', 'type="date" required'))}
       <div class="grid grid-cols-2 gap-3">
-        ${field('DNI del tutor', input('cp_dni', 'required'))}
+        ${field('DNI del tutor (opcional)', input('cp_dni', 'placeholder="8 dígitos; vacío si no lo tiene"'))}
         ${field('Celular del tutor', input('cp_tel', 'required'))}
       </div>
       ${field('Nombre del tutor (opcional)', input('cp_tutnom', 'placeholder="para la boleta; se puede completar luego"'))}
@@ -3341,9 +3343,10 @@ window.formClasePrueba = () => {
 window.guardarClasePrueba = (e) => {
   e.preventDefault();
   // Tutor: reusar por DNI o crear (mismo criterio que el registro cero fricción)
-  let t = DB.tutores.find((x) => x.dni_tutor === val('cp_dni'));
+  const dniCp = val('cp_dni').trim() || null;
+  let t = dniCp ? DB.tutores.find((x) => x.dni_tutor === dniCp) : null;   // reusar solo con DNI real
   if (!t) {
-    t = { id: uid('tu'), dni_tutor: val('cp_dni'), telefono_celular: val('cp_tel'),
+    t = { id: uid('tu'), dni_tutor: dniCp, telefono_celular: val('cp_tel'),
       nombres: (el('cp_tutnom') && val('cp_tutnom').trim()) || null,
       email_tutor: val('cp_email') || null, perfil_reclamado: !!val('cp_email') };
     DB.tutores.push(t);
@@ -3397,7 +3400,7 @@ window.formRegistroExpress = () => {
       ${field('Fecha de nacimiento', input('f_fnac', 'type="date" required oninput="onFnac()"'))}
       <div id="catBox" class="hidden mb-3 rounded-lg bg-indigo-50 text-indigo-700 text-sm px-3 py-2"></div>
       <div class="grid grid-cols-2 gap-3">
-        ${field('DNI del tutor', input('f_dni', 'required'))}
+        ${field('DNI del tutor (opcional)', input('f_dni', 'placeholder="8 dígitos; vacío si no lo tiene"'))}
         ${field('Celular del tutor', input('f_tel', 'required'))}
       </div>
       ${field('Nombre del tutor (opcional)', input('f_tutnom', 'placeholder="para la boleta; se puede completar luego"'))}
@@ -3432,9 +3435,10 @@ window.guardarRegistro = (e) => {
   const tracksSel = [...document.querySelectorAll('.trkChk:checked')].map((c) => c.value);
   if (!tracksSel.length) { toast('Selecciona al menos un track'); return; }
   // Tutor: reusar por DNI o crear
-  let t = DB.tutores.find((x) => x.dni_tutor === val('f_dni'));
+  const dniReg = val('f_dni').trim() || null;
+  let t = dniReg ? DB.tutores.find((x) => x.dni_tutor === dniReg) : null;   // reusar solo con DNI real
   if (!t) {
-    t = { id: uid('tu'), dni_tutor: val('f_dni'), telefono_celular: val('f_tel'),
+    t = { id: uid('tu'), dni_tutor: dniReg, telefono_celular: val('f_tel'),
       nombres: (el('f_tutnom') && val('f_tutnom').trim()) || null,
       email_tutor: val('f_email') || null, perfil_reclamado: !!val('f_email') };
     DB.tutores.push(t);
@@ -3536,7 +3540,7 @@ window.formOnboarding = (tid) => {
   openModal('Activación del padre (Flujo B)', `
     <div id="obStep1">
       <p class="text-xs text-slate-400 mb-3">Doble factor: valida el DNI y teléfono registrados en cancha.</p>
-      ${field('DNI del tutor', input('f_dni', `placeholder="registrado: ${t.dni_tutor}"`))}
+      ${field('DNI del tutor', input('f_dni', `placeholder="registrado: ${t.dni_tutor || 'sin DNI'}"`))}
       ${field('Celular', input('f_tel', `placeholder="registrado: ${t.telefono_celular}"`))}
       <div class="mt-2 flex justify-end">
         <button onclick="obValidar('${tid}')" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Validar identidad</button>
