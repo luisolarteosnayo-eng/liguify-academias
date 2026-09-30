@@ -1488,73 +1488,132 @@ function cromoCard(j) {
 const ATRIBUTOS = [['velocidad', 'Velocidad'], ['potencia', 'Potencia'], ['agilidad', 'Agilidad'], ['tecnica', 'Técnica'], ['pase', 'Pase'], ['defensa', 'Defensa']];
 const evaluacionesDe = (jid) => (DB.evaluaciones || []).filter((e) => e.jugador_id === jid)
   .sort((a, b) => (a.periodo < b.periodo ? 1 : -1));   // más reciente primero
+// Radar de 6 ejes: series = [{ attrs, color, fill, dash, label }]
+function radarSVG(series, size = 260) {
+  const cx = size / 2, cy = size / 2, R = size / 2 - 34;
+  const punto = (i, v) => { const a = (Math.PI / 3) * i - Math.PI / 2; return `${(cx + (v / 100) * R * Math.cos(a)).toFixed(1)},${(cy + (v / 100) * R * Math.sin(a)).toFixed(1)}`; };
+  const anillo = (f) => ATRIBUTOS.map((_, i) => punto(i, f * 100)).join(' ');
+  const ejes = ATRIBUTOS.map((_, i) => `<line x1="${cx}" y1="${cy}" x2="${punto(i, 100).split(',')[0]}" y2="${punto(i, 100).split(',')[1]}" stroke="#e9e6e0" stroke-width="1"/>`).join('');
+  const labels = ATRIBUTOS.map(([k, lbl], i) => {
+    const a = (Math.PI / 3) * i - Math.PI / 2;
+    const x = cx + (R + 20) * Math.cos(a), y = cy + (R + 20) * Math.sin(a);
+    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="10" font-weight="600" fill="#64748b">${lbl.slice(0, 3).toUpperCase()}</text>`;
+  }).join('');
+  const polis = series.filter((s) => s && s.attrs).map((s) => {
+    const pts = ATRIBUTOS.map(([k], i) => punto(i, Math.max(0, Math.min(100, +s.attrs[k] || 0)))).join(' ');
+    return `<polygon points="${pts}" fill="${s.fill || 'none'}" stroke="${s.color}" stroke-width="2" ${s.dash ? `stroke-dasharray="${s.dash}"` : ''}/>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${size} ${size}" class="w-full max-w-[300px] mx-auto">
+    ${[0.25, 0.5, 0.75, 1].map((f) => `<polygon points="${anillo(f)}" fill="none" stroke="#e9e6e0" stroke-width="1"/>`).join('')}
+    ${ejes}${polis}${labels}</svg>`;
+}
+// Pestaña de la ficha: solo lanzadera (la evaluación se trabaja en pantalla completa)
 function evaluacionHTML(jid) {
   const j = jugador(jid);
   const evs = evaluacionesDe(jid);
-  const ult = evs[0] || null;
+  return `
+    ${j.atributos ? `<div class="mb-4">${cromoCard(j)}</div>` : ''}
+    <button type="button" onclick="closeModal(); pantallaEvaluacion('${jid}')"
+      class="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700">📊 Evaluar / ver progreso (pantalla completa)</button>
+    <p class="mt-2 text-xs text-slate-400 text-center">${evs.length} evaluación(es) registradas${evs.length ? ' · última: ' + mesLabelDe(evs[0].periodo) : ''}</p>`;
+}
+window.renderFichaEvalua = (jid) => { if (el('nj_evalua')) el('nj_evalua').innerHTML = evaluacionHTML(jid); };
+// Pantalla completa de evaluación: sliders + radar en vivo vs última evaluación
+window.pantallaEvaluacion = (jid) => {
+  const j = jugador(jid);
+  if (!j) return;
+  const evs = evaluacionesDe(jid);
+  const base = evs[0] || null;              // última guardada = línea de comparación
+  const ini = (k) => (base && base[k] != null ? base[k] : 50);
   const deltaTag = (v, prev) => {
     if (prev == null || v == null) return '';
     const d = v - prev;
     return d > 0 ? ` <span class="text-emerald-300">▲+${d}</span>` : d < 0 ? ` <span class="text-rose-300">▼${d}</span>` : '';
   };
-  const dNum = (v, prev, unidad) => {
+  const dNum = (v, prev) => {
     if (prev == null || v == null) return '';
     const d = Math.round((v - prev) * 10) / 10;
-    return d ? ` <span class="${d > 0 ? 'text-emerald-600' : 'text-rose-600'}">(${d > 0 ? '+' : ''}${d}${unidad})</span>` : '';
+    return d ? ` <span class="${d > 0 ? 'text-emerald-600' : 'text-rose-600'}">(${d > 0 ? '+' : ''}${d})</span>` : '';
   };
-  const form = !FICHA_ADD_EVAL
-    ? `<div class="mb-4"><button type="button" onclick="FICHA_ADD_EVAL = true; renderFichaEvalua('${jid}')" class="text-sm font-medium text-indigo-600 hover:underline">➕ Nueva evaluación mensual</button></div>`
-    : `<div class="mb-4 space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-medium text-slate-500">Nueva evaluación (una por mes; si el mes ya existe, se actualiza)</span>
-          <button type="button" onclick="FICHA_ADD_EVAL = false; renderFichaEvalua('${jid}')" class="text-xs text-slate-400 hover:text-slate-600">✕ Cerrar</button>
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="text-xs text-slate-500 shrink-0">Mes</label>
-          <input id="ev_mes" type="month" value="${HOY.slice(0, 7)}" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
-        </div>
-        <div class="grid grid-cols-3 gap-2">
-          ${ATRIBUTOS.map(([k, lbl]) => `<label class="text-xs text-slate-500">${lbl}
-            <input id="ev_${k}" type="number" min="0" max="100" value="${ult ? (ult[k] ?? '') : ''}" placeholder="0–100" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>`).join('')}
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="text-xs text-slate-500">Peso (kg)
-            <input id="ev_peso" type="number" step="0.1" min="0" value="${ult && ult.peso != null ? ult.peso : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
-          <label class="text-xs text-slate-500">Talla (cm)
-            <input id="ev_talla" type="number" step="0.5" min="0" value="${ult && ult.talla != null ? ult.talla : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
-        </div>
-        <label class="block text-xs text-slate-500">Observaciones del entrenador
-          <textarea id="ev_obs" rows="2" placeholder="Ej: mejoró el pase largo; trabajar pierna izquierda" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"></textarea></label>
-        <div class="flex justify-end">
-          <button type="button" onclick="guardarEvaluacion('${jid}')" class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Guardar evaluación</button>
-        </div>
-      </div>`;
   const historial = evs.length ? evs.map((e, i) => {
     const prev = evs[i + 1] || null;
-    return `<div class="rounded-lg ring-1 ring-slate-200 p-3">
+    return `<div class="rounded-lg bg-white ring-1 ring-slate-200 p-3">
       <div class="flex items-center justify-between">
         <b class="text-sm">${mesLabelDe(e.periodo)}</b>
-        <span class="text-xs text-slate-400">${e.peso != null ? `⚖ ${e.peso} kg${dNum(e.peso, prev && prev.peso, '')}` : ''}${e.talla != null ? ` · 📏 ${e.talla} cm${dNum(e.talla, prev && prev.talla, '')}` : ''}</span>
+        <span class="text-xs text-slate-400">${e.peso != null ? `⚖ ${e.peso} kg${dNum(e.peso, prev && prev.peso)}` : ''}${e.talla != null ? ` · 📏 ${e.talla} cm${dNum(e.talla, prev && prev.talla)}` : ''}</span>
       </div>
       <div class="mt-1.5 flex flex-wrap gap-1.5">
         ${ATRIBUTOS.map(([k, lbl]) => e[k] == null ? '' : `<span class="rounded bg-ink-900 text-white px-1.5 py-0.5 text-[11px]">${lbl.slice(0, 3).toUpperCase()} <b>${e[k]}</b>${deltaTag(e[k], prev && prev[k])}</span>`).join('')}
       </div>
       ${e.observaciones ? `<p class="mt-1.5 text-xs italic text-slate-500">📝 ${e.observaciones}</p>` : ''}
     </div>`;
-  }).join('') : '<p class="text-sm text-slate-400">Sin evaluaciones aún. Registra la primera del mes.</p>';
-  return `
-    ${j.atributos ? `<div class="mb-4">${cromoCard(j)}</div>` : ''}
-    ${form}
-    <div class="text-xs font-medium text-slate-500 mb-2">Historial de evaluaciones (${evs.length})</div>
-    <div class="space-y-2">${historial}</div>`;
-}
-window.renderFichaEvalua = (jid) => { if (el('nj_evalua')) el('nj_evalua').innerHTML = evaluacionHTML(jid); };
+  }).join('') : '<p class="text-sm text-slate-400">Sin evaluaciones aún.</p>';
+  el('content').innerHTML = `
+    <button onclick="go('alumnos'); formEditarAlumno('${jid}'); njTab('evalua')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver al alumno</button>
+    <div class="mb-4 flex items-center gap-3">
+      ${j.foto_url ? `<img src="${j.foto_url}" class="h-12 w-12 rounded-full object-cover">` : ''}
+      <div>
+        <h2 class="text-xl font-bold">📊 Evaluación · ${nom(j)}</h2>
+        <p class="text-xs text-slate-400">Categoría ${anio(j.fecha_nacimiento)} · ${sede(j.sede_id) ? sede(j.sede_id).nombre_sede : ''}</p>
+      </div>
+    </div>
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
+        <div class="mb-1 flex flex-wrap items-center justify-center gap-4 text-xs">
+          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-4 rounded-sm bg-brand-500"></span> Evaluación nueva</span>
+          ${base ? `<span class="flex items-center gap-1.5"><span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-ink-900"></span> ${mesLabelDe(base.periodo)} (última)</span>` : ''}
+        </div>
+        <div id="evRadar">${radarSVG([
+          base ? { attrs: base, color: '#171e2e', dash: '5,4' } : null,
+          { attrs: Object.fromEntries(ATRIBUTOS.map(([k]) => [k, ini(k)])), color: '#d9232e', fill: 'rgba(217,35,46,0.18)' },
+        ])}</div>
+      </div>
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4 space-y-2.5">
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-slate-500 shrink-0">Mes de la evaluación</label>
+          <input id="ev_mes" type="month" value="${HOY.slice(0, 7)}" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+        </div>
+        ${ATRIBUTOS.map(([k, lbl]) => `
+          <label class="block">
+            <div class="flex justify-between text-xs text-slate-500 mb-0.5">
+              <span>${lbl}${base && base[k] != null ? ` <span class="text-slate-300">· antes ${base[k]}</span>` : ''}</span>
+              <b id="evv_${k}" class="text-slate-700">${ini(k)}</b>
+            </div>
+            <input id="ev_${k}" type="range" min="0" max="100" value="${ini(k)}" class="w-full accent-indigo-600"
+              oninput="document.getElementById('evv_${k}').textContent = this.value; evRadarLive('${jid}')">
+          </label>`).join('')}
+        <div class="grid grid-cols-2 gap-2">
+          <label class="text-xs text-slate-500">Peso (kg)${base && base.peso != null ? ` <span class="text-slate-300">· antes ${base.peso}</span>` : ''}
+            <input id="ev_peso" type="number" step="0.1" min="0" value="${base && base.peso != null ? base.peso : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
+          <label class="text-xs text-slate-500">Talla (cm)${base && base.talla != null ? ` <span class="text-slate-300">· antes ${base.talla}</span>` : ''}
+            <input id="ev_talla" type="number" step="0.5" min="0" value="${base && base.talla != null ? base.talla : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
+        </div>
+        <label class="block text-xs text-slate-500">Observaciones del entrenador
+          <textarea id="ev_obs" rows="2" placeholder="Ej: mejoró el pase largo; trabajar pierna izquierda" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"></textarea></label>
+        <div class="flex justify-end">
+          <button type="button" onclick="guardarEvaluacion('${jid}')" class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar evaluación</button>
+        </div>
+        <p class="text-[11px] text-slate-400">Una evaluación por mes; si el mes ya existe, se actualiza.</p>
+      </div>
+    </div>
+    <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Historial de evaluaciones (${evs.length})</h3>
+    <div class="grid gap-2 md:grid-cols-2">${historial}</div>`;
+};
+// Redibuja el radar con los sliders actuales (la nueva evaluación, en vivo)
+window.evRadarLive = (jid) => {
+  const base = evaluacionesDe(jid)[0] || null;
+  const attrs = Object.fromEntries(ATRIBUTOS.map(([k]) => [k, +val('ev_' + k) || 0]));
+  if (el('evRadar')) el('evRadar').innerHTML = radarSVG([
+    base ? { attrs: base, color: '#171e2e', dash: '5,4' } : null,
+    { attrs, color: '#d9232e', fill: 'rgba(217,35,46,0.18)' },
+  ]);
+};
 window.guardarEvaluacion = (jid) => {
   const periodo = val('ev_mes');
   if (!periodo) { toast('Elige el mes de la evaluación'); return; }
   const j = jugador(jid);
   const attrs = {};
-  ATRIBUTOS.forEach(([k]) => { const v = val('ev_' + k); attrs[k] = v === '' ? null : Math.max(0, Math.min(100, parseInt(v, 10) || 0)); });
+  ATRIBUTOS.forEach(([k]) => { attrs[k] = Math.max(0, Math.min(100, parseInt(val('ev_' + k), 10) || 0)); });
   const peso = val('ev_peso') === '' ? null : num('ev_peso');
   const talla = val('ev_talla') === '' ? null : num('ev_talla');
   const obs = val('ev_obs').trim() || null;
@@ -1563,13 +1622,12 @@ window.guardarEvaluacion = (jid) => {
   else DB.evaluaciones.push({ id: uid('ev'), jugador_id: jid, periodo, ...attrs, peso, talla, observaciones: obs });
   // el cromo del alumno refleja SIEMPRE la evaluación más reciente (y se sincroniza a Competencias)
   const reciente = evaluacionesDe(jid)[0];
-  if (reciente && ATRIBUTOS.some(([k]) => reciente[k] != null)) {
+  if (reciente) {
     j.atributos = {};
     ATRIBUTOS.forEach(([k]) => { j.atributos[k] = reciente[k] ?? 0; });
   }
-  FICHA_ADD_EVAL = false;
   toast(`📈 Evaluación de ${mesLabelDe(periodo)} guardada`);
-  renderFichaEvalua(jid);
+  pantallaEvaluacion(jid);
 };
 
 // =====================================================================
