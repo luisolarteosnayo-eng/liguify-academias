@@ -1747,7 +1747,7 @@ function njFormBody(j, tracksJid) {
           <span class="text-xs text-slate-400">Autorizado por el tutor. En torneos la foto del alumno sale a color; sin consentimiento, en blanco y negro.</span></span>
         <input type="checkbox" id="nj_consent" ${g.consentimiento_imagen ? 'checked' : ''} class="mt-1 h-4 w-4 accent-indigo-600">
       </label>
-      ${field('Teléfono de contacto del alumno', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
+      ${!g.tutor_id ? field('Celular del tutor', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`) : ''}
       ${(() => {
         const t = g.tutor_id ? tutor(g.tutor_id) : null;
         if (!t) return '';
@@ -2752,7 +2752,7 @@ window.guardarEdicionAlumno = async (e, jid) => {
     pais_documento: (el('nj_paisdoc') && val('nj_paisdoc')) || 'PE',
     consentimiento_imagen: consEd,
     consentimiento_fecha: consEd ? (j.consentimiento_fecha || new Date().toISOString()) : null,
-    telefono: `${val('nj_paistel')} ${val('nj_tel')}`.trim(), foto_url: NJ_FOTO,
+    foto_url: NJ_FOTO,   // el teléfono es único y es del tutor (los menores no tienen)
     tipo_sangre: val('nj_sangre') || null, notas_medicas: val('nj_notas') || null, historial_lesiones: val('nj_lesiones') || null,
     alergias: val('nj_alergias') || null, otras_actividades: val('nj_otras') || null,
     numero_camiseta: val('nj_num') ? num('nj_num') : null, nombre_camiseta: val('nj_nomcam') || null, posicion_juego: val('nj_pos') || null,
@@ -2867,7 +2867,7 @@ window.guardarNuevoJugador = async (e, tid) => {
     pais_documento: (el('nj_paisdoc') && val('nj_paisdoc')) || 'PE',
     consentimiento_imagen: consNu,
     consentimiento_fecha: consNu ? new Date().toISOString() : null,
-    telefono: tel, foto_url: NJ_FOTO,
+    foto_url: NJ_FOTO,   // el teléfono queda solo en el tutor
     tipo_sangre: val('nj_sangre') || null, notas_medicas: val('nj_notas') || null,
     historial_lesiones: val('nj_lesiones') || null, alergias: val('nj_alergias') || null,
     otras_actividades: val('nj_otras') || null,
