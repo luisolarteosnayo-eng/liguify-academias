@@ -845,6 +845,11 @@ const SCREENS = {
               + (esDataURL(DB.academia.logo_url) ? 1 : 0);
             return n ? `<button onclick="migrarImagenesStorage()" class="mt-2 ml-2 inline-block rounded-lg bg-amber-50 ring-1 ring-amber-300 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100">🖼️ Optimizar imágenes (${n} por migrar a Storage)</button>` : '';
           })()}
+          ${(() => {
+            if (ROL !== 'admin') return '';
+            const nDup = tutoresContaminados().length;
+            return nDup ? `<button onclick="limpiarTutoresDuplicados()" class="mt-2 ml-2 inline-block rounded-lg bg-rose-50 ring-1 ring-rose-300 px-3 py-1 text-xs text-rose-700 hover:bg-rose-100">🧽 Limpiar datos duplicados de tutores (${nDup})</button>` : '';
+          })()}
         </div>
         <div class="flex gap-1 border-b border-slate-200 mb-6 text-sm overflow-x-auto">
           ${tabs.map((t) => `
@@ -4255,6 +4260,34 @@ window.migrarImagenesStorage = async () => {
   });
   if (logoEmp) await paso(async () => { DB.academia.logo_url = await subirMediaPublica(DB.academia.logo_url, `${aid}/logos/empresa.jpg`); });
   toast(err ? `Migración: ${ok} ok · ${err} con error — vuelve a ejecutarla para reintentar` : `✓ ${ok} imagen(es) migradas · espera el punto verde (sync) antes de cerrar`);
+  SCREENS.config();
+};
+
+// ---------- Limpieza de datos duplicados de tutores ----------
+// Un tutor compartido por 3+ alumnos no es una familia real: son restos de los
+// placeholders, y sus datos (nombre/teléfono/DNI copiados, ej. "Jacqueline")
+// aparecen repetidos en todos esos niños. Esta utilidad PONE EN BLANCO los
+// datos de esos tutores (no borra filas ni toca cargos/pagos/alumnos) para que
+// el operador vea "falta" y registre al papá real de cada niño desde su ficha.
+// Los tutores con 1–2 hijos (hermanos legítimos) no se tocan.
+function tutoresContaminados() {
+  const conteo = {};
+  DB.jugadores.forEach((j) => { conteo[j.tutor_id] = (conteo[j.tutor_id] || 0) + 1; });
+  return DB.tutores.filter((t) => (conteo[t.id] || 0) >= 3
+    && (t.dni_tutor || t.nombres || t.email_tutor || t.ruc || t.razon_social || (t.telefono_celular || '').replace(/\D/g, '').length >= 7))
+    .map((t) => ({ t, hijos: conteo[t.id] }));
+}
+window.limpiarTutoresDuplicados = () => {
+  if (ROL !== 'admin') { toast('Solo el Administrador puede ejecutar esta limpieza'); return; }
+  const sospechosos = tutoresContaminados();
+  if (!sospechosos.length) { toast('✓ No hay tutores compartidos con datos duplicados'); return; }
+  const lista = sospechosos.map(({ t, hijos }) => `· ${t.nombres || '(sin nombre)'}${t.dni_tutor ? ' · DNI ' + t.dni_tutor : ''} — compartido por ${hijos} alumnos`).join('\n');
+  if (!confirm(`🧽 LIMPIAR DATOS DUPLICADOS DE TUTORES\n\nEstos tutores están compartidos por 3 o más alumnos (no son familias reales) y sus datos se repiten en todos ellos:\n\n${lista}\n\nSe pondrán EN BLANCO su DNI, nombre, teléfono, email, RUC y razón social, para que el operador registre al papá real de cada niño desde su ficha. No se borra ningún tutor ni se tocan cargos, pagos ni alumnos. Los tutores de 1–2 hijos (hermanos) no se modifican.\n\n¿Continuar?`)) return;
+  sospechosos.forEach(({ t }) => {
+    t.dni_tutor = null; t.nombres = null; t.telefono_celular = '';
+    t.email_tutor = null; t.ruc = null; t.razon_social = null; t.perfil_reclamado = false;
+  });
+  toast(`🧽 ${sospechosos.length} tutor(es) puestos en blanco · el reporte Tutores · facturación muestra ahora lo que falta registrar`);
   SCREENS.config();
 };
 
