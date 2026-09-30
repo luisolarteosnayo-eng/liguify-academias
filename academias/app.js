@@ -1747,7 +1747,7 @@ function njFormBody(j, tracksJid) {
           <span class="text-xs text-slate-400">Autorizado por el tutor. En torneos la foto del alumno sale a color; sin consentimiento, en blanco y negro.</span></span>
         <input type="checkbox" id="nj_consent" ${g.consentimiento_imagen ? 'checked' : ''} class="mt-1 h-4 w-4 accent-indigo-600">
       </label>
-      ${field('Teléfono', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
+      ${field('Teléfono de contacto del alumno', `<div class="flex gap-2">${sel('nj_paistel', PAISES_TEL, pais)}${input('nj_tel', `value="${esc(tel)}" placeholder="999 888 777"`)}</div>`)}
       ${(() => {
         const t = g.tutor_id ? tutor(g.tutor_id) : null;
         if (!t) return '';
@@ -1756,6 +1756,10 @@ function njFormBody(j, tracksJid) {
           <div class="grid grid-cols-2 gap-3">
             ${field('DNI del tutor *', input('tut_dni', `value="${esc(t.dni_tutor)}" placeholder="DNI del padre/madre"`))}
             ${field('Nombre completo del tutor', input('tut_nombre', `value="${esc(t.nombres)}" placeholder="Como irá en la boleta"`))}
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            ${field('Teléfono del tutor', input('tut_tel', `value="${esc(t.telefono_celular)}" placeholder="999 888 777"`))}
+            ${field('Email del tutor', input('tut_email', `type="email" value="${esc(t.email_tutor)}" placeholder="correo@mail.com"`))}
           </div>
           <div class="grid grid-cols-2 gap-3">
             ${field('RUC (solo si pide factura)', input('tut_ruc', `value="${esc(t.ruc)}" placeholder="20XXXXXXXXX"`))}
@@ -2428,7 +2432,11 @@ function filasReporteTutores() {
     const boletaOk = dniTutorOk(t.dni_tutor) && !!t.nombres;
     const facturaOk = !!t.ruc && !!t.razon_social;
     const facturaAMedias = (!!t.ruc) !== (!!t.razon_social);
-    return { j, t, boletaOk, facturaOk, facturaAMedias };
+    // Teléfono: el del tutor; si está vacío o es solo el prefijo, cae al contacto del alumno
+    const telT = (t.telefono_celular || '').trim();
+    const telTutorReal = telT && telT !== '+51';
+    const telefono = telTutorReal ? telT : ((j.telefono || '').trim().replace(/^\+51$/, '') || '');
+    return { j, t, boletaOk, facturaOk, facturaAMedias, telefono, telDelAlumno: !telTutorReal && !!telefono };
   }).sort((a, b) => (a.boletaOk === b.boletaOk ? nom(a.j).localeCompare(nom(b.j), 'es') : a.boletaOk ? 1 : -1));
 }
 window.reporteTutores = () => {
@@ -2455,7 +2463,7 @@ window.reporteTutores = () => {
         anio(f.j.fecha_nacimiento),
         f.t.nombres || '<span class="text-rose-600 font-medium">(sin nombre)</span>',
         dniTutorOk(f.t.dni_tutor) ? f.t.dni_tutor : `<span class="text-rose-600 font-medium">${f.t.dni_tutor || '—'} ⚠</span>`,
-        f.t.telefono_celular || '<span class="text-slate-300">—</span>',
+        f.telefono ? `${f.telefono}${f.telDelAlumno ? ' <span class="text-[10px] text-amber-600" title="Tomado del contacto del alumno; el tutor no tiene teléfono propio">(del alumno)</span>' : ''}` : '<span class="text-slate-300">—</span>',
         f.t.email_tutor || '<span class="text-slate-300">—</span>',
         f.t.ruc || '<span class="text-slate-300">—</span>',
         f.t.razon_social || (f.facturaAMedias ? '<span class="text-amber-600">⚠ falta</span>' : '<span class="text-slate-300">—</span>'),
@@ -2475,7 +2483,7 @@ window.exportarReporteTutores = () => {
     ${td(anio(f.j.fecha_nacimiento))}
     ${td(esc(f.t.nombres || ''), f.t.nombres ? '' : '#c11d27')}
     ${td(esc(f.t.dni_tutor || ''), dniTutorOk(f.t.dni_tutor) ? '' : '#c11d27')}
-    ${td(esc(f.t.telefono_celular || ''))}
+    ${td(esc(f.telefono || '') + (f.telDelAlumno ? ' (del alumno)' : ''))}
     ${td(esc(f.t.email_tutor || ''))}
     ${td(esc(f.t.ruc || ''))}
     ${td(esc(f.t.razon_social || ''))}
@@ -2732,6 +2740,8 @@ window.guardarEdicionAlumno = async (e, jid) => {
       tEd.dni_tutor = nuevoDni;
     }
     tEd.nombres = val('tut_nombre').trim() || null;
+    tEd.telefono_celular = val('tut_tel').trim() || tEd.telefono_celular;
+    tEd.email_tutor = val('tut_email').trim() || null;
     tEd.ruc = val('tut_ruc').trim() || null;
     tEd.razon_social = val('tut_razon').trim() || null;
   }
