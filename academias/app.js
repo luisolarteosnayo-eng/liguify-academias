@@ -970,6 +970,7 @@ const SCREENS = {
 
     el('content').innerHTML = `
       <div class="mb-4 flex flex-wrap justify-end gap-2">
+        <button onclick="reporteTutores()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">👪 Tutores · facturación</button>
         <button onclick="formGenerarCR()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">⚙️ Generar CR por ciclo</button>
         <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
         <button onclick="formPago()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Registrar pago</button>
@@ -2416,6 +2417,69 @@ window.exportarSunat = () => {
   filas.forEach((p) => { p.sunat_exportado = HOY; });   // marca de control anti doble emisión
   toast(`✓ ${filas.length} pago(s) exportados para SUNAT · quedan marcados 📄`);
   SCREENS.tesoreria();
+};
+
+// ---------- Reporte de tutores: datos listos para emitir boleta/factura ----------
+window.reporteTutores = () => {
+  const dniOk = (d) => /^\d{8}$/.test(d || '');   // DNI peruano válido (8 dígitos; excluye 0000 y S/D-…)
+  const tIds = tutoresSede();
+  const filas = DB.tutores.filter((t) => tIds.has(t.id)).map((t) => {
+    const hijos = alumnosSede().filter((j) => j.tutor_id === t.id);
+    const boletaOk = dniOk(t.dni_tutor) && !!t.nombres;
+    const facturaOk = !!t.ruc && !!t.razon_social;
+    const facturaAMedias = (!!t.ruc) !== (!!t.razon_social);
+    return { t, hijos, boletaOk, facturaOk, facturaAMedias };
+  }).sort((a, b) => (a.boletaOk === b.boletaOk ? nomTut(a.t).localeCompare(nomTut(b.t), 'es') : a.boletaOk ? 1 : -1));
+  function nomTut(t) { return t.nombres || 'DNI ' + t.dni_tutor; }
+  const listos = filas.filter((f) => f.boletaOk).length;
+  const conRuc = filas.filter((f) => f.facturaOk).length;
+  const incompletos = filas.length - listos;
+  const chip = (ok, txtOk, txtNo) => ok
+    ? `<span class="text-emerald-600 text-xs font-medium">✓ ${txtOk}</span>`
+    : `<span class="text-rose-600 text-xs font-medium">✗ ${txtNo}</span>`;
+  openModal(`👪 Tutores · datos de facturación (${sede(SEDE_ACTUAL).nombre_sede})`, `
+    <div class="mb-3 flex flex-wrap gap-2 text-xs">
+      <span class="rounded-lg bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 px-2.5 py-1.5">Listos para boleta: <b>${listos}/${filas.length}</b></span>
+      <span class="rounded-lg ${incompletos ? 'bg-rose-50 ring-rose-200 text-rose-700' : 'bg-slate-100 ring-slate-200 text-slate-500'} ring-1 px-2.5 py-1.5">Incompletos: <b>${incompletos}</b></span>
+      <span class="rounded-lg bg-sky-50 ring-1 ring-sky-200 text-sky-700 px-2.5 py-1.5">Con RUC (factura): <b>${conRuc}</b></span>
+      <span class="flex-1"></span>
+      <button onclick="exportarReporteTutores()" class="rounded-lg bg-white ring-1 ring-slate-300 px-2.5 py-1.5 text-slate-700 hover:bg-slate-50">⬇ Exportar CSV</button>
+    </div>
+    <div class="max-h-[60vh] overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
+      ${filas.map((f) => `
+        <div class="px-3 py-2.5 ${f.boletaOk ? '' : 'bg-rose-50/50'}">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <b class="text-sm ${f.boletaOk ? 'text-slate-700' : 'text-rose-700'}">${f.t.nombres || '(sin nombre)'}</b>
+              <span class="text-xs text-slate-400"> · ${f.hijos.map((h) => nom(h)).join(', ') || 'sin alumnos'}</span>
+            </div>
+            ${f.hijos[0] ? `<button onclick="closeModal(); formEditarAlumno('${f.hijos[0].id}'); njTab('personal')" class="shrink-0 text-indigo-600 hover:underline text-xs">Completar →</button>` : ''}
+          </div>
+          <div class="mt-1 flex flex-wrap gap-3">
+            ${chip(dniOk(f.t.dni_tutor), 'DNI ' + f.t.dni_tutor, 'DNI ' + (f.t.dni_tutor || 'falta') + ' (corregir)')}
+            ${chip(!!f.t.nombres, 'Nombre', 'Sin nombre')}
+            ${f.t.ruc || f.t.razon_social
+              ? `${chip(!!f.t.ruc, 'RUC ' + f.t.ruc, 'Falta RUC')} ${chip(!!f.t.razon_social, f.t.razon_social, 'Falta razón social')}${f.facturaAMedias ? ' <span class="text-amber-600 text-xs">⚠ factura a medias</span>' : ''}`
+              : '<span class="text-slate-300 text-xs">— sin factura (solo boleta)</span>'}
+          </div>
+        </div>`).join('') || '<p class="p-4 text-sm text-slate-400">No hay tutores con alumnos en esta sede.</p>'}
+    </div>`);
+};
+window.exportarReporteTutores = () => {
+  const dniOk = (d) => /^\d{8}$/.test(d || '');
+  const tIds = tutoresSede();
+  const esc = (x) => '"' + String(x ?? '').replace(/"/g, '""') + '"';
+  const cab = ['dni_tutor', 'dni_valido', 'nombre', 'ruc', 'razon_social', 'listo_boleta', 'listo_factura', 'alumnos'];
+  const lineas = DB.tutores.filter((t) => tIds.has(t.id)).map((t) => {
+    const hijos = alumnosSede().filter((j) => j.tutor_id === t.id).map((j) => nom(j)).join(' | ');
+    return [t.dni_tutor, dniOk(t.dni_tutor) ? 'SI' : 'NO', t.nombres || '', t.ruc || '', t.razon_social || '',
+      (dniOk(t.dni_tutor) && t.nombres) ? 'SI' : 'NO', (t.ruc && t.razon_social) ? 'SI' : 'NO', hijos].map(esc).join(',');
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + cab.join(',') + '\n' + lineas.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `tutores_facturacion_${((sede(SEDE_ACTUAL) || {}).nombre_sede || 'sede').replace(/\s+/g, '_')}_${HOY}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('✓ Reporte de tutores exportado');
 };
 
 // ---------- Aprobación de pagos (Tesorería) ----------
