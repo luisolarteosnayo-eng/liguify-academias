@@ -1751,8 +1751,11 @@ function njFormBody(j, tracksJid) {
         const t = g.tutor_id ? tutor(g.tutor_id) : null;
         if (!t) return '';
         return `<div class="mb-3 rounded-lg ring-1 ring-slate-200 p-3">
-          <div class="mb-2 text-xs font-medium text-slate-500">Tutor · DNI ${t.dni_tutor} <span class="text-slate-400">(datos para boleta/factura)</span></div>
-          ${field('Nombre completo del tutor', input('tut_nombre', `value="${esc(t.nombres)}" placeholder="Como irá en la boleta"`))}
+          <div class="mb-2 text-xs font-medium text-slate-500">Tutor <span class="text-slate-400">(datos para boleta/factura — el documento del alumno, arriba, es otro dato)</span></div>
+          <div class="grid grid-cols-2 gap-3">
+            ${field('DNI del tutor *', input('tut_dni', `value="${esc(t.dni_tutor)}" placeholder="DNI del padre/madre"`))}
+            ${field('Nombre completo del tutor', input('tut_nombre', `value="${esc(t.nombres)}" placeholder="Como irá en la boleta"`))}
+          </div>
           <div class="grid grid-cols-2 gap-3">
             ${field('RUC (solo si pide factura)', input('tut_ruc', `value="${esc(t.ruc)}" placeholder="20XXXXXXXXX"`))}
             ${field('Razón social', input('tut_razon', `value="${esc(t.razon_social)}" placeholder="Empresa S.A.C."`))}
@@ -2646,6 +2649,13 @@ window.guardarEdicionAlumno = async (e, jid) => {
   // Datos de facturación del tutor (compartidos entre hermanos)
   const tEd = tutor(j.tutor_id);
   if (tEd && el('tut_nombre')) {
+    const nuevoDni = val('tut_dni').trim();
+    if (nuevoDni && nuevoDni !== tEd.dni_tutor) {
+      if (DB.tutores.some((x) => x.id !== tEd.id && x.dni_tutor === nuevoDni)) {
+        toast(`⚠ Ya existe otro tutor con DNI ${nuevoDni}; el DNI no se cambió`); njTab('personal'); return;
+      }
+      tEd.dni_tutor = nuevoDni;
+    }
     tEd.nombres = val('tut_nombre').trim() || null;
     tEd.ruc = val('tut_ruc').trim() || null;
     tEd.razon_social = val('tut_razon').trim() || null;
