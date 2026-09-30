@@ -2744,10 +2744,13 @@ function pagosDocsHTML(jid) {
       <div class="flex items-start justify-between">
         <div>
           <div class="font-semibold">Documento de pago · ${fmtDMY(p.fecha)}</div>
-          <div class="text-xs text-slate-500">${p.medio || ''}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}${p.voucher_url ? ' · voucher ✔' : ''}</div>
+          <div class="text-xs text-slate-500">${p.medio || ''}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}</div>
           <div class="text-[11px] text-slate-400">Fecha de pago: ${fmtDMY(p.fecha)}${regDMY(p) ? ` · Registrado en sistema: ${regDMY(p)}${regDMY(p) !== fmtDMY(p.fecha) ? ' <span class="text-amber-600">(regularización)</span>' : ''}` : ''}</div>
         </div>
-        <div class="text-lg font-bold text-emerald-600">${S(p.total ?? p.monto ?? 0)}</div>
+        <div class="text-right shrink-0">
+          <div class="text-lg font-bold text-emerald-600">${S(p.total ?? p.monto ?? 0)}</div>
+          ${p.voucher_url ? `<button type="button" onclick="verComprobante('${p.id}')" class="mt-1 text-xs text-indigo-600 hover:underline">🖼️ Ver voucher</button>` : ''}
+        </div>
       </div>
       <div class="mt-2 border-t border-slate-100 pt-2 space-y-1">
         ${(p.detalle || []).map((d) => `<div class="flex justify-between text-sm">
