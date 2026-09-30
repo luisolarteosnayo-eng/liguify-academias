@@ -2773,21 +2773,44 @@ window.guardarEdicionAlumno = async (e, jid) => {
     catch (ex) { console.warn('[foto] fallback dataURL:', ex); }
   }
   const consEd = el('nj_consent') ? el('nj_consent').checked : !!j.consentimiento_imagen;
-  // Datos de facturación del tutor (compartidos entre hermanos)
+  // Datos del tutor. Cada niño tiene su propio padre: si el tutor está compartido
+  // (placeholder tipo DNI 0000 con varios niños) y aquí se cambia el DNI, este
+  // alumno se SEPARA a su propio tutor y los demás conservan el registro anterior.
   const tEd = tutor(j.tutor_id);
   if (tEd && el('tut_nombre')) {
     const nuevoDni = val('tut_dni').trim();
+    const datos = {
+      nombres: val('tut_nombre').trim() || null,
+      email_tutor: val('tut_email').trim() || null,
+      ruc: val('tut_ruc').trim() || null,
+      razon_social: val('tut_razon').trim() || null,
+    };
+    const telNuevo = val('tut_tel').trim() || null;
+    const hermanos = DB.jugadores.filter((x) => x.tutor_id === tEd.id && x.id !== j.id);
+    let destino = tEd;
     if (nuevoDni && nuevoDni !== tEd.dni_tutor) {
-      if (DB.tutores.some((x) => x.id !== tEd.id && x.dni_tutor === nuevoDni)) {
-        toast(`⚠ Ya existe otro tutor con DNI ${nuevoDni}; el DNI no se cambió`); njTab('personal'); return;
+      const existente = DB.tutores.find((x) => x.id !== tEd.id && x.dni_tutor === nuevoDni);
+      if (existente) {
+        destino = existente;               // ya hay un tutor con ese DNI: este alumno pasa a él
+      } else if (hermanos.length) {
+        // tutor compartido: crear uno propio para ESTE alumno, sin tocar a los demás
+        destino = { id: uid('tu'), dni_tutor: nuevoDni, telefono_celular: telNuevo || '', perfil_reclamado: false };
+        DB.tutores.push(destino);
+      } else {
+        tEd.dni_tutor = nuevoDni;          // tutor con un solo hijo: corregir el DNI en el mismo registro
       }
-      tEd.dni_tutor = nuevoDni;
+      if (destino !== tEd) {
+        j.tutor_id = destino.id;
+        // los cargos y pagos de ESTE alumno siguen a su tutor real
+        DB.cargos.forEach((c) => { if (c.jugador_id === j.id) c.tutor_id = destino.id; });
+        DB.pagos.forEach((p) => { if (p.jugador_id === j.id) p.tutor_id = destino.id; });
+        toast(`👪 Tutor propio para ${nom(j)} · los otros ${hermanos.length} alumno(s) conservan su tutor`);
+      }
+    } else if (hermanos.length && (datos.nombres !== (tEd.nombres || null) || telNuevo)) {
+      toast(`ℹ Los datos del tutor aplican también a sus otros ${hermanos.length} alumno(s); si es otro papá, cambia el DNI`);
     }
-    tEd.nombres = val('tut_nombre').trim() || null;
-    tEd.telefono_celular = val('tut_tel').trim() || tEd.telefono_celular;
-    tEd.email_tutor = val('tut_email').trim() || null;
-    tEd.ruc = val('tut_ruc').trim() || null;
-    tEd.razon_social = val('tut_razon').trim() || null;
+    Object.assign(destino, datos);
+    if (telNuevo) destino.telefono_celular = telNuevo;
   }
   Object.assign(j, {
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
