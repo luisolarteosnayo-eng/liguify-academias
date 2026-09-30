@@ -1066,8 +1066,11 @@ const SCREENS = {
             ${esVencido ? `<div class="text-xs text-rose-500">${S(a.totalVenc)} vencido</div>` : ''}
           </div>
         </div>
-        <div class="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-          ${tel ? `<a href="https://wa.me/51${wa}" target="_blank" class="text-emerald-600 hover:underline">📱 ${tel}</a>` : '<span class="text-slate-400">sin teléfono</span>'}
+        <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-xs">
+          ${tel
+            ? `<button onclick="waCobro('${j.id}')" class="rounded-lg bg-emerald-600 px-2.5 py-1.5 font-medium text-white hover:bg-emerald-700">💬 Enviar cobro</button>`
+            : '<span class="text-slate-400">sin teléfono</span>'}
+          ${j.ultimo_recordatorio ? `<span class="text-slate-400" title="Último recordatorio de cobro enviado">🔔 ${fmtDMY(j.ultimo_recordatorio)}</span>` : ''}
           <button onclick="formDocumentoCuenta('${j.id}')" class="font-medium text-indigo-600 hover:underline">Ver estado de cuenta</button>
         </div>
       </div>`;
@@ -2383,6 +2386,47 @@ window.guardarPagoAlumno = async (e, jid) => {
   toast(`✓ Pago registrado · ${S(total)}`);
   formEditarAlumno(jid);   // reabre la ficha del alumno...
   njTab('pagos');          // ...en la pestaña Pagos, con el documento recién creado
+};
+
+// ---------- Cobranza por WhatsApp (wa.me con mensaje personalizado) ----------
+// Normaliza a formato internacional sin '+': 9 dígitos peruanos → 51XXXXXXXXX
+function waNumero(tel) {
+  let d = String(tel || '').replace(/\D/g, '');
+  if (d.length === 9 && d.startsWith('9')) d = '51' + d;
+  return d.length >= 10 ? d : '';
+}
+window.waCobro = (jid) => {
+  const j = jugador(jid); if (!j) return;
+  const t = tutor(j.tutor_id) || {};
+  const tel = t.telefono_celular || j.telefono || '';
+  const num = waNumero(tel);
+  if (!num) { toast('El tutor no tiene un teléfono válido'); return; }
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const pend = DB.cargos.filter((c) => c.jugador_id === jid && saldoC(c) > 0)
+    .sort((a, b) => ((a.fecha_vencimiento || '') < (b.fecha_vencimiento || '') ? -1 : 1));
+  if (!pend.length) { toast('El alumno no tiene deuda pendiente'); return; }
+  const total = pend.reduce((s, c) => s + saldoC(c), 0);
+  const lineas = pend.map((c) => `• ${descCargo(c)}${c.fecha_vencimiento ? ` (vence ${fmtDMY(c.fecha_vencimiento)})` : ''}: S/ ${saldoC(c).toFixed(2)}${c.fecha_vencimiento && c.fecha_vencimiento < HOY ? ' ⚠️ VENCIDO' : ''}`).join('\n');
+  const medios = mediosPagoSede().map((m) => m.nombre).filter((n) => n.toLowerCase() !== 'efectivo').join(', ');
+  const msj = `Hola${t.nombres ? ' ' + t.nombres.split(' ')[0] : ''} 👋\n`
+    + `Le saludamos de *${sede(j.sede_id) ? sede(j.sede_id).nombre_sede : DB.academia.nombre_academia}*.\n`
+    + `Le recordamos los pagos pendientes de *${nom(j)}*:\n\n${lineas}\n\n*Total pendiente: S/ ${total.toFixed(2)}*\n\n`
+    + (medios ? `Puede pagar por ${medios} y enviarnos el voucher por este medio. ` : '')
+    + `¡Gracias! 🙌`;
+  openModal(`💬 Cobro por WhatsApp · ${nom(j)}`, `
+    <p class="mb-2 text-xs text-slate-500">Se abrirá WhatsApp al número <b>${tel}</b> con este mensaje (puedes editarlo antes):</p>
+    <textarea id="wa_msj" rows="11" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">${msj.replace(/</g, '&lt;')}</textarea>
+    <div class="mt-3 flex justify-end gap-2">
+      <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
+      <button type="button" onclick="waCobroEnviar('${jid}', '${num}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">📲 Abrir WhatsApp</button>
+    </div>`);
+};
+window.waCobroEnviar = (jid, num) => {
+  const j = jugador(jid); if (!j) return;
+  window.open(`https://wa.me/${num}?text=${encodeURIComponent(val('wa_msj'))}`, '_blank');
+  j.ultimo_recordatorio = HOY;   // marca de control (visible en Por cobrar)
+  closeModal(); toast('🔔 Recordatorio registrado · WhatsApp abierto');
+  go('porcobrar');
 };
 
 // ---------- Exportación de pagos para SUNAT (documentos fiscales) ----------
