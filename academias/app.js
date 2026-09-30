@@ -454,6 +454,7 @@ let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
 let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (o null)
 let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto en la pestaña Tracks
 let FICHA_ADD_TRACK = false;   // panel "Agregar a un nuevo track" expandido en la ficha
+let FICHA_ADD_CNR = false;     // panel "Agregar CNR" expandido en la ficha
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 let GASTO_MES = null;          // mes visible de la pantalla de Gastos; null = mes de HOY
 let TES_MES = '';              // filtro de periodo en Documentos de pago ('' = todos, 'YYYY-MM')
@@ -2019,9 +2020,22 @@ function cnrFormHTML(jid) {
   const cnrCat = conceptosCNRSede();
   const cnrs = DB.cargos.filter((c) => c.jugador_id === jid && c.tipo === 'CNR');
   const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  // Colapsado por defecto: solo el enlace; al hacer clic aparece el formulario
+  if (!FICHA_ADD_CNR) {
+    return `
+    <div class="mb-4"><button type="button" onclick="FICHA_ADD_CNR = true; renderFichaCNR('${jid}')" class="text-sm font-medium text-indigo-600 hover:underline">➕ Agregar cargo no recurrente (CNR)</button></div>
+    <div class="text-xs font-medium text-slate-500 mb-2">CNRs del alumno (${cnrs.length})</div>
+    ${cnrs.length ? table(['Concepto', 'Vence', 'Monto', 'Estado'],
+      cnrs.map((c) => [descCargo(c), c.fecha_vencimiento ? fmtDMY(c.fecha_vencimiento) : '—', S(c.monto),
+        c.estado === 'pagado' ? badge('Pagado', 'emerald') : saldoC(c) > 0 && c.fecha_vencimiento && c.fecha_vencimiento < HOY ? badge('Vencido', 'rose') : c.estado === 'parcial' ? badge('Parcial', 'amber') : badge('Por pagar', 'amber')]))
+      : '<p class="text-sm text-slate-400">Sin CNRs registrados.</p>'}`;
+  }
   return `
     <div class="space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 mb-4">
-      <div class="text-xs font-medium text-slate-500">Agregar cargo no recurrente (CNR)</div>
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-slate-500">Agregar cargo no recurrente (CNR)</span>
+        <button type="button" onclick="FICHA_ADD_CNR = false; renderFichaCNR('${jid}')" class="text-xs text-slate-400 hover:text-slate-600">✕ Cerrar</button>
+      </div>
       ${cnrCat.length ? `
         <div class="flex gap-2">
           <select id="cnr_concepto" onchange="cnrAutoPrecio('cnr_concepto','cnr_monto');cnrTallaBox()" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
@@ -2292,6 +2306,7 @@ window.agregarCNR = (jid) => {
   } else {
     toast('Cargo CNR agregado');
   }
+  FICHA_ADD_CNR = false;   // al agregar, el panel se vuelve a plegar
   renderFichaCNR(jid);
   renderCuenta(jid);
 };
@@ -2822,6 +2837,7 @@ window.formEditarAlumno = (jid) => {
   CR_EDIT_ID = null;
   FICHA_CR_INSC = null;
   FICHA_ADD_TRACK = false;
+  FICHA_ADD_CNR = false;
   openModal(nom(j), `
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
