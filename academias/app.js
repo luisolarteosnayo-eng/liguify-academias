@@ -453,6 +453,7 @@ let PROMO_EDIT = null;         // id de promoción en edición (o null)
 let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
 let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (o null)
 let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto en la pestaña Tracks
+let FICHA_ADD_TRACK = false;   // panel "Agregar a un nuevo track" expandido en la ficha
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 let GASTO_MES = null;          // mes visible de la pantalla de Gastos; null = mes de HOY
 let TES_MES = '';              // filtro de periodo en Documentos de pago ('' = todos, 'YYYY-MM')
@@ -1853,9 +1854,15 @@ function fichaTracksHTML(jid) {
 
   const yaIds = new Set(insc.map((i) => i.track_id));
   const disp = tracksSede().filter((t) => !yaIds.has(t.id));
-  const addForm = disp.length
-    ? `<div class="mt-3 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
-         <div class="text-xs font-medium text-slate-500 mb-2">Agregar a un nuevo track</div>
+  const addForm = !disp.length
+    ? '<p class="mt-3 text-xs text-slate-400">El alumno ya está en todos los tracks de la sede.</p>'
+    : !FICHA_ADD_TRACK
+    ? `<div class="mt-3"><button type="button" onclick="FICHA_ADD_TRACK = true; renderFichaTracks('${jid}')" class="text-sm font-medium text-indigo-600 hover:underline">➕ Agregar a un nuevo track</button></div>`
+    : `<div class="mt-3 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
+         <div class="mb-2 flex items-center justify-between">
+           <span class="text-xs font-medium text-slate-500">Agregar a un nuevo track</span>
+           <button type="button" onclick="FICHA_ADD_TRACK = false; renderFichaTracks('${jid}')" class="text-xs text-slate-400 hover:text-slate-600">✕ Cerrar</button>
+         </div>
          <div class="flex gap-2 mb-2">
            <select id="nj_addtrack" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
              ${disp.map((t) => `<option value="${t.id}">${t.nombre_track} · ${S(t.mensualidad_sugerida)}</option>`).join('')}
@@ -1870,8 +1877,7 @@ function fichaTracksHTML(jid) {
            <input id="nj_addobs" placeholder="Observaciones (opcional, ej. precio especial por convenio)" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm">
            <button type="button" onclick="agregarInscripcion('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
          </div>
-       </div>`
-    : '<p class="mt-3 text-xs text-slate-400">El alumno ya está en todos los tracks de la sede.</p>';
+       </div>`;
   return `<div class="space-y-2">${lista}</div>${promoLink}${addForm}`;
 }
 window.renderFichaTracks = (jid) => { if (el('nj_tracks')) el('nj_tracks').innerHTML = fichaTracksHTML(jid); };
@@ -1909,6 +1915,7 @@ window.agregarInscripcion = (jid) => {
   } else {
     DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: inicio, ultima_fecha_corte: null, observaciones: obs });
   }
+  FICHA_ADD_TRACK = false;   // al agregar, el panel se vuelve a plegar
   toast(`Agregado a ${t.nombre_track} (genera su CR desde Estado de cuenta)`); renderFichaTracks(jid); renderCuenta(jid);
 };
 
@@ -2814,6 +2821,7 @@ window.formEditarAlumno = (jid) => {
   NJ_FOTO = j.foto_url || null;
   CR_EDIT_ID = null;
   FICHA_CR_INSC = null;
+  FICHA_ADD_TRACK = false;
   openModal(nom(j), `
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
