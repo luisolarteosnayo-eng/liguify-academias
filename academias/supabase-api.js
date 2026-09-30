@@ -76,6 +76,15 @@ window.AcademiasDB = (() => {
         categoria_inmutable: j.categoria_inmutable || new Date(j.fecha_nacimiento + 'T00:00:00').getFullYear() }),
       fromRow: (r) => ({ ...r, numero_camiseta: N(r.numero_camiseta) }),
     },
+    evaluaciones: {
+      table: 'evaluaciones',
+      toRow: (e) => ({ ...pick(e, ['id', 'jugador_id', 'periodo', 'observaciones']),
+        velocidad: N(e.velocidad), potencia: N(e.potencia), agilidad: N(e.agilidad),
+        tecnica: N(e.tecnica), pase: N(e.pase), defensa: N(e.defensa),
+        peso: N(e.peso), talla: N(e.talla), academia_id: ACADEMIA_ID }),
+      fromRow: (r) => ({ ...r, velocidad: N(r.velocidad), potencia: N(r.potencia), agilidad: N(r.agilidad),
+        tecnica: N(r.tecnica), pase: N(r.pase), defensa: N(r.defensa), peso: N(r.peso), talla: N(r.talla) }),
+    },
     inscripciones: {
       table: 'inscripciones',
       toRow: (i) => ({ ...pick(i, ['id', 'jugador_id', 'track_id', 'fecha_inscripcion', 'ultima_fecha_corte', 'ciclo_dia', 'observaciones']),
@@ -276,15 +285,16 @@ window.AcademiasDB = (() => {
     const perfiles = perfilQ.data || [];
     const perfil = perfiles[0] || null;
     const sel = (t) => sb.from(t).select('*');
-    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci, cg] = await Promise.all([
+    const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci, cg, ev] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
       sel('medios_pago'), sel('ciclos_pago'), sel('promociones'), sel('conceptos_cnr'),
       sel('procesos_facturacion'), sel('asistencias'), sel('inv_pedidos'), sel('inv_movimientos'),
       sel('torneos'), sel('torneo_categorias'), sel('torneo_jugadores'), sel('egresos'), sel('track_entrenadores'),
       sel('track_cierres'),
-      // tolerante: si la migración v18 aún no se aplicó, el catálogo va vacío (fallback en la app)
+      // tolerantes: si su migración aún no se aplicó, van vacíos
       sel('conceptos_gasto').then((r) => (r.error ? { data: [] } : r)),
+      sel('evaluaciones').then((r) => (r.error ? { data: [] } : r)),
     ]);
     const err = [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci].find((r) => r.error);
     if (err) throw err.error;
@@ -333,6 +343,7 @@ window.AcademiasDB = (() => {
       trackEntrenadores: te.data.map(T.trackEntrenadores.fromRow),
       trackCierres: tci.data.map(T.trackCierres.fromRow),
       conceptosGasto: cg.data.map(T.conceptosGasto.fromRow),
+      evaluaciones: ev.data.map(T.evaluaciones.fromRow),
     };
   }
 

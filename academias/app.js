@@ -194,6 +194,10 @@ const DB = {
 
   // Catálogo configurable de conceptos de gasto (vacío = usa los legados de CONCEPTOS_EGRESO)
   conceptosGasto: [],
+
+  // Evaluaciones mensuales del alumno: 6 atributos + peso/talla + observaciones del entrenador
+  // { id, jugador_id, periodo 'YYYY-MM', velocidad, potencia, agilidad, tecnica, pase, defensa, peso, talla, observaciones }
+  evaluaciones: [],
 };
 
 // ---------- Lookups ----------
@@ -435,7 +439,6 @@ const MENU = [
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero','cobranza'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
   { id: 'asistencia',  label: 'Asistencia',    icon: '✅', roles: ['admin','profesor'] },
-  { id: 'cromos',      label: 'Cromos',        icon: '🃏', roles: ['admin','profesor'] },
   { id: 'usuarios',    label: 'Usuarios',      icon: '👥', roles: ['admin','coordinador'] },
   { id: 'config',      label: 'Configuración', icon: '⚙️', roles: ['admin'] },
 ];
@@ -455,6 +458,7 @@ let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (
 let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto en la pestaña Tracks
 let FICHA_ADD_TRACK = false;   // panel "Agregar a un nuevo track" expandido en la ficha
 let FICHA_ADD_CNR = false;     // panel "Agregar CNR" expandido en la ficha
+let FICHA_ADD_EVAL = false;    // panel "Nueva evaluación" expandido en la ficha
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 let GASTO_MES = null;          // mes visible de la pantalla de Gastos; null = mes de HOY
 let TES_MES = '';              // filtro de periodo en Documentos de pago ('' = todos, 'YYYY-MM')
@@ -1163,22 +1167,6 @@ const SCREENS = {
     renderAsisList();
   },
 
-  cromos() {
-    const conCromo = alumnosSede().filter((j) => j.atributos);
-    const sinCromo = alumnosSede().filter((j) => !j.atributos);
-    el('content').innerHTML = `
-      <p class="text-sm text-slate-500 mb-4">Cromo de rendimiento · 6 atributos (Velocidad, Potencia, Agilidad, Técnica, Pase, Defensa)</p>
-      <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        ${conCromo.map(cromoCard).join('')}
-        ${sinCromo.map((j) => `
-          <div class="rounded-2xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center text-center text-slate-400">
-            <div class="text-3xl mb-2">🃏</div>
-            <div class="font-medium text-slate-600">${nom(j)}</div>
-            <div class="text-xs">Categoría ${anio(j.fecha_nacimiento)} · sin evaluar</div>
-            <button onclick="formCromo('${j.id}')" class="mt-3 text-xs text-indigo-600 hover:underline">Evaluar 6 atributos</button>
-          </div>`).join('')}
-      </div>`;
-  },
 };
 
 // ---------- Asistencia (mobile-first, funcional) ----------
@@ -1493,9 +1481,96 @@ function cromoCard(j) {
             <span class="w-6 text-right font-semibold">${v}</span>
           </div>`).join('')}
       </div>
-      <button onclick="formCromo('${j.id}')" class="mt-4 w-full rounded-lg bg-white/15 hover:bg-white/25 py-1.5 text-xs font-medium">Re-evaluar</button>
     </div>`;
 }
+
+// ---------- Evaluación mensual del alumno (atributos + peso/talla + observaciones) ----------
+const ATRIBUTOS = [['velocidad', 'Velocidad'], ['potencia', 'Potencia'], ['agilidad', 'Agilidad'], ['tecnica', 'Técnica'], ['pase', 'Pase'], ['defensa', 'Defensa']];
+const evaluacionesDe = (jid) => (DB.evaluaciones || []).filter((e) => e.jugador_id === jid)
+  .sort((a, b) => (a.periodo < b.periodo ? 1 : -1));   // más reciente primero
+function evaluacionHTML(jid) {
+  const j = jugador(jid);
+  const evs = evaluacionesDe(jid);
+  const ult = evs[0] || null;
+  const deltaTag = (v, prev) => {
+    if (prev == null || v == null) return '';
+    const d = v - prev;
+    return d > 0 ? ` <span class="text-emerald-300">▲+${d}</span>` : d < 0 ? ` <span class="text-rose-300">▼${d}</span>` : '';
+  };
+  const dNum = (v, prev, unidad) => {
+    if (prev == null || v == null) return '';
+    const d = Math.round((v - prev) * 10) / 10;
+    return d ? ` <span class="${d > 0 ? 'text-emerald-600' : 'text-rose-600'}">(${d > 0 ? '+' : ''}${d}${unidad})</span>` : '';
+  };
+  const form = !FICHA_ADD_EVAL
+    ? `<div class="mb-4"><button type="button" onclick="FICHA_ADD_EVAL = true; renderFichaEvalua('${jid}')" class="text-sm font-medium text-indigo-600 hover:underline">➕ Nueva evaluación mensual</button></div>`
+    : `<div class="mb-4 space-y-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-500">Nueva evaluación (una por mes; si el mes ya existe, se actualiza)</span>
+          <button type="button" onclick="FICHA_ADD_EVAL = false; renderFichaEvalua('${jid}')" class="text-xs text-slate-400 hover:text-slate-600">✕ Cerrar</button>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-slate-500 shrink-0">Mes</label>
+          <input id="ev_mes" type="month" value="${HOY.slice(0, 7)}" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          ${ATRIBUTOS.map(([k, lbl]) => `<label class="text-xs text-slate-500">${lbl}
+            <input id="ev_${k}" type="number" min="0" max="100" value="${ult ? (ult[k] ?? '') : ''}" placeholder="0–100" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>`).join('')}
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="text-xs text-slate-500">Peso (kg)
+            <input id="ev_peso" type="number" step="0.1" min="0" value="${ult && ult.peso != null ? ult.peso : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
+          <label class="text-xs text-slate-500">Talla (cm)
+            <input id="ev_talla" type="number" step="0.5" min="0" value="${ult && ult.talla != null ? ult.talla : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
+        </div>
+        <label class="block text-xs text-slate-500">Observaciones del entrenador
+          <textarea id="ev_obs" rows="2" placeholder="Ej: mejoró el pase largo; trabajar pierna izquierda" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"></textarea></label>
+        <div class="flex justify-end">
+          <button type="button" onclick="guardarEvaluacion('${jid}')" class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Guardar evaluación</button>
+        </div>
+      </div>`;
+  const historial = evs.length ? evs.map((e, i) => {
+    const prev = evs[i + 1] || null;
+    return `<div class="rounded-lg ring-1 ring-slate-200 p-3">
+      <div class="flex items-center justify-between">
+        <b class="text-sm">${mesLabelDe(e.periodo)}</b>
+        <span class="text-xs text-slate-400">${e.peso != null ? `⚖ ${e.peso} kg${dNum(e.peso, prev && prev.peso, '')}` : ''}${e.talla != null ? ` · 📏 ${e.talla} cm${dNum(e.talla, prev && prev.talla, '')}` : ''}</span>
+      </div>
+      <div class="mt-1.5 flex flex-wrap gap-1.5">
+        ${ATRIBUTOS.map(([k, lbl]) => e[k] == null ? '' : `<span class="rounded bg-ink-900 text-white px-1.5 py-0.5 text-[11px]">${lbl.slice(0, 3).toUpperCase()} <b>${e[k]}</b>${deltaTag(e[k], prev && prev[k])}</span>`).join('')}
+      </div>
+      ${e.observaciones ? `<p class="mt-1.5 text-xs italic text-slate-500">📝 ${e.observaciones}</p>` : ''}
+    </div>`;
+  }).join('') : '<p class="text-sm text-slate-400">Sin evaluaciones aún. Registra la primera del mes.</p>';
+  return `
+    ${j.atributos ? `<div class="mb-4">${cromoCard(j)}</div>` : ''}
+    ${form}
+    <div class="text-xs font-medium text-slate-500 mb-2">Historial de evaluaciones (${evs.length})</div>
+    <div class="space-y-2">${historial}</div>`;
+}
+window.renderFichaEvalua = (jid) => { if (el('nj_evalua')) el('nj_evalua').innerHTML = evaluacionHTML(jid); };
+window.guardarEvaluacion = (jid) => {
+  const periodo = val('ev_mes');
+  if (!periodo) { toast('Elige el mes de la evaluación'); return; }
+  const j = jugador(jid);
+  const attrs = {};
+  ATRIBUTOS.forEach(([k]) => { const v = val('ev_' + k); attrs[k] = v === '' ? null : Math.max(0, Math.min(100, parseInt(v, 10) || 0)); });
+  const peso = val('ev_peso') === '' ? null : num('ev_peso');
+  const talla = val('ev_talla') === '' ? null : num('ev_talla');
+  const obs = val('ev_obs').trim() || null;
+  let e = DB.evaluaciones.find((x) => x.jugador_id === jid && x.periodo === periodo);
+  if (e) Object.assign(e, attrs, { peso, talla, observaciones: obs });
+  else DB.evaluaciones.push({ id: uid('ev'), jugador_id: jid, periodo, ...attrs, peso, talla, observaciones: obs });
+  // el cromo del alumno refleja SIEMPRE la evaluación más reciente (y se sincroniza a Competencias)
+  const reciente = evaluacionesDe(jid)[0];
+  if (reciente && ATRIBUTOS.some(([k]) => reciente[k] != null)) {
+    j.atributos = {};
+    ATRIBUTOS.forEach(([k]) => { j.atributos[k] = reciente[k] ?? 0; });
+  }
+  FICHA_ADD_EVAL = false;
+  toast(`📈 Evaluación de ${mesLabelDe(periodo)} guardada`);
+  renderFichaEvalua(jid);
+};
 
 // =====================================================================
 // DETALLE DE TRACK (alumnos del track)
@@ -1716,8 +1791,8 @@ function njFormBody(j, tracksJid) {
       </label>
     </div>
     <div class="flex flex-wrap gap-1 border-b border-slate-200 mb-4 text-xs">
-      ${['cuenta', 'tracks', 'cnr', 'pagos', 'torneos'].filter(() => showTracks).map((id) => {
-        const lbl = { cuenta: '💳 Cuenta', tracks: '🎯 Tracks', cnr: '🏷️ CNR', pagos: '🧾 Historial de Pagos', torneos: '🏆 Torneos' }[id];
+      ${['cuenta', 'tracks', 'cnr', 'pagos', 'torneos', 'evalua'].filter(() => showTracks).map((id) => {
+        const lbl = { cuenta: '💳 Cuenta', tracks: '🎯 Tracks', cnr: '🏷️ CNR', pagos: '🧾 Historial de Pagos', torneos: '🏆 Torneos', evalua: '📈 Evaluación' }[id];
         return `<button type="button" id="njt_${id}" onclick="njTab('${id}')" class="px-2.5 py-2 -mb-px border-b-2 ${id === act ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">${lbl}</button>`;
       }).join('')}
       <button type="button" id="njt_personal" onclick="njTab('personal')" class="px-2.5 py-2 -mb-px border-b-2 ${act === 'personal' ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">👤 Personal</button>
@@ -1729,6 +1804,7 @@ function njFormBody(j, tracksJid) {
     ${showTracks ? `<div id="nj_cnr" class="${hide('cnr')}">${cnrFormHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_pagos" class="${hide('pagos')}">${pagosDocsHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_torneos" class="${hide('torneos')}">${torneosAlumnoHTML(tracksJid)}</div>` : ''}
+    ${showTracks ? `<div id="nj_evalua" class="${hide('evalua')}">${evaluacionHTML(tracksJid)}</div>` : ''}
     <div id="nj_personal" class="${hide('personal')}">
       <div class="grid grid-cols-2 gap-3">
         ${field('Nombre *', input('nj_nombre', `value="${esc(g.nombre)}"`))}
@@ -2841,6 +2917,7 @@ window.formEditarAlumno = (jid) => {
   FICHA_CR_INSC = null;
   FICHA_ADD_TRACK = false;
   FICHA_ADD_CNR = false;
+  FICHA_ADD_EVAL = false;
   openModal(nom(j), `
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
@@ -2925,7 +3002,7 @@ window.toggleBajaAlumno = (jid) => {
 };
 
 window.njTab = (name) => {
-  ['tracks', 'cuenta', 'cnr', 'pagos', 'torneos', 'personal', 'deportiva', 'academia'].forEach((s) => {
+  ['tracks', 'cuenta', 'cnr', 'pagos', 'torneos', 'evalua', 'personal', 'deportiva', 'academia'].forEach((s) => {
     const sec = el('nj_' + s);
     if (sec) sec.classList.toggle('hidden', s !== name);
     const btn = el('njt_' + s);
@@ -3585,31 +3662,7 @@ window.guardarCargo = (e) => {
   closeModal(); toast(talla ? `Cargo generado · salida de almacén talla ${talla}` : 'Cargo no recurrente generado'); go('tesoreria');
 };
 
-// ---------- Evaluar cromo (6 atributos) ----------
-window.formCromo = (jid) => {
-  const j = jugador(jid);
-  const a = j.atributos || {};
-  const slider = (k, label) => `
-    <label class="block mb-2">
-      <div class="flex justify-between text-xs text-slate-500 mb-1"><span>${label}</span><span id="v_${k}">${a[k] || 50}</span></div>
-      <input id="f_${k}" type="range" min="0" max="100" value="${a[k] || 50}" class="w-full accent-indigo-600"
-        oninput="document.getElementById('v_${k}').textContent=this.value">
-    </label>`;
-  openModal(`Evaluar a ${nom(j)}`,
-    `<form onsubmit="guardarCromo(event,'${jid}')">
-      ${slider('velocidad', 'Velocidad')}${slider('potencia', 'Potencia')}${slider('agilidad', 'Agilidad')}
-      ${slider('tecnica', 'Técnica')}${slider('pase', 'Pase')}${slider('defensa', 'Defensa')}
-      <p class="text-xs text-slate-400 mb-2">Al guardar se dispara la alerta al tutor (Flujo B).</p>
-      ${submitBar('Guardar cromo')}
-    </form>`);
-};
-window.guardarCromo = (e, jid) => {
-  e.preventDefault();
-  const j = jugador(jid);
-  j.atributos = { velocidad: num('f_velocidad'), potencia: num('f_potencia'), agilidad: num('f_agilidad'),
-    tecnica: num('f_tecnica'), pase: num('f_pase'), defensa: num('f_defensa') };
-  closeModal(); toast(`Cromo actualizado · alerta enviada al tutor (Flujo B)`); go('cromos');
-};
+// (El cromo se actualiza desde la pestaña 📈 Evaluación de la ficha: refleja la evaluación mensual más reciente)
 
 // ---------- Onboarding del padre (Flujo B) ----------
 window.formOnboarding = (tid) => {
