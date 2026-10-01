@@ -3233,6 +3233,8 @@ window.formEditarAlumno = (jid) => {
     <form onsubmit="guardarEdicionAlumno(event,'${jid}')">
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
         · Estado: ${badge(j.estado_alumno === 'activo' ? 'Activo' : j.estado_alumno === 'prospecto' ? 'Prospecto' : 'Baja', j.estado_alumno === 'activo' ? 'emerald' : j.estado_alumno === 'prospecto' ? 'fuchsia' : 'slate')}
+        ${j.estado_alumno === 'baja' ? `· Fecha de baja: <input type="date" value="${j.baja_fecha || ''}" onchange="editarFechaBaja('${jid}', this.value)"
+          class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Corrige el mes real de la baja (cuenta para el cierre mensual)">` : ''}
         ${j.fecha_registro ? `· Inscrito: <b>${fmtDMY(j.fecha_registro)}</b>` : ''}
         ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <b>${fmtDMY(j.prueba_fecha)}</b>${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}` : ''}</p>
       ${njFormBody(j, jid)}
@@ -3304,6 +3306,18 @@ window.guardarEdicionAlumno = async (e, jid) => {
   njTab('cuenta');                    // tras guardar, muestra la pestaña Cuenta (no cierra)
   if (TRACK_SEL) renderTrackRows();   // refresca la pantalla detrás
   else if (SCREEN === 'alumnos') renderAlumnosList();
+};
+// Corrige la fecha de baja (migraciones: la normalización puso la fecha del día
+// en que se cargó). Mueve también la baja de sus inscripciones de track que se
+// desactivaron con esa misma fecha, para que el cierre del mes correcto la cuente.
+window.editarFechaBaja = (jid, f) => {
+  const j = jugador(jid);
+  if (!j || j.estado_alumno !== 'baja' || !f) return;
+  const antes = j.baja_fecha || null;
+  j.baja_fecha = f;
+  DB.inscripciones.filter((i) => i.jugador_id === jid && !i.activo
+    && (i.baja_fecha || null) === antes).forEach((i) => { i.baja_fecha = f; });
+  toast(`Fecha de baja: ${fmtDMY(f)} · recalcula el cierre de ese mes para verla`);
 };
 window.toggleBajaAlumno = (jid) => {
   const j = jugador(jid);
