@@ -992,6 +992,7 @@ const SCREENS = {
     el('content').innerHTML = `
       <div class="mb-4 flex flex-wrap justify-end gap-2">
         <button onclick="reporteTutores()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">👪 Tutores · facturación</button>
+        <button onclick="liquidarGratisSede()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Marca como pagados los CR de S/ 0: becas, y meses gratis de promociones ya pagadas">✓ Liquidar CR gratis/beca</button>
         <button onclick="formGenerarCR()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">⚙️ Generar CR por ciclo</button>
         <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
         <button onclick="formPago()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Registrar pago</button>
@@ -2196,6 +2197,33 @@ window.agregarInscripcion = (jid) => {
   toast(`Agregado a ${t.nombre_track} (genera su CR desde Estado de cuenta)`); renderFichaTracks(jid); renderCuenta(jid);
 };
 
+// Un cargo de S/ 0 no se cobra: el de beca queda Pagado de inmediato, y el mes
+// gratis de una promoción se liquida recién cuando los meses CON monto de esa
+// misma promoción ya están pagados (si un rechazo los revierte, el gratis
+// vuelve a pendiente). Devuelve cuántos cargos cambiaron de estado.
+function liquidarCargosGratis(jid) {
+  let n = 0;
+  DB.cargos.filter((c) => c.jugador_id === jid && !(c.monto > 0)).forEach((c) => {
+    let liquidado;
+    if (c.promo && c.gratis) {
+      const conMonto = DB.cargos.filter((h) => h.jugador_id === jid && h.promo === c.promo
+        && h.inscripcion_id === c.inscripcion_id && h.monto > 0);
+      liquidado = conMonto.every((h) => h.estado === 'pagado');
+    } else {
+      liquidado = true;   // beca (monto 0 sin promo): nada que cobrar
+    }
+    const nuevo = liquidado ? 'pagado' : 'por_pagar';
+    if (c.estado !== nuevo) { c.estado = nuevo; n++; }
+  });
+  return n;
+}
+window.liquidarGratisSede = () => {
+  let n = 0;
+  alumnosSede().forEach((j) => { n += liquidarCargosGratis(j.id); });
+  toast(n ? `✓ ${n} CR de S/ 0 liquidados (beca / promo completada)` : 'No hay CR de S/ 0 por liquidar en esta sede');
+  SCREENS.tesoreria();
+};
+
 // Estado de cuenta del alumno (CR = recurrentes, CNR = no recurrentes)
 function estadoCuentaHTML(jid) {
   const j = jugador(jid);
@@ -2370,6 +2398,7 @@ window.guardarEdicionCR = (cid, jid) => {
   c.fecha_vencimiento = venc;
   if (monto > 0) c.gratis = false;   // dejó de ser mes gratis si ahora tiene monto
   c.estado = (c.pagado_monto || 0) <= 0 ? 'por_pagar' : (c.pagado_monto >= monto && monto > 0 ? 'pagado' : 'parcial');
+  liquidarCargosGratis(jid);   // editado a S/ 0 → beca: queda pagado
   CR_EDIT_ID = null;
   toast('CR actualizado ✓');
   renderCuenta(jid);
@@ -2403,7 +2432,8 @@ window.agregarCR = (jid) => {
   const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: i.id, tipo: 'CR', origen: 'manual',
     concepto: t.nombre_track, descripcion: `Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${nota ? ' · ' + nota : ''}`,
     ciclo_inicio: inicio, ciclo_fin: fin, ciclo_dia: ciclo ? ciclo.dia : null, fecha_vencimiento: venc,
-    periodo: inicio.slice(0, 7), monto, pagado_monto: 0, estado: 'por_pagar' };
+    periodo: inicio.slice(0, 7), monto, pagado_monto: 0,
+    estado: monto > 0 ? 'por_pagar' : 'pagado' };   // beca (S/ 0): nace pagado
   DB.cargos.push(cargo);
   i.ultima_fecha_corte = fin;             // actualiza la última fecha de corte del CR
   i.ciclo_dia = ciclo ? ciclo.dia : null; // recuerda el ciclo elegido en la inscripción
@@ -2471,6 +2501,7 @@ window.guardarPromoAlumno = (e, jid) => {
   });
   const periodos = periodosPromo(ancla, promo);
   i.ultima_fecha_corte = periodos[periodos.length - 1].fin;
+  liquidarCargosGratis(jid);   // promo 100% beca: sus meses gratis quedan pagados ya
   closeModal(); toast(`Promoción ${promo.nombre} aplicada · ${periodos.length} CR generados`); renderCuenta(jid);
 };
 // ---------- Generar CR por ciclo (masivo) + log de procesos ----------
@@ -2536,7 +2567,8 @@ window.guardarGenerarCR = (e) => {
     const cargo = { id, tutor_id: j.tutor_id, jugador_id: j.id, inscripcion_id: i.id, tipo: 'CR', origen: 'proceso', proceso_id: procId,
       concepto: t.nombre_track, descripcion: `Del ${fmtDMY(inicio)} al ${fmtDMY(corte)}`,
       ciclo_inicio: inicio, ciclo_fin: corte, ciclo_dia: ciclo.dia, fecha_vencimiento: venc,
-      periodo: corte.slice(0, 7), monto, pagado_monto: 0, estado: 'por_pagar' };
+      periodo: corte.slice(0, 7), monto, pagado_monto: 0,
+      estado: monto > 0 ? 'por_pagar' : 'pagado' };   // beca (S/ 0): nace pagado
     DB.cargos.push(cargo);
     i.ultima_fecha_corte = corte;
     cargoIds.push(id); total += monto;
@@ -2676,6 +2708,7 @@ window.guardarPagoAlumno = async (e, jid) => {
     c.pagado_monto = Math.min(c.monto, Math.round(((c.pagado_monto || 0) + d.monto) * 100) / 100);
     c.estado = c.pagado_monto >= c.monto ? 'pagado' : 'parcial';
   });
+  liquidarCargosGratis(jid);   // si con esto la promo quedó pagada, su mes gratis también
   // Voucher al Storage privado (la fila guarda solo la ruta); si falla, queda embebido
   const pid = uid('pg');
   let voucherFinal = PAGO_VOUCHER;
@@ -2985,6 +3018,7 @@ function revertirCargosPago(p) {
     c.pagado_monto = Math.max(0, (c.pagado_monto || 0) - d.monto);
     c.estado = (c.monto > 0 && c.pagado_monto >= c.monto) ? 'pagado' : (c.pagado_monto > 0 ? 'parcial' : 'por_pagar');
   });
+  if (p.jugador_id) liquidarCargosGratis(p.jugador_id);   // la promo dejó de estar pagada → su mes gratis vuelve a pendiente
 }
 // data:/demo se resuelve al instante; 'vstore:' requiere URL firmada (async)
 const voucherSrc = (p) => {
