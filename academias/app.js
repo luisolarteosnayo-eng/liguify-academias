@@ -898,6 +898,9 @@ const SCREENS = {
     }, { util: 0, ing: 0, cos: 0, al: 0, cap: 0, n: 0, pot: 0, cupos: 0, cancha: 0, profes: 0 });
     const utilCls = tot.util > 0 ? 'text-emerald-600' : tot.util < 0 ? 'text-rose-600' : 'text-slate-700';
     const ocup = tot.cap ? Math.round(tot.al * 100 / tot.cap) : 0;
+    // Bajas del mes en curso en la sede (con fecha de baja registrada)
+    const bajasMes = alumnosSede().filter((j) =>
+      j.estado_alumno === 'baja' && (j.baja_fecha || '').slice(0, 7) === HOY.slice(0, 7)).length;
     const desgloseProf = Object.entries(porProfesor).sort((a, b) => b[1] - a[1])
       .map(([n2, c2]) => `${n2} <b>${S(c2)}</b>`).join(' · ');
     el('content').innerHTML = `
@@ -905,7 +908,8 @@ const SCREENS = {
         ${card('Utilidad total', `<span class="${utilCls}">${tot.util < 0 ? '−' : ''}${S(Math.abs(tot.util))}</span>`,
           `ingresos ${S(tot.ing)} − costos ${S(tot.cos)}`)}
         ${card('Alumnos', `${unicos.size}`,
-          `${tot.al}/${tot.cap} cupos ocupados · ${ocup}% · ${tot.n} track(s)`)}
+          `${tot.al}/${tot.cap} cupos ocupados · ${ocup}% · ${tot.n} track(s)`
+          + (bajasMes ? ` · <span class="text-rose-600 font-semibold">−${bajasMes} baja(s) este mes</span>` : ''))}
         ${card('Potencial adicional', `<span class="text-indigo-600">+${S(tot.pot)}</span>`,
           `${tot.cupos} cupo(s) por vender`)}
         ${card('Costo cancha', S(tot.cancha), 'mensual · suma de tracks')}
@@ -3182,8 +3186,18 @@ window.guardarEdicionAlumno = async (e, jid) => {
 };
 window.toggleBajaAlumno = (jid) => {
   const j = jugador(jid);
-  j.estado_alumno = j.estado_alumno === 'activo' ? 'baja' : 'activo';
-  closeModal(); toast(j.estado_alumno === 'baja' ? 'Alumno dado de baja' : 'Alumno reactivado');
+  if (j.estado_alumno === 'activo') {
+    j.estado_alumno = 'baja';
+    j.baja_fecha = HOY;
+    // La baja libera sus cupos: desactiva sus inscripciones en tracks
+    // (dejan de contar en la rentabilidad y de generar CR mensuales)
+    DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; });
+    closeModal(); toast('Alumno dado de baja · sus cupos de track quedaron libres');
+  } else {
+    j.estado_alumno = 'activo';
+    j.baja_fecha = null;
+    closeModal(); toast('Alumno reactivado · asígnale su track');
+  }
   if (TRACK_SEL) renderTrackRows(); else go(SCREEN);
 };
 
@@ -3803,6 +3817,8 @@ window.descartarProspecto = (jid) => {
   const j = jugador(jid); if (!j) return;
   if (!confirm(`¿Descartar a ${nom(j)}? Queda en Bajas con su historial y el contacto del tutor.`)) return;
   j.estado_alumno = 'baja';
+  j.baja_fecha = HOY;
+  DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; });
   closeModal(); toast('Prospecto descartado'); go('alumnos');
 };
 
@@ -5113,7 +5129,20 @@ function renderSedeSelect() {
 // =====================================================================
 // INIT — arranque demo o conectado (Supabase)
 // =====================================================================
+// Un alumno en baja no debe conservar inscripciones activas: contaría en la
+// rentabilidad de los tracks y se le seguirían generando CR. Corrige bajas
+// hechas antes de este cambio (en conectado, el sync sube la corrección); si
+// aún tenía inscripciones activas es una baja reciente sin fecha → hoy.
+function normalizarBajas() {
+  (DB.jugadores || []).filter((j) => j.estado_alumno === 'baja').forEach((j) => {
+    const act = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo);
+    act.forEach((i) => { i.activo = false; });
+    if (act.length && !j.baja_fecha) j.baja_fecha = HOY;
+  });
+}
+
 function bootApp() {
+  normalizarBajas();
   el('rolSelect').addEventListener('change', (e) => { ROL = e.target.value; TRACK_SEL = null; go(SCREEN); });
   el('sedeSelect').addEventListener('change', (e) => {
     const v = e.target.value;
