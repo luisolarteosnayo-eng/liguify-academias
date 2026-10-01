@@ -1524,13 +1524,19 @@ function evaluacionHTML(jid) {
     <p class="mt-2 text-xs text-slate-400 text-center">${evs.length} evaluación(es) registradas${evs.length ? ' · última: ' + mesLabelDe(evs[0].periodo) : ''}</p>`;
 }
 window.renderFichaEvalua = (jid) => { if (el('nj_evalua')) el('nj_evalua').innerHTML = evaluacionHTML(jid); };
-// Pantalla completa de evaluación: sliders + radar en vivo vs última evaluación
-window.pantallaEvaluacion = (jid) => {
+// Pantalla completa de evaluación: sliders + radar en vivo.
+// Cada mes es una evaluación independiente: al elegir un mes se cargan SUS
+// valores (si existe) y se compara contra la evaluación ANTERIOR a ese mes.
+let EVAL_SEL = null;   // { jid, periodo } del mes en edición (para el radar en vivo)
+window.pantallaEvaluacion = (jid, periodoSel) => {
   const j = jugador(jid);
   if (!j) return;
   const evs = evaluacionesDe(jid);
-  const base = evs[0] || null;              // última guardada = línea de comparación
-  const ini = (k) => (base && base[k] != null ? base[k] : 50);
+  const periodo = periodoSel || HOY.slice(0, 7);
+  EVAL_SEL = { jid, periodo };
+  const actual = evs.find((e) => e.periodo === periodo) || null;   // evaluación de ESTE mes (si existe)
+  const base = evs.find((e) => e.periodo < periodo) || null;       // la anterior a este mes = comparación
+  const ini = (k) => (actual && actual[k] != null ? actual[k] : (base && base[k] != null ? base[k] : 50));
   const deltaTag = (v, prev) => {
     if (prev == null || v == null) return '';
     const d = v - prev;
@@ -1569,8 +1575,8 @@ window.pantallaEvaluacion = (jid) => {
     <div class="grid gap-4 lg:grid-cols-2">
       <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
         <div class="mb-1 flex flex-wrap items-center justify-center gap-4 text-xs">
-          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-4 rounded-sm bg-brand-500"></span> Evaluación nueva</span>
-          ${base ? `<span class="flex items-center gap-1.5"><span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-ink-900"></span> ${mesLabelDe(base.periodo)} (última)</span>` : ''}
+          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-4 rounded-sm bg-brand-500"></span> ${mesLabelDe(periodo)}${actual ? ' (editando)' : ' (nueva)'}</span>
+          ${base ? `<span class="flex items-center gap-1.5"><span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-ink-900"></span> ${mesLabelDe(base.periodo)} (anterior)</span>` : ''}
         </div>
         <div id="evRadar">${radarSVG([
           base ? { attrs: base, color: '#171e2e', dash: '5,4' } : null,
@@ -1578,9 +1584,11 @@ window.pantallaEvaluacion = (jid) => {
         ])}</div>
       </div>
       <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4 space-y-2.5">
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <label class="text-xs text-slate-500 shrink-0">Mes de la evaluación</label>
-          <input id="ev_mes" type="month" value="${HOY.slice(0, 7)}" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          <input id="ev_mes" type="month" value="${periodo}" onchange="pantallaEvaluacion('${jid}', this.value)"
+            class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          ${actual ? '<span class="rounded bg-amber-50 ring-1 ring-amber-200 text-amber-700 px-2 py-1 text-[11px]">✏️ Editando la evaluación guardada de este mes</span>' : '<span class="rounded bg-emerald-50 ring-1 ring-emerald-200 text-emerald-700 px-2 py-1 text-[11px]">Nueva evaluación</span>'}
         </div>
         ${ATRIBUTOS.map(([k, lbl]) => `
           <label class="block">
@@ -1593,14 +1601,14 @@ window.pantallaEvaluacion = (jid) => {
           </label>`).join('')}
         <div class="grid grid-cols-2 gap-2">
           <label class="text-xs text-slate-500">Peso (kg)${base && base.peso != null ? ` <span class="text-slate-300">· antes ${base.peso}</span>` : ''}
-            <input id="ev_peso" type="number" step="0.1" min="0" value="${base && base.peso != null ? base.peso : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
+            <input id="ev_peso" type="number" step="0.1" min="0" value="${actual && actual.peso != null ? actual.peso : (base && base.peso != null ? base.peso : '')}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
           <label class="text-xs text-slate-500">Talla (cm)${base && base.talla != null ? ` <span class="text-slate-300">· antes ${base.talla}</span>` : ''}
-            <input id="ev_talla" type="number" step="0.5" min="0" value="${base && base.talla != null ? base.talla : ''}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
+            <input id="ev_talla" type="number" step="0.5" min="0" value="${actual && actual.talla != null ? actual.talla : (base && base.talla != null ? base.talla : '')}" class="w-full rounded border border-slate-300 px-2 py-1 text-sm text-right"></label>
         </div>
         <label class="block text-xs text-slate-500">Observaciones del entrenador
-          <textarea id="ev_obs" rows="2" placeholder="Ej: mejoró el pase largo; trabajar pierna izquierda" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"></textarea></label>
+          <textarea id="ev_obs" rows="2" placeholder="Ej: mejoró el pase largo; trabajar pierna izquierda" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">${actual && actual.observaciones ? String(actual.observaciones).replace(/</g, '&lt;') : ''}</textarea></label>
         <label class="block text-xs text-slate-500">🎯 Objetivos (para el siguiente periodo)
-          <textarea id="ev_objetivos" rows="2" placeholder="Ej: subir velocidad a 60; dominar el perfil izquierdo" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"></textarea></label>
+          <textarea id="ev_objetivos" rows="2" placeholder="Ej: subir velocidad a 60; dominar el perfil izquierdo" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">${actual && actual.objetivos ? String(actual.objetivos).replace(/</g, '&lt;') : ''}</textarea></label>
         <div class="flex justify-end">
           <button type="button" onclick="guardarEvaluacion('${jid}')" class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar evaluación</button>
         </div>
@@ -1610,9 +1618,10 @@ window.pantallaEvaluacion = (jid) => {
     <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Historial de evaluaciones (${evs.length}) <span class="font-normal text-xs text-slate-400">· el mes más reciente arriba</span></h3>
     <div class="max-w-3xl space-y-2">${historial}</div>`;
 };
-// Redibuja el radar con los sliders actuales (la nueva evaluación, en vivo)
+// Redibuja el radar con los sliders actuales (la evaluación en edición, en vivo)
 window.evRadarLive = (jid) => {
-  const base = evaluacionesDe(jid)[0] || null;
+  const periodo = (EVAL_SEL && EVAL_SEL.periodo) || val('ev_mes') || HOY.slice(0, 7);
+  const base = evaluacionesDe(jid).find((e) => e.periodo < periodo) || null;
   const attrs = Object.fromEntries(ATRIBUTOS.map(([k]) => [k, +val('ev_' + k) || 0]));
   if (el('evRadar')) el('evRadar').innerHTML = radarSVG([
     base ? { attrs: base, color: '#171e2e', dash: '5,4' } : null,
@@ -1639,7 +1648,7 @@ window.guardarEvaluacion = (jid) => {
     ATRIBUTOS.forEach(([k]) => { j.atributos[k] = reciente[k] ?? 0; });
   }
   toast(`📈 Evaluación de ${mesLabelDe(periodo)} guardada`);
-  pantallaEvaluacion(jid);
+  pantallaEvaluacion(jid, periodo);   // permanece en el mes guardado, ya como "editando"
 };
 
 // =====================================================================
