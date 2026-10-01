@@ -1650,10 +1650,11 @@ window.pantallaEvaluacion = (jid, periodoSel) => {
           <textarea id="ev_obs" rows="2" placeholder="Ej: mejoró el pase largo; trabajar pierna izquierda" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">${actual && actual.observaciones ? String(actual.observaciones).replace(/</g, '&lt;') : ''}</textarea></label>
         <label class="block text-xs text-slate-500">🎯 Objetivos (para el siguiente periodo)
           <textarea id="ev_objetivos" rows="2" placeholder="Ej: subir velocidad a 60; dominar el perfil izquierdo" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm">${actual && actual.objetivos ? String(actual.objetivos).replace(/</g, '&lt;') : ''}</textarea></label>
-        <div class="flex justify-end">
+        <div class="flex justify-end gap-2">
+          ${actual ? `<button type="button" id="evEmailBtn" onclick="enviarEvaluacionEmail('${jid}', '${periodo}')" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">✉️ Enviar al tutor</button>` : ''}
           <button type="button" onclick="guardarEvaluacion('${jid}')" class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar evaluación</button>
         </div>
-        <p class="text-[11px] text-slate-400">Una evaluación por mes; si el mes ya existe, se actualiza.</p>
+        <p class="text-[11px] text-slate-400">Una evaluación por mes; si el mes ya existe, se actualiza.${actual ? ' El envío al tutor manda lo GUARDADO: si cambiaste algo, guarda primero.' : ''}</p>
       </div>
     </div>
     <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Historial de evaluaciones (${evs.length}) <span class="font-normal text-xs text-slate-400">· el mes más reciente arriba</span></h3>
@@ -1686,6 +1687,27 @@ window.guardarEvaluacion = (jid) => {
   }
   toast(`📈 Evaluación de ${mesLabelDe(periodo)} guardada`);
   pantallaEvaluacion(jid, periodo);   // permanece en el mes guardado, ya como "editando"
+};
+// Enviar el informe de la evaluación GUARDADA al email del tutor (edge function + Resend)
+window.enviarEvaluacionEmail = async (jid, periodo) => {
+  if (!window.AcademiasDB || !AcademiasDB.on) { toast('El envío por email solo funciona en modo conectado'); return; }
+  const j = jugador(jid);
+  const t = tutor(j.tutor_id) || {};
+  if (!t.email_tutor) { toast('⚠ El tutor no tiene email: regístralo en la ficha (sección Tutor) y vuelve a intentar'); return; }
+  if (!DB.evaluaciones.some((e) => e.jugador_id === jid && e.periodo === periodo)) { toast('Guarda la evaluación antes de enviarla'); return; }
+  if (!confirm(`¿Enviar el informe de ${mesLabelDe(periodo)} de ${nom(j)} a ${t.email_tutor}?`)) return;
+  const btn = el('evEmailBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const { data, error } = await AcademiasDB.sb.functions.invoke('enviar-evaluacion', { body: { jugador_id: jid, periodo } });
+    if (error) throw new Error(error.message || 'La función enviar-evaluacion no está desplegada');
+    if (data && data.error) throw new Error(data.error);
+    toast(`✉️ Informe enviado a ${(data && data.enviado_a) || t.email_tutor}`);
+  } catch (e) {
+    toast('⚠ ' + (e.message || e));
+  } finally {
+    if (el('evEmailBtn')) { el('evEmailBtn').disabled = false; el('evEmailBtn').textContent = '✉️ Enviar al tutor'; }
+  }
 };
 
 // =====================================================================
