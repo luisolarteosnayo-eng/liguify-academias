@@ -3740,16 +3740,20 @@ window.pantallaCierres = (periodoSel) => {
   const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S0d(Math.abs(+u || 0))}</b>`;
   // agrupar por sede (los cierres de sedes hoy inactivas también se muestran)
   const sedesIds = [...new Set(cierres.map((c) => c.sede_id))];
-  const tot = { al: 0, cap: 0, ing: 0, cancha: 0, prof: 0, u: 0 };
+  const tot = { al: 0, cap: 0, ing: 0, cancha: 0, prof: 0, u: 0, nu: 0, ba: 0 };
+  // Nuevos y bajas del periodo, grabados en el cierre (cierres antiguos no los tienen)
+  const movTxt = (nu, ba) => (nu || ba)
+    ? `<div class="text-[11px]">${nu ? `<span class="text-emerald-600 font-medium">+${nu} nuevo(s)</span>` : ''}${nu && ba ? ' · ' : ''}${ba ? `<span class="text-rose-600 font-medium">−${ba} baja(s)</span>` : ''}</div>` : '';
   const bloques = sedesIds.map((sid) => {
     const cs = cierres.filter((c) => c.sede_id === sid).sort((a, b) => (a.nombre_track || '').localeCompare(b.nombre_track || '', 'es'));
-    const st = { al: 0, cap: 0, ing: 0, cancha: 0, prof: 0, u: 0 };
+    const st = { al: 0, cap: 0, ing: 0, cancha: 0, prof: 0, u: 0, nu: 0, ba: 0 };
     const rows = cs.map((c) => {
       const p = prevDe(c);
       st.al += +c.alumnos || 0; st.cap += +c.capacidad || 0; st.ing += +c.ingresos || 0;
       st.cancha += +c.costo_cancha || 0; st.prof += +c.costo_profesores || 0; st.u += +c.utilidad || 0;
+      st.nu += +c.nuevos || 0; st.ba += +c.bajas || 0;
       // Altas y bajas con nombre: requiere que ambos cierres tengan nómina (alumnos_ids)
-      let movs = '';
+      let movs = movTxt(+c.nuevos || 0, +c.bajas || 0);
       if (Array.isArray(c.alumnos_ids) && p && Array.isArray(p.alumnos_ids)) {
         const ahora = new Set(c.alumnos_ids), antes = new Set(p.alumnos_ids);
         const nombres = (ids) => ids.map((id) => { const jj = jugador(id); return jj ? nom(jj) : '?'; });
@@ -3770,7 +3774,7 @@ window.pantallaCierres = (periodoSel) => {
     });
     Object.keys(tot).forEach((k) => { tot[k] += st[k]; });
     rows.push([`<b class="text-slate-500">Total ${sede(sid) ? sede(sid).nombre_sede : 'Sede'}</b>`,
-      `<b>${st.al}/${st.cap}</b>`, `<b>${S0d(st.ing)}</b>`, `<b>${S0d(st.cancha)}</b>`, `<b>${S0d(st.prof)}</b>`, fmtU(st.u), '']);
+      `<b>${st.al}/${st.cap}</b>${movTxt(st.nu, st.ba)}`, `<b>${S0d(st.ing)}</b>`, `<b>${S0d(st.cancha)}</b>`, `<b>${S0d(st.prof)}</b>`, fmtU(st.u), '']);
     return `<h3 class="mt-5 mb-2 text-sm font-semibold text-slate-600">📍 ${sede(sid) ? sede(sid).nombre_sede : 'Sede'} (${cs.length} tracks)</h3>
       ${table(['Track', 'Alumnos · Δ', 'Ingresos · Δ', 'Costo cancha', 'Costo profesores', 'Utilidad · Δ', 'CR prom.'], rows)}`;
   }).join('');
@@ -3785,7 +3789,8 @@ window.pantallaCierres = (periodoSel) => {
     </div>
     <div class="grid gap-3 grid-cols-2 md:grid-cols-5 mb-2">
       ${card('Tracks cerrados', cierres.length)}
-      ${card('Alumnos', `${tot.al}<span class="text-base text-slate-400">/${tot.cap}</span>`)}
+      ${card('Alumnos', `${tot.al}<span class="text-base text-slate-400">/${tot.cap}</span>`,
+        (tot.nu || tot.ba) ? `<span class="text-emerald-600 font-semibold">+${tot.nu} nuevo(s)</span> · <span class="text-rose-600 font-semibold">−${tot.ba} baja(s)</span> en el periodo` : '')}
       ${card('Ingresos', S0d(tot.ing))}
       ${card('Costos', S0d(tot.cancha + tot.prof), 'cancha + profesores')}
       ${card('Utilidad', fmtU(tot.u))}
@@ -3827,6 +3832,11 @@ window.ejecutarCierreMensual = (e) => {
         entrenadores: coachesNombres(t).join(', ') || 'Sin asignar',
         alumnos: x.insc.length, capacidad: +t.capacidad_maxima || 0,
         alumnos_ids: x.insc.map((i) => i.jugador_id),   // nómina del cierre: permite ver altas y bajas por periodo
+        // Movimiento del periodo cerrado, grabado como dato del cierre
+        nuevos: DB.inscripciones.filter((i) => i.track_id === t.id && i.activo
+          && (i.fecha_inscripcion || '').slice(0, 7) === periodo).length,
+        bajas: DB.inscripciones.filter((i) => i.track_id === t.id && !i.activo
+          && (i.baja_fecha || '').slice(0, 7) === periodo).length,
 
         ingresos: x.ingresos, costo_cancha: +t.costo_mensual_cancha || 0,
         costo_profesores: costoEntrenadores(t), utilidad: x.utilidad,
