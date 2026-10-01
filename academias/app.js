@@ -1456,9 +1456,11 @@ function trackCard(t) {
 
 function cromoCard(j) {
   const a = j.atributos;
-  const barras = [['Velocidad', a.velocidad], ['Potencia', a.potencia], ['Agilidad', a.agilidad],
-                 ['Técnica', a.tecnica], ['Pase', a.pase], ['Defensa', a.defensa]];
-  const prom = Math.round(barras.reduce((s, b) => s + b[1], 0) / barras.length);
+  // atributos actuales + 'defensa' legada si el alumno aún no tiene 'control'
+  const barras = ATRIBUTOS.filter(([k]) => a[k] != null).map(([k, lbl]) => [lbl, a[k]]);
+  if (a.control == null && a.defensa != null) barras.push(['Defensa', a.defensa]);
+  if (!barras.length) barras.push(['Sin datos', 0]);
+  const prom = Math.round(barras.reduce((s, b) => s + (+b[1] || 0), 0) / barras.length);
   return `
     <div class="rounded-2xl p-5 text-white shadow-lg" style="background:linear-gradient(135deg,${DB.academia.color_primario},#1e1b4b)">
       <div class="flex justify-between items-start">
@@ -1485,19 +1487,23 @@ function cromoCard(j) {
 }
 
 // ---------- Evaluación mensual del alumno (atributos + peso/talla + observaciones) ----------
-const ATRIBUTOS = [['velocidad', 'Velocidad'], ['potencia', 'Potencia'], ['agilidad', 'Agilidad'], ['tecnica', 'Técnica'], ['pase', 'Pase'], ['defensa', 'Defensa']];
+// [clave, etiqueta, abreviatura] — 'defensa' quedó como dato legado (migrado a control)
+const ATRIBUTOS = [['velocidad', 'Velocidad', 'VEL'], ['potencia', 'Potencia', 'POT'], ['agilidad', 'Agilidad', 'AGI'],
+  ['tecnica', 'Técnica', 'TÉC'], ['pase', 'Pase', 'PAS'], ['control', 'Control', 'CON'], ['decisiones', 'Toma de decisiones', 'DEC']];
 const evaluacionesDe = (jid) => (DB.evaluaciones || []).filter((e) => e.jugador_id === jid)
   .sort((a, b) => (a.periodo < b.periodo ? 1 : -1));   // más reciente primero
 // Radar de 6 ejes: series = [{ attrs, color, fill, dash, label }]
 function radarSVG(series, size = 260) {
+  const N = ATRIBUTOS.length;
   const cx = size / 2, cy = size / 2, R = size / 2 - 34;
-  const punto = (i, v) => { const a = (Math.PI / 3) * i - Math.PI / 2; return `${(cx + (v / 100) * R * Math.cos(a)).toFixed(1)},${(cy + (v / 100) * R * Math.sin(a)).toFixed(1)}`; };
+  const ang = (i) => (2 * Math.PI / N) * i - Math.PI / 2;
+  const punto = (i, v) => { const a = ang(i); return `${(cx + (v / 100) * R * Math.cos(a)).toFixed(1)},${(cy + (v / 100) * R * Math.sin(a)).toFixed(1)}`; };
   const anillo = (f) => ATRIBUTOS.map((_, i) => punto(i, f * 100)).join(' ');
   const ejes = ATRIBUTOS.map((_, i) => `<line x1="${cx}" y1="${cy}" x2="${punto(i, 100).split(',')[0]}" y2="${punto(i, 100).split(',')[1]}" stroke="#e9e6e0" stroke-width="1"/>`).join('');
-  const labels = ATRIBUTOS.map(([k, lbl], i) => {
-    const a = (Math.PI / 3) * i - Math.PI / 2;
+  const labels = ATRIBUTOS.map(([k, lbl, ab], i) => {
+    const a = ang(i);
     const x = cx + (R + 20) * Math.cos(a), y = cy + (R + 20) * Math.sin(a);
-    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="10" font-weight="600" fill="#64748b">${lbl.slice(0, 3).toUpperCase()}</text>`;
+    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-size="10" font-weight="600" fill="#64748b">${ab}</text>`;
   }).join('');
   const polis = series.filter((s) => s && s.attrs).map((s) => {
     const pts = ATRIBUTOS.map(([k], i) => punto(i, Math.max(0, Math.min(100, +s.attrs[k] || 0)))).join(' ');
@@ -1543,7 +1549,7 @@ window.pantallaEvaluacion = (jid) => {
         <span class="text-xs text-slate-400">${e.peso != null ? `⚖ ${e.peso} kg${dNum(e.peso, prev && prev.peso)}` : ''}${e.talla != null ? ` · 📏 ${e.talla} cm${dNum(e.talla, prev && prev.talla)}` : ''}</span>
       </div>
       <div class="mt-1.5 flex flex-wrap gap-1.5">
-        ${ATRIBUTOS.map(([k, lbl]) => e[k] == null ? '' : `<span class="rounded bg-ink-900 text-white px-1.5 py-0.5 text-[11px]">${lbl.slice(0, 3).toUpperCase()} <b>${e[k]}</b>${deltaTag(e[k], prev && prev[k])}</span>`).join('')}
+        ${ATRIBUTOS.map(([k, lbl, ab]) => e[k] == null ? '' : `<span class="rounded bg-ink-900 text-white px-1.5 py-0.5 text-[11px]" title="${lbl}">${ab} <b>${e[k]}</b>${deltaTag(e[k], prev && prev[k])}</span>`).join('')}
       </div>
       ${e.observaciones ? `<p class="mt-1.5 text-xs italic text-slate-500">📝 ${e.observaciones}</p>` : ''}
       ${e.objetivos ? `<p class="mt-1 text-xs text-indigo-700">🎯 <b>Objetivos:</b> ${e.objetivos}</p>` : ''}

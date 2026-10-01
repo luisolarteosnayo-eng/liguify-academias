@@ -81,9 +81,11 @@ window.AcademiasDB = (() => {
       toRow: (e) => ({ ...pick(e, ['id', 'jugador_id', 'periodo', 'observaciones', 'objetivos']),
         velocidad: N(e.velocidad), potencia: N(e.potencia), agilidad: N(e.agilidad),
         tecnica: N(e.tecnica), pase: N(e.pase), defensa: N(e.defensa),
+        control: N(e.control), decisiones: N(e.decisiones),
         peso: N(e.peso), talla: N(e.talla), academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, velocidad: N(r.velocidad), potencia: N(r.potencia), agilidad: N(r.agilidad),
-        tecnica: N(r.tecnica), pase: N(r.pase), defensa: N(r.defensa), peso: N(r.peso), talla: N(r.talla) }),
+        tecnica: N(r.tecnica), pase: N(r.pase), defensa: N(r.defensa),
+        control: N(r.control), decisiones: N(r.decisiones), peso: N(r.peso), talla: N(r.talla) }),
     },
     inscripciones: {
       table: 'inscripciones',
