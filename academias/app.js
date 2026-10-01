@@ -2568,10 +2568,31 @@ window.guardarPromoAlumno = (e, jid) => {
   closeModal(); toast(`Promoción ${promo.nombre} aplicada · ${periodos.length} CR generados`); renderCuenta(jid);
 };
 // ---------- Generar CR por ciclo (masivo) + log de procesos ----------
+// Elegibles: inscripciones activas del ciclo cuyo último corte sea IGUAL O ANTERIOR
+// a la fecha indicada (los que vencen ese día también se renuevan). Nunca alumnos
+// dados de baja.
 function inscElegiblesCiclo(dia, corteIso, sedeId) {
-  return DB.inscripciones.filter((i) => i.activo && i.ciclo_dia === dia
-    && jugador(i.jugador_id) && jugador(i.jugador_id).sede_id === sedeId
-    && i.ultima_fecha_corte && i.ultima_fecha_corte < corteIso);
+  return DB.inscripciones.filter((i) => {
+    const j = jugador(i.jugador_id);
+    return i.activo && i.ciclo_dia === dia && j && j.sede_id === sedeId
+      && j.estado_alumno !== 'baja'
+      && i.ultima_fecha_corte && i.ultima_fecha_corte <= corteIso;
+  });
+}
+// Meses que el proceso generará para una inscripción: ciclos MENSUALES encadenados
+// desde su propio corte (corte+1 → +1 mes −1 día), uno por mes atrasado, hasta
+// dejarla cubierta más allá de la fecha indicada. Así un atrasado de 3 meses
+// recibe 3 CR de una mensualidad cada uno, no un solo CR de 3 meses.
+function ciclosPorGenerar(i, corteIso) {
+  const out = [];
+  let corte = i.ultima_fecha_corte;
+  while (corte && corte <= corteIso && out.length < 24) {
+    const inicio = isoAddDays(corte, 1);
+    const fin = isoAddDays(addMonths(inicio, 1), -1);
+    out.push({ inicio, fin });
+    corte = fin;
+  }
+  return out;
 }
 window.formGenerarCR = () => {
   const ciclos = ciclosPagoSede();
@@ -2579,7 +2600,7 @@ window.formGenerarCR = () => {
   const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
   openModal('Generar CR por ciclo', `
     <form onsubmit="guardarGenerarCR(event)">
-      <p class="text-xs text-slate-500 mb-3">Genera las mensualidades del ciclo para los alumnos de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> cuyo último corte sea anterior a la fecha de corte indicada.</p>
+      <p class="text-xs text-slate-500 mb-3">Genera las mensualidades del ciclo para los alumnos de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> cuyo último corte sea <b>igual o anterior</b> a la fecha indicada: un CR mensual por cada mes pendiente, según el corte de cada alumno. No incluye alumnos dados de baja; los becados (S/ 0) se generan ya pagados.</p>
       ${field('Ciclo', select('gen_ciclo', ciclos.map((c) => ({ v: c.id, t: nombreCiclo(c) })), 'onchange="genCRAuto()"'))}
       <div class="grid grid-cols-2 gap-3">
         ${field('Fecha de corte (período)', input('gen_corte', 'type="date" onchange="genCRPreview()"'))}
@@ -2594,13 +2615,10 @@ window.formGenerarCR = () => {
 window.genCRAuto = () => {
   const ciclo = DB.ciclosPago.find((c) => c.id === el('gen_ciclo').value);
   if (!ciclo) return;
-  const cortes = DB.inscripciones.filter((i) => i.activo && i.ciclo_dia === ciclo.dia
-    && jugador(i.jugador_id) && jugador(i.jugador_id).sede_id === SEDE_ACTUAL && i.ultima_fecha_corte)
-    .map((i) => i.ultima_fecha_corte).sort();
-  const base = cortes.length ? isoAddDays(cortes[cortes.length - 1], 1) : HOY;
-  const corte = proximoCorte(base, ciclo.dia);
+  // Sugerencia: el próximo corte del ciclo desde hoy (renueva el mes en curso)
+  const corte = proximoCorte(HOY, ciclo.dia);
   el('gen_corte').value = corte;
-  el('gen_venc').value = ciclo.dia_venc ? fechaVencimiento(base, ciclo.dia_venc) : corte;
+  el('gen_venc').value = ciclo.dia_venc ? fechaVencimiento(corte, ciclo.dia_venc) : corte;
   genCRPreview();
 };
 window.genCRPreview = () => {
@@ -2608,9 +2626,17 @@ window.genCRPreview = () => {
   const corte = val('gen_corte');
   if (!ciclo || !corte) { el('genPreview').innerHTML = ''; return; }
   const eleg = inscElegiblesCiclo(ciclo.dia, corte, SEDE_ACTUAL);
-  const total = eleg.reduce((s, i) => s + (i.costo_mensual_personalizado ?? track(i.track_id).mensualidad_sugerida), 0);
+  let nCR = 0, total = 0, becas = 0;
+  eleg.forEach((i) => {
+    const n = ciclosPorGenerar(i, corte).length;
+    const monto = i.costo_mensual_personalizado ?? track(i.track_id).mensualidad_sugerida;
+    nCR += n; total += n * monto;
+    if (!(monto > 0)) becas += n;
+  });
   el('genPreview').innerHTML = eleg.length
-    ? `<b>${eleg.length}</b> CR a generar · total <b>${S(total)}</b><div class="text-xs text-slate-400 mt-1">Corte ${fmtDMY(corte)} · vence ${fmtDMY(val('gen_venc'))}</div>`
+    ? `<b>${nCR}</b> CR a generar para <b>${eleg.length}</b> alumno(s)/track · total <b>${S(total)}</b>
+       ${becas ? `<div class="text-xs text-emerald-600 mt-0.5">${becas} CR de beca (S/ 0) se generarán ya pagados</div>` : ''}
+       <div class="text-xs text-slate-400 mt-1">Un CR mensual por cada mes pendiente, según el corte de cada alumno · cubiertos hasta después del ${fmtDMY(corte)}</div>`
     : '<span class="text-slate-400">No hay inscripciones elegibles para este ciclo/corte.</span>';
 };
 window.guardarGenerarCR = (e) => {
@@ -2624,17 +2650,19 @@ window.guardarGenerarCR = (e) => {
   const cargoIds = []; let total = 0;
   eleg.forEach((i) => {
     const t = track(i.track_id), j = jugador(i.jugador_id);
-    const inicio = isoAddDays(i.ultima_fecha_corte, 1);
     const monto = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
-    const id = uid('c');
-    const cargo = { id, tutor_id: j.tutor_id, jugador_id: j.id, inscripcion_id: i.id, tipo: 'CR', origen: 'proceso', proceso_id: procId,
-      concepto: t.nombre_track, descripcion: `Del ${fmtDMY(inicio)} al ${fmtDMY(corte)}`,
-      ciclo_inicio: inicio, ciclo_fin: corte, ciclo_dia: ciclo.dia, fecha_vencimiento: venc,
-      periodo: corte.slice(0, 7), monto, pagado_monto: 0,
-      estado: monto > 0 ? 'por_pagar' : 'pagado' };   // beca (S/ 0): nace pagado
-    DB.cargos.push(cargo);
-    i.ultima_fecha_corte = corte;
-    cargoIds.push(id); total += monto;
+    ciclosPorGenerar(i, corte).forEach((p) => {
+      const id = uid('c');
+      DB.cargos.push({ id, tutor_id: j.tutor_id, jugador_id: j.id, inscripcion_id: i.id, tipo: 'CR', origen: 'proceso', proceso_id: procId,
+        concepto: t.nombre_track, descripcion: `Del ${fmtDMY(p.inicio)} al ${fmtDMY(p.fin)}`,
+        ciclo_inicio: p.inicio, ciclo_fin: p.fin, ciclo_dia: ciclo.dia,
+        // Vencimiento por mes según el día del ciclo; el del formulario es el respaldo
+        fecha_vencimiento: ciclo.dia_venc ? fechaVencimiento(p.inicio, ciclo.dia_venc) : venc,
+        periodo: p.inicio.slice(0, 7), monto, pagado_monto: 0,
+        estado: monto > 0 ? 'por_pagar' : 'pagado' });   // beca (S/ 0): nace pagado
+      i.ultima_fecha_corte = p.fin;
+      cargoIds.push(id); total += monto;
+    });
   });
   DB.procesosCR.push({ id: procId, fecha: HOY, ciclo_dia: ciclo.dia, corte, vencimiento: venc, sede_id: SEDE_ACTUAL, cargo_ids: cargoIds, total });
   closeModal(); toast(`${cargoIds.length} CR generados · ${S(total)}`); go('tesoreria');
