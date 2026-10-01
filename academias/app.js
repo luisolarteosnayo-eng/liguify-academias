@@ -918,6 +918,7 @@ const SCREENS = {
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center">
         <p class="text-sm text-slate-500">Toca un track para ver sus alumnos · equilibrio = ⌈costo ÷ mensualidad⌉</p>
         <div class="flex gap-2">
+          ${DB.trackCierres.length ? `<button onclick="pantallaCierres()" class="rounded-lg ring-1 ring-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">📈 Ver cierres</button>` : ''}
           ${puedeEliminarTrack() ? `<button onclick="formCierreMensual()" class="rounded-lg ring-1 ring-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">🔒 Cierre mensual</button>` : ''}
           <button onclick="formTrack()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Nuevo track</button>
         </div>
@@ -3582,6 +3583,68 @@ window.eliminarTrack = (tid) => {
   closeModal();
   toast(`Track "${t.nombre_track}" eliminado`);
   go('tracks');
+};
+
+// ---------- Vista consolidada de cierres mensuales (toda la empresa) ----------
+window.pantallaCierres = (periodoSel) => {
+  const periodos = [...new Set(DB.trackCierres.map((c) => c.periodo))].sort().reverse();
+  if (!periodos.length) { toast('Aún no hay cierres ejecutados'); return; }
+  const periodo = periodoSel && periodos.includes(periodoSel) ? periodoSel : periodos[0];
+  const idx = periodos.indexOf(periodo);
+  const prevPeriodo = periodos[idx + 1] || null;
+  const cierres = DB.trackCierres.filter((c) => c.periodo === periodo);
+  const prevDe = (c) => prevPeriodo ? DB.trackCierres.find((x) => x.periodo === prevPeriodo && x.track_id === c.track_id) : null;
+  const S0d = (n) => 'S/ ' + Math.round(+n || 0);
+  const delta = (v, p, esMoneda) => {
+    if (p == null || v == null) return '';
+    const d = Math.round(((+v) - (+p)) * 10) / 10;
+    if (!d) return ' <span class="text-slate-300 text-xs">=</span>';
+    const txt = esMoneda ? S0d(Math.abs(d)) : Math.abs(d);
+    return d > 0 ? ` <span class="text-emerald-600 text-xs font-medium">▲ +${txt}</span>` : ` <span class="text-rose-600 text-xs font-medium">▼ −${txt}</span>`;
+  };
+  const fmtU = (u) => `<b class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S0d(Math.abs(+u || 0))}</b>`;
+  // agrupar por sede (los cierres de sedes hoy inactivas también se muestran)
+  const sedesIds = [...new Set(cierres.map((c) => c.sede_id))];
+  const tot = { al: 0, cap: 0, ing: 0, cancha: 0, prof: 0, u: 0 };
+  const bloques = sedesIds.map((sid) => {
+    const cs = cierres.filter((c) => c.sede_id === sid).sort((a, b) => (a.nombre_track || '').localeCompare(b.nombre_track || '', 'es'));
+    const st = { al: 0, cap: 0, ing: 0, cancha: 0, prof: 0, u: 0 };
+    const rows = cs.map((c) => {
+      const p = prevDe(c);
+      st.al += +c.alumnos || 0; st.cap += +c.capacidad || 0; st.ing += +c.ingresos || 0;
+      st.cancha += +c.costo_cancha || 0; st.prof += +c.costo_profesores || 0; st.u += +c.utilidad || 0;
+      return [
+        `<b>${c.nombre_track || '(track eliminado)'}</b><div class="text-[11px] text-slate-400">${c.entrenadores || ''}</div>`,
+        `${c.alumnos}/${c.capacidad || '—'}${delta(c.alumnos, p && p.alumnos)}`,
+        S0d(c.ingresos) + delta(c.ingresos, p && p.ingresos, true),
+        S0d(c.costo_cancha), S0d(c.costo_profesores),
+        fmtU(c.utilidad) + delta(c.utilidad, p && p.utilidad, true),
+        S0d(c.cr_promedio),
+      ];
+    });
+    Object.keys(tot).forEach((k) => { tot[k] += st[k]; });
+    rows.push([`<b class="text-slate-500">Total ${sede(sid) ? sede(sid).nombre_sede : 'Sede'}</b>`,
+      `<b>${st.al}/${st.cap}</b>`, `<b>${S0d(st.ing)}</b>`, `<b>${S0d(st.cancha)}</b>`, `<b>${S0d(st.prof)}</b>`, fmtU(st.u), '']);
+    return `<h3 class="mt-5 mb-2 text-sm font-semibold text-slate-600">📍 ${sede(sid) ? sede(sid).nombre_sede : 'Sede'} (${cs.length} tracks)</h3>
+      ${table(['Track', 'Alumnos · Δ', 'Ingresos · Δ', 'Costo cancha', 'Costo profesores', 'Utilidad · Δ', 'CR prom.'], rows)}`;
+  }).join('');
+  el('content').innerHTML = `
+    <button onclick="go('tracks')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver a tracks</button>
+    <div class="mb-4 flex flex-wrap items-center gap-3">
+      <h2 class="text-xl font-bold">📈 Cierre mensual · ${mesLabelDe(periodo)}</h2>
+      <select onchange="pantallaCierres(this.value)" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+        ${periodos.map((p) => `<option value="${p}" ${p === periodo ? 'selected' : ''}>${mesLabelDe(p)}</option>`).join('')}
+      </select>
+      ${prevPeriodo ? `<span class="text-xs text-slate-400">Δ vs ${mesLabelDe(prevPeriodo)}</span>` : '<span class="text-xs text-slate-400">primer cierre (sin comparación)</span>'}
+    </div>
+    <div class="grid gap-3 grid-cols-2 md:grid-cols-5 mb-2">
+      ${card('Tracks cerrados', cierres.length)}
+      ${card('Alumnos', `${tot.al}<span class="text-base text-slate-400">/${tot.cap}</span>`)}
+      ${card('Ingresos', S0d(tot.ing))}
+      ${card('Costos', S0d(tot.cancha + tot.prof), 'cancha + profesores')}
+      ${card('Utilidad', fmtU(tot.u))}
+    </div>
+    ${bloques}`;
 };
 
 // ---------- Cierre mensual de tracks (snapshot para evaluar evolución) ----------
