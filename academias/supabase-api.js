@@ -89,7 +89,7 @@ window.AcademiasDB = (() => {
     },
     inscripciones: {
       table: 'inscripciones',
-      toRow: (i) => ({ ...pick(i, ['id', 'jugador_id', 'track_id', 'fecha_inscripcion', 'ultima_fecha_corte', 'ciclo_dia', 'observaciones']),
+      toRow: (i) => ({ ...pick(i, ['id', 'jugador_id', 'track_id', 'fecha_inscripcion', 'ultima_fecha_corte', 'ciclo_dia', 'observaciones', 'baja_fecha']),
         costo_mensual_personalizado: N(i.costo_mensual_personalizado), activo: i.activo !== false }),
       fromRow: (r) => ({ ...r, costo_mensual_personalizado: N(r.costo_mensual_personalizado) }),
     },

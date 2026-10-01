@@ -374,7 +374,12 @@ function statsTrack(t) {
   const etiqueta = rentable ? 'Track Rentable' : ratio >= 0.5 ? 'Operando a pérdida' : 'Déficit crítico';
   // CR promedio: suma de precios efectivos por alumno ÷ alumnos del track
   const crPromedio = insc.length ? ingresos / insc.length : 0;
-  return { insc, costoOperacion, puntoEquilibrio, ingresos, utilidad, rentable, color, etiqueta, cuposLibres, potencial, crPromedio };
+  // Movimiento del mes en curso: altas (inscripciones nuevas) y bajas del track
+  const mesAct = HOY.slice(0, 7);
+  const nuevosMes = insc.filter((i) => (i.fecha_inscripcion || '').slice(0, 7) === mesAct).length;
+  const bajasMes = DB.inscripciones.filter((i) => i.track_id === t.id && !i.activo
+    && (i.baja_fecha || '').slice(0, 7) === mesAct).length;
+  return { insc, costoOperacion, puntoEquilibrio, ingresos, utilidad, rentable, color, etiqueta, cuposLibres, potencial, crPromedio, nuevosMes, bajasMes };
 }
 
 // ---------- Almacén: stock derivado del kardex (ingresos − salidas) ----------
@@ -1437,7 +1442,9 @@ function trackCard(t) {
         ${badge(x.etiqueta, x.color)}
       </div>
       <div class="mt-3 text-xs text-slate-500 flex justify-between">
-        <span>${x.insc.length}/${t.capacidad_maxima} alumnos</span>
+        <span>${x.insc.length}/${t.capacidad_maxima} alumnos${
+          x.nuevosMes ? ` · <span class="text-emerald-600 font-semibold">+${x.nuevosMes} nuevo(s)</span>` : ''}${
+          x.bajasMes ? ` · <span class="text-rose-600 font-semibold">−${x.bajasMes} baja(s)</span>` : ''}</span>
         <span>equilibrio: ${x.puntoEquilibrio}</span>
       </div>
       <div class="relative mt-1 h-3 rounded-full bg-slate-100 overflow-hidden">
@@ -1782,7 +1789,10 @@ function renderTrackDetalle() {
       ${card(nombresCoach.length > 1 ? 'Entrenadores' : 'Profesor',
         nombresCoach.length ? `<span class="text-base leading-tight">${nombresCoach.join('<br>')}</span>` : '<span class="text-lg text-slate-400">Sin asignar</span>',
         nombresCoach.length ? `${nombresCoach.length} entrenador(es)` : 'asígnalo en Editar track')}
-      ${card('Alumnos', `${insc.length} <span class="text-sm font-normal text-slate-400">/ ${t.capacidad_maxima}</span>`, `equilibrio: ${st.puntoEquilibrio} alumnos`)}
+      ${card('Alumnos', `${insc.length} <span class="text-sm font-normal text-slate-400">/ ${t.capacidad_maxima}</span>`,
+        `equilibrio: ${st.puntoEquilibrio} alumnos`
+        + (st.nuevosMes ? ` · <span class="text-emerald-600 font-semibold">+${st.nuevosMes} nuevo(s)</span>` : '')
+        + (st.bajasMes ? ` · <span class="text-rose-600 font-semibold">−${st.bajasMes} baja(s)</span>` : ''))}
       ${card('CR promedio', insc.length ? S(st.crPromedio) : '—', `mensualidad sugerida ${S(t.mensualidad_sugerida)}`)}
       ${card('Rentabilidad', `<span class="${utilCls}">${st.utilidad >= 0 ? '' : '−'}${S(Math.abs(st.utilidad))}</span>`, `ingresos ${S(st.ingresos)} − costos ${S(st.costoOperacion)}`)}
       ${card('Costo profesores', S(costoProfes), entrenadoresDe(t.id).length ? 'suma de entrenadores' : 'mensual')}
@@ -1895,7 +1905,7 @@ function renderTrackRows() {
 
 window.removerInscripcion = (id) => {
   const i = DB.inscripciones.find((x) => x.id === id);
-  if (i) { i.activo = false; toast('Alumno removido del track'); renderTrackRows(); }
+  if (i) { i.activo = false; i.baja_fecha = HOY; toast('Alumno removido del track'); renderTrackRows(); }
 };
 // ---------- Media en Supabase Storage ----------
 // Fotos de alumnos y logos → bucket público 'academias-media' (URL pública en la fila).
@@ -2150,7 +2160,7 @@ function fichaTracksHTML(jid) {
 window.renderFichaTracks = (jid) => { if (el('nj_tracks')) el('nj_tracks').innerHTML = fichaTracksHTML(jid); };
 window.quitarInscripcion = (iid, jid) => {
   const i = DB.inscripciones.find((x) => x.id === iid);
-  if (i) { i.activo = false; toast('Track quitado'); renderFichaTracks(jid); renderCuenta(jid); }
+  if (i) { i.activo = false; i.baja_fecha = HOY; toast('Track quitado'); renderFichaTracks(jid); renderCuenta(jid); }
 };
 window.editarObsTrack = (iid, jid, valor) => {
   const i = DB.inscripciones.find((x) => x.id === iid);
@@ -3191,7 +3201,7 @@ window.toggleBajaAlumno = (jid) => {
     j.baja_fecha = HOY;
     // La baja libera sus cupos: desactiva sus inscripciones en tracks
     // (dejan de contar en la rentabilidad y de generar CR mensuales)
-    DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; });
+    DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; i.baja_fecha = HOY; });
     closeModal(); toast('Alumno dado de baja · sus cupos de track quedaron libres');
   } else {
     j.estado_alumno = 'activo';
@@ -3592,7 +3602,7 @@ window.eliminarTrack = (tid) => {
     + '\n\nEl track dejará de contar en la rentabilidad de la sede.';
   if (!confirm(msg)) return;
   t.activo = false;
-  inscAct.forEach((i) => { i.activo = false; });
+  inscAct.forEach((i) => { i.activo = false; i.baja_fecha = HOY; });
   TRACK_SEL = null;
   closeModal();
   toast(`Track "${t.nombre_track}" eliminado`);
@@ -3818,7 +3828,7 @@ window.descartarProspecto = (jid) => {
   if (!confirm(`¿Descartar a ${nom(j)}? Queda en Bajas con su historial y el contacto del tutor.`)) return;
   j.estado_alumno = 'baja';
   j.baja_fecha = HOY;
-  DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; });
+  DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; i.baja_fecha = HOY; });
   closeModal(); toast('Prospecto descartado'); go('alumnos');
 };
 
@@ -5136,8 +5146,8 @@ function renderSedeSelect() {
 function normalizarBajas() {
   (DB.jugadores || []).filter((j) => j.estado_alumno === 'baja').forEach((j) => {
     const act = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo);
-    act.forEach((i) => { i.activo = false; });
     if (act.length && !j.baja_fecha) j.baja_fecha = HOY;
+    act.forEach((i) => { i.activo = false; i.baja_fecha = j.baja_fecha || HOY; });
   });
 }
 
