@@ -1524,6 +1524,35 @@ function evaluacionHTML(jid) {
     <p class="mt-2 text-xs text-slate-400 text-center">${evs.length} evaluación(es) registradas${evs.length ? ' · última: ' + mesLabelDe(evs[0].periodo) : ''}</p>`;
 }
 window.renderFichaEvalua = (jid) => { if (el('nj_evalua')) el('nj_evalua').innerHTML = evaluacionHTML(jid); };
+// Series del radar: la evaluación en edición (rojo) + hasta 3 meses anteriores
+const RADAR_PREV_ESTILOS = [{ color: '#171e2e', dash: '5,4' }, { color: '#0ea5e9', dash: '2,3' }, { color: '#f59e0b', dash: '1,3' }];
+function evRadarSeries(jid, periodo, attrsActuales) {
+  const previas = evaluacionesDe(jid).filter((e) => e.periodo < periodo).slice(0, 3);
+  const series = previas.map((e, i) => ({ attrs: e, ...RADAR_PREV_ESTILOS[i] })).reverse();   // la más antigua se dibuja primero
+  series.push({ attrs: attrsActuales, color: '#d9232e', fill: 'rgba(217,35,46,0.18)' });
+  return { series, previas };
+}
+const MES3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'];
+const mesCorto = (periodo) => MES3[(+periodo.slice(5, 7) || 1) - 1] + ' ' + periodo.slice(2, 4);
+// Mini gráfica de línea para la evolución física (peso/talla)
+function lineChartSVG(puntos, color, unidad) {
+  if (!puntos.length) return '<p class="text-xs text-slate-400">Sin datos aún.</p>';
+  const W = 300, H = 110, mL = 14, mR = 14, mT = 20, mB = 20;
+  const vals = puntos.map((p) => p.v);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.15; min -= pad; max += pad;
+  const x = (i) => puntos.length === 1 ? W / 2 : mL + (W - mL - mR) * i / (puntos.length - 1);
+  const y = (v) => mT + (H - mT - mB) * (1 - (v - min) / (max - min));
+  const pts = puntos.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" class="w-full">
+    ${puntos.length > 1 ? `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>` : ''}
+    ${puntos.map((p, i) => `
+      <circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3.5" fill="${color}"/>
+      <text x="${x(i).toFixed(1)}" y="${(y(p.v) - 8).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="#334155">${p.v}</text>
+      <text x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="8.5" fill="#94a3b8">${mesCorto(p.p)}</text>`).join('')}
+  </svg>`;
+}
 // Pantalla completa de evaluación: sliders + radar en vivo.
 // Cada mes es una evaluación independiente: al elegir un mes se cargan SUS
 // valores (si existe) y se compara contra la evaluación ANTERIOR a ese mes.
@@ -1574,14 +1603,26 @@ window.pantallaEvaluacion = (jid, periodoSel) => {
     </div>
     <div class="grid gap-4 lg:grid-cols-2">
       <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
-        <div class="mb-1 flex flex-wrap items-center justify-center gap-4 text-xs">
-          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-4 rounded-sm bg-brand-500"></span> ${mesLabelDe(periodo)}${actual ? ' (editando)' : ' (nueva)'}</span>
-          ${base ? `<span class="flex items-center gap-1.5"><span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-ink-900"></span> ${mesLabelDe(base.periodo)} (anterior)</span>` : ''}
+        ${(() => {
+          const { series, previas } = evRadarSeries(jid, periodo, Object.fromEntries(ATRIBUTOS.map(([k]) => [k, ini(k)])));
+          return `
+        <div id="evLeyenda" class="mb-1 flex flex-wrap items-center justify-center gap-3 text-xs">
+          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-4 rounded-sm" style="background:#d9232e"></span> ${mesLabelDe(periodo)}${actual ? ' (editando)' : ' (nueva)'}</span>
+          ${previas.map((e, i) => `<span class="flex items-center gap-1.5"><span class="inline-block h-0.5 w-4 border-t-2 border-dashed" style="border-color:${RADAR_PREV_ESTILOS[i].color}"></span> ${mesLabelDe(e.periodo)}</span>`).join('')}
         </div>
-        <div id="evRadar">${radarSVG([
-          base ? { attrs: base, color: '#171e2e', dash: '5,4' } : null,
-          { attrs: Object.fromEntries(ATRIBUTOS.map(([k]) => [k, ini(k)])), color: '#d9232e', fill: 'rgba(217,35,46,0.18)' },
-        ])}</div>
+        <div id="evRadar">${radarSVG(series)}</div>`;
+        })()}
+        ${(() => {
+          const asc = evs.slice().reverse();
+          const pesos = asc.filter((e) => e.peso != null).slice(-6).map((e) => ({ p: e.periodo, v: e.peso }));
+          const tallas = asc.filter((e) => e.talla != null).slice(-6).map((e) => ({ p: e.periodo, v: e.talla }));
+          if (!pesos.length && !tallas.length) return '';
+          return `
+        <div class="mt-4 grid gap-4 sm:grid-cols-2 border-t border-slate-100 pt-3">
+          <div><div class="mb-1 text-xs font-medium text-slate-500">⚖ Peso (kg)</div>${lineChartSVG(pesos, '#d9232e')}</div>
+          <div><div class="mb-1 text-xs font-medium text-slate-500">📏 Talla (cm)</div>${lineChartSVG(tallas, '#171e2e')}</div>
+        </div>`;
+        })()}
       </div>
       <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4 space-y-2.5">
         <div class="flex flex-wrap items-center gap-2">
@@ -1621,12 +1662,8 @@ window.pantallaEvaluacion = (jid, periodoSel) => {
 // Redibuja el radar con los sliders actuales (la evaluación en edición, en vivo)
 window.evRadarLive = (jid) => {
   const periodo = (EVAL_SEL && EVAL_SEL.periodo) || val('ev_mes') || HOY.slice(0, 7);
-  const base = evaluacionesDe(jid).find((e) => e.periodo < periodo) || null;
   const attrs = Object.fromEntries(ATRIBUTOS.map(([k]) => [k, +val('ev_' + k) || 0]));
-  if (el('evRadar')) el('evRadar').innerHTML = radarSVG([
-    base ? { attrs: base, color: '#171e2e', dash: '5,4' } : null,
-    { attrs, color: '#d9232e', fill: 'rgba(217,35,46,0.18)' },
-  ]);
+  if (el('evRadar')) el('evRadar').innerHTML = radarSVG(evRadarSeries(jid, periodo, attrs).series);
 };
 window.guardarEvaluacion = (jid) => {
   const periodo = val('ev_mes');
