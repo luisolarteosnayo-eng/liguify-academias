@@ -1546,15 +1546,18 @@ window.pantallaEvaluacion = (jid) => {
         ${ATRIBUTOS.map(([k, lbl]) => e[k] == null ? '' : `<span class="rounded bg-ink-900 text-white px-1.5 py-0.5 text-[11px]">${lbl.slice(0, 3).toUpperCase()} <b>${e[k]}</b>${deltaTag(e[k], prev && prev[k])}</span>`).join('')}
       </div>
       ${e.observaciones ? `<p class="mt-1.5 text-xs italic text-slate-500">📝 ${e.observaciones}</p>` : ''}
+      ${e.objetivos ? `<p class="mt-1 text-xs text-indigo-700">🎯 <b>Objetivos:</b> ${e.objetivos}</p>` : ''}
     </div>`;
   }).join('') : '<p class="text-sm text-slate-400">Sin evaluaciones aún.</p>';
   el('content').innerHTML = `
     <button onclick="go('alumnos'); formEditarAlumno('${jid}'); njTab('evalua')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver al alumno</button>
-    <div class="mb-4 flex items-center gap-3">
-      ${j.foto_url ? `<img src="${j.foto_url}" class="h-12 w-12 rounded-full object-cover">` : ''}
+    <div class="mb-5 flex items-center gap-4">
+      ${j.foto_url
+        ? `<img src="${j.foto_url}" class="h-24 w-24 rounded-2xl object-cover ring-2 ring-slate-200 shadow-sm">`
+        : `<span class="flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-200 text-3xl font-bold text-slate-500">${((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase()}</span>`}
       <div>
-        <h2 class="text-xl font-bold">📊 Evaluación · ${nom(j)}</h2>
-        <p class="text-xs text-slate-400">Categoría ${anio(j.fecha_nacimiento)} · ${sede(j.sede_id) ? sede(j.sede_id).nombre_sede : ''}</p>
+        <h2 class="font-display text-3xl md:text-4xl tracking-wide">${nom(j)}</h2>
+        <p class="text-sm text-slate-400">📊 Evaluación · Categoría ${anio(j.fecha_nacimiento)} · ${sede(j.sede_id) ? sede(j.sede_id).nombre_sede : ''}</p>
       </div>
     </div>
     <div class="grid gap-4 lg:grid-cols-2">
@@ -1590,14 +1593,16 @@ window.pantallaEvaluacion = (jid) => {
         </div>
         <label class="block text-xs text-slate-500">Observaciones del entrenador
           <textarea id="ev_obs" rows="2" placeholder="Ej: mejoró el pase largo; trabajar pierna izquierda" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"></textarea></label>
+        <label class="block text-xs text-slate-500">🎯 Objetivos (para el siguiente periodo)
+          <textarea id="ev_objetivos" rows="2" placeholder="Ej: subir velocidad a 60; dominar el perfil izquierdo" class="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"></textarea></label>
         <div class="flex justify-end">
           <button type="button" onclick="guardarEvaluacion('${jid}')" class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar evaluación</button>
         </div>
         <p class="text-[11px] text-slate-400">Una evaluación por mes; si el mes ya existe, se actualiza.</p>
       </div>
     </div>
-    <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Historial de evaluaciones (${evs.length})</h3>
-    <div class="grid gap-2 md:grid-cols-2">${historial}</div>`;
+    <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Historial de evaluaciones (${evs.length}) <span class="font-normal text-xs text-slate-400">· el mes más reciente arriba</span></h3>
+    <div class="max-w-3xl space-y-2">${historial}</div>`;
 };
 // Redibuja el radar con los sliders actuales (la nueva evaluación, en vivo)
 window.evRadarLive = (jid) => {
@@ -1617,9 +1622,10 @@ window.guardarEvaluacion = (jid) => {
   const peso = val('ev_peso') === '' ? null : num('ev_peso');
   const talla = val('ev_talla') === '' ? null : num('ev_talla');
   const obs = val('ev_obs').trim() || null;
+  const objetivos = (el('ev_objetivos') && val('ev_objetivos').trim()) || null;
   let e = DB.evaluaciones.find((x) => x.jugador_id === jid && x.periodo === periodo);
-  if (e) Object.assign(e, attrs, { peso, talla, observaciones: obs });
-  else DB.evaluaciones.push({ id: uid('ev'), jugador_id: jid, periodo, ...attrs, peso, talla, observaciones: obs });
+  if (e) Object.assign(e, attrs, { peso, talla, observaciones: obs, objetivos });
+  else DB.evaluaciones.push({ id: uid('ev'), jugador_id: jid, periodo, ...attrs, peso, talla, observaciones: obs, objetivos });
   // el cromo del alumno refleja SIEMPRE la evaluación más reciente (y se sincroniza a Competencias)
   const reciente = evaluacionesDe(jid)[0];
   if (reciente) {

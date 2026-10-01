@@ -78,7 +78,7 @@ window.AcademiasDB = (() => {
     },
     evaluaciones: {
       table: 'evaluaciones',
-      toRow: (e) => ({ ...pick(e, ['id', 'jugador_id', 'periodo', 'observaciones']),
+      toRow: (e) => ({ ...pick(e, ['id', 'jugador_id', 'periodo', 'observaciones', 'objetivos']),
         velocidad: N(e.velocidad), potencia: N(e.potencia), agilidad: N(e.agilidad),
         tecnica: N(e.tecnica), pase: N(e.pase), defensa: N(e.defensa),
         peso: N(e.peso), talla: N(e.talla), academia_id: ACADEMIA_ID }),
