@@ -1889,6 +1889,20 @@ function njFormBody(j, tracksJid) {
           </div>`;
         }).join('') : '<p class="text-xs text-slate-400">💡 Guarda al alumno primero; luego sube las fotos desde su ficha.</p>'}
       </div>
+      ${g.id ? `<div class="mb-3 rounded-lg ring-1 ring-slate-200 p-3">
+        <div class="mb-1.5 text-xs font-medium text-slate-500">🏆 Liguify Competencias</div>
+        ${g.jugador_maestro_id
+          ? `<div class="flex flex-wrap items-center gap-3 text-xs">
+              <span class="font-medium text-emerald-600">✓ Vinculado al jugador de Competencias</span>
+              <button type="button" onclick="verPerfilCompetencias('${g.id}')" class="text-indigo-600 hover:underline">Ver perfil del jugador ↗</button>
+              <button type="button" onclick="sincronizarCompetencias('${g.id}')" class="text-slate-500 hover:underline">🔄 Sincronizar fotos</button>
+              <button type="button" onclick="desvincularCompetencias('${g.id}')" class="text-rose-500 hover:underline">Desvincular</button>
+            </div>`
+          : `<div class="flex flex-wrap items-center gap-2 text-xs">
+              <button type="button" onclick="vincularCompetencias('${g.id}')" class="rounded-lg bg-ink-900 px-2.5 py-1.5 font-medium text-white hover:opacity-90">🔗 Buscar y vincular por documento</button>
+              <span class="text-slate-400">usa el N° de documento del alumno contra el padrón global (INTI CUP, etc.)</span>
+            </div>`}
+      </div>` : ''}
       <label class="mb-3 flex items-start justify-between gap-3 rounded-lg p-3 text-sm ring-1 ring-slate-200">
         <span><b>Consentimiento de imagen</b><br>
           <span class="text-xs text-slate-400">Autorizado por el tutor. En torneos la foto del alumno sale a color; sin consentimiento, en blanco y negro.</span></span>
@@ -3721,6 +3735,70 @@ window.guardarCargo = (e) => {
 };
 
 // (El cromo se actualiza desde la pestaña 📈 Evaluación de la ficha: refleja la evaluación mensual más reciente)
+
+// ---------- Vínculo con Liguify Competencias (jugador_maestro por documento) ----------
+const COMPETENCIAS_PERFIL_URL = 'https://www.liguify.com/jugador/';
+async function buscarEnCompetencias(j) {
+  const nro = (el('nj_numdoc') && val('nj_numdoc').trim()) || j.num_documento;
+  const pais = (el('nj_paisdoc') && val('nj_paisdoc')) || j.pais_documento || 'PE';
+  if (!nro || nro.length < 6) { toast('Registra primero el N° de documento del alumno (arriba)'); return null; }
+  j.num_documento = nro; j.pais_documento = pais;   // asegura que el RPC valide contra el doc actual
+  const { data, error } = await AcademiasDB.sb.rpc('buscar_jugador_competencias', { p_pais: pais, p_nro: nro });
+  if (error) throw error;
+  return (data && data[0]) || null;
+}
+window.vincularCompetencias = async (jid) => {
+  if (!window.AcademiasDB || !AcademiasDB.on) { toast('Disponible solo en modo conectado'); return; }
+  const j = jugador(jid);
+  try {
+    const m = await buscarEnCompetencias(j);
+    if (m === null) return;
+    if (!m) { toast('Ese documento no está registrado en Competencias (se registra desde el torneo / The Hub)'); return; }
+    j.jugador_maestro_id = m.jugador_maestro_id;
+    j._comp_token = m.perfil_token || null;
+    const sync = [];
+    if (!j.foto_url && m.foto_url) { j.foto_url = m.foto_url; NJ_FOTO = m.foto_url; sync.push('foto'); }
+    if (!j.doc_scan_frente_url && m.doc_frente) { j.doc_scan_frente_url = m.doc_frente; sync.push('DNI frente'); }
+    if (!j.doc_scan_reverso_url && m.doc_reverso) { j.doc_scan_reverso_url = m.doc_reverso; sync.push('DNI reverso'); }
+    toast(`✓ Vinculado a ${m.nombres} ${m.apellidos}${m.verificado ? ' (verificado)' : ''}${sync.length ? ' · sincronizado: ' + sync.join(', ') : ''}`);
+    formEditarAlumno(jid); njTab('personal');
+  } catch (e) { toast('⚠ ' + (e.message || e)); }
+};
+window.sincronizarCompetencias = async (jid) => {
+  if (!window.AcademiasDB || !AcademiasDB.on) { toast('Disponible solo en modo conectado'); return; }
+  const j = jugador(jid);
+  try {
+    const m = await buscarEnCompetencias(j);
+    if (!m) { toast('No se encontró el jugador en Competencias'); return; }
+    const sync = [];
+    if (m.foto_url && m.foto_url !== j.foto_url) { j.foto_url = m.foto_url; NJ_FOTO = m.foto_url; sync.push('foto'); }
+    if (m.doc_frente && m.doc_frente !== j.doc_scan_frente_url) { j.doc_scan_frente_url = m.doc_frente; sync.push('DNI frente'); }
+    if (m.doc_reverso && m.doc_reverso !== j.doc_scan_reverso_url) { j.doc_scan_reverso_url = m.doc_reverso; sync.push('DNI reverso'); }
+    j._comp_token = m.perfil_token || j._comp_token;
+    toast(sync.length ? `🔄 Sincronizado desde Competencias: ${sync.join(', ')}` : '✓ Ya estaba todo al día con Competencias');
+    formEditarAlumno(jid); njTab('personal');
+  } catch (e) { toast('⚠ ' + (e.message || e)); }
+};
+window.verPerfilCompetencias = async (jid) => {
+  const j = jugador(jid);
+  try {
+    let token = j._comp_token;
+    if (!token && window.AcademiasDB && AcademiasDB.on) {
+      const m = await buscarEnCompetencias(j);
+      token = (m && m.perfil_token) || null;
+      if (m) j._comp_token = token;
+    }
+    if (!token) { toast('El jugador aún no tiene perfil público habilitado en Competencias'); return; }
+    window.open(COMPETENCIAS_PERFIL_URL + token, '_blank');
+  } catch (e) { toast('⚠ ' + (e.message || e)); }
+};
+window.desvincularCompetencias = (jid) => {
+  const j = jugador(jid);
+  j.jugador_maestro_id = null;
+  delete j._comp_token;
+  toast('Vínculo con Competencias eliminado');
+  formEditarAlumno(jid); njTab('personal');
+};
 
 // ---------- Onboarding del padre (Flujo B) ----------
 window.formOnboarding = (tid) => {
