@@ -3047,9 +3047,7 @@ function regDMY(p) {
   return isNaN(d) ? '' : fmtDMY(isoDate(d));
 }
 function pagosDocsHTML(jid) {
-  const pagos = DB.pagos.filter((p) => p.jugador_id === jid).sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-  if (!pagos.length) return '<p class="text-sm text-slate-400">Sin documentos de pago aún.</p>';
-  return pagos.map((p) => `
+  const docs = DB.pagos.filter((p) => p.jugador_id === jid).map((p) => ({ f: p.fecha || '', html: `
     <div class="rounded-xl ring-1 ring-slate-200 p-4 mb-3">
       <div class="flex items-start justify-between">
         <div>
@@ -3067,7 +3065,22 @@ function pagosDocsHTML(jid) {
           <span>${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span>
           <span>${S(d.monto)}</span></div>`).join('') || '<div class="text-xs text-slate-400">Sin detalle de cargos</div>'}
       </div>
-    </div>`).join('');
+    </div>` }));
+  // CR de S/ 0 liquidados sin documento (beca / mes gratis de promo): figuran en el
+  // historial para poder verificar la continuidad de las fechas de corte del alumno
+  DB.cargos.filter((c) => c.jugador_id === jid && !(c.monto > 0) && c.estado === 'pagado')
+    .forEach((c) => docs.push({ f: c.ciclo_inicio || (c.periodo ? c.periodo + '-01' : ''), html: `
+    <div class="rounded-xl ring-1 ring-emerald-200 bg-emerald-50/50 p-4 mb-3">
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="font-semibold">${c.promo ? `Mes gratis · Promo ${c.promo}` : 'Beca'} <span class="text-xs font-normal text-slate-400">· liquidado sin pago</span></div>
+          <div class="text-xs text-slate-500 mt-0.5">${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${c.concepto} ${c.descripcion || ''}</div>
+        </div>
+        <div class="text-lg font-bold text-emerald-600 shrink-0">${S(0)}</div>
+      </div>
+    </div>` }));
+  if (!docs.length) return '<p class="text-sm text-slate-400">Sin documentos de pago aún.</p>';
+  return docs.sort((a, b) => (a.f < b.f ? 1 : -1)).map((d) => d.html).join('');
 }
 
 // Documento descargable del estado de cuenta (con cabecera de la sede)
