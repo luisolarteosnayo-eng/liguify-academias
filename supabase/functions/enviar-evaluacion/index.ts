@@ -62,10 +62,13 @@ Deno.serve(async (req) => {
     const ev = evs.find((e: any) => e.periodo === periodo);
     if (!ev) return json({ error: `No hay evaluación guardada de ${mesLabel(periodo)}` }, 400);
     const prev = evs.find((e: any) => e.periodo < periodo) || null;
-    const [s] = await api(`sedes?id=eq.${j.sede_id}&select=nombre_sede,academia_id`);
-    const [a] = s ? await api(`academias?id=eq.${s.academia_id}&select=nombre_academia`) : [null];
+    const [s] = await api(`sedes?id=eq.${j.sede_id}&select=nombre_sede,academia_id,logo_url`);
+    const [a] = s ? await api(`academias?id=eq.${s.academia_id}&select=nombre_academia,logo_url`) : [null];
     const academia = (a && a.nombre_academia) || 'Liguify Academias';
     const sede = (s && s.nombre_sede) || '';
+    // Logo del club en grande (el de la sede, o el de la empresa); solo URLs http (Gmail bloquea data:)
+    const logoCand = (s && s.logo_url) || (a && a.logo_url) || '';
+    const logo = typeof logoCand === 'string' && logoCand.startsWith('http') ? logoCand : null;
 
     // ---- HTML del informe (barras y tabla: compatible con Gmail/Outlook) ----
     const delta = (v: number | null, p: number | null, dec = 0) => {
@@ -88,7 +91,8 @@ Deno.serve(async (req) => {
     }).join('');
     const html = `
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#171e2e">
-      <div style="background:#171e2e;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0">
+      <div style="background:#171e2e;color:#fff;padding:20px 22px;border-radius:12px 12px 0 0;text-align:center">
+        ${logo ? `<img src="${logo}" alt="${esc(academia)}" height="84" style="height:84px;max-width:200px;object-fit:contain;margin-bottom:10px"/>` : ''}
         <div style="font-size:12px;letter-spacing:1px;opacity:.75">${esc(academia)}${sede ? ' · ' + esc(sede) : ''}</div>
         <div style="font-size:20px;font-weight:bold;margin-top:2px">📊 Informe de evaluación · ${esc(mesLabel(periodo))}</div>
         <div style="font-size:14px;margin-top:4px">${esc(j.nombre)} ${esc(j.apellido)} · Categoría ${String(j.fecha_nacimiento || '').slice(0, 4)}</div>
