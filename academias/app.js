@@ -1688,18 +1688,51 @@ window.guardarEvaluacion = (jid) => {
   toast(`📈 Evaluación de ${mesLabelDe(periodo)} guardada`);
   pantallaEvaluacion(jid, periodo);   // permanece en el mes guardado, ya como "editando"
 };
-// Enviar el informe de la evaluación GUARDADA al email del tutor (edge function + Resend)
+// Convierte un SVG generado por la app a PNG (dataURL) vía canvas
+async function svgAPng(svgStr, w, h, escala = 2) {
+  const svg = svgStr.replace('<svg ', `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" `);
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const cv = document.createElement('canvas');
+    cv.width = w * escala; cv.height = h * escala;
+    const cx = cv.getContext('2d');
+    cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, cv.width, cv.height);
+    cx.drawImage(img, 0, 0, cv.width, cv.height);
+    return cv.toDataURL('image/png');
+  } finally { URL.revokeObjectURL(url); }
+}
+// Enviar el informe de la evaluación GUARDADA al email del tutor (edge function + Resend).
+// Las gráficas (radar y evolución física) se rasterizan a PNG y se suben al bucket
+// público para que el correo las muestre (Gmail no renderiza SVG).
 window.enviarEvaluacionEmail = async (jid, periodo) => {
   if (!window.AcademiasDB || !AcademiasDB.on) { toast('El envío por email solo funciona en modo conectado'); return; }
   const j = jugador(jid);
   const t = tutor(j.tutor_id) || {};
   if (!t.email_tutor) { toast('⚠ El tutor no tiene email: regístralo en la ficha (sección Tutor) y vuelve a intentar'); return; }
-  if (!DB.evaluaciones.some((e) => e.jugador_id === jid && e.periodo === periodo)) { toast('Guarda la evaluación antes de enviarla'); return; }
+  const ev = DB.evaluaciones.find((e) => e.jugador_id === jid && e.periodo === periodo);
+  if (!ev) { toast('Guarda la evaluación antes de enviarla'); return; }
   if (!confirm(`¿Enviar el informe de ${mesLabelDe(periodo)} de ${nom(j)} a ${t.email_tutor}?`)) return;
   const btn = el('evEmailBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparando gráficas…'; }
   try {
-    const { data, error } = await AcademiasDB.sb.functions.invoke('enviar-evaluacion', { body: { jugador_id: jid, periodo } });
+    const aid = AcademiasDB.academiaId;
+    const pref = `${aid}/informes/${jid}-${periodo}`;
+    const extra = {};
+    try {
+      const { series, previas } = evRadarSeries(jid, periodo, ev);
+      extra.radar_url = await subirMediaPublica(await svgAPng(radarSVG(series, 300), 300, 300), `${pref}-radar.png`);
+      const colores = ['negro', 'celeste', 'ámbar'];
+      extra.leyenda = `${mesLabelDe(periodo)} (rojo)` + previas.map((e, i) => ` · ${mesLabelDe(e.periodo)} (${colores[i]})`).join('');
+      const asc = evaluacionesDe(jid).slice().reverse();
+      const pesos = asc.filter((e) => e.peso != null).slice(-6).map((e) => ({ p: e.periodo, v: e.peso }));
+      const tallas = asc.filter((e) => e.talla != null).slice(-6).map((e) => ({ p: e.periodo, v: e.talla }));
+      if (pesos.length > 1) extra.peso_url = await subirMediaPublica(await svgAPng(lineChartSVG(pesos, '#d9232e'), 300, 110), `${pref}-peso.png`);
+      if (tallas.length > 1) extra.talla_url = await subirMediaPublica(await svgAPng(lineChartSVG(tallas, '#171e2e'), 300, 110), `${pref}-talla.png`);
+    } catch (gx) { console.warn('[informe] sin gráficas:', gx); }   // sin gráficas, el correo igual sale
+    if (btn) btn.textContent = 'Enviando…';
+    const { data, error } = await AcademiasDB.sb.functions.invoke('enviar-evaluacion', { body: { jugador_id: jid, periodo, ...extra } });
     if (error) throw new Error(error.message || 'La función enviar-evaluacion no está desplegada');
     if (data && data.error) throw new Error(data.error);
     toast(`✉️ Informe enviado a ${(data && data.enviado_a) || t.email_tutor}`);

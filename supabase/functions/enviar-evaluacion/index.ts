@@ -37,8 +37,11 @@ Deno.serve(async (req) => {
     const auth = req.headers.get('Authorization') || '';
     if (!auth) return json({ error: 'Falta la sesión del usuario' }, 401);
 
-    const { jugador_id, periodo, prueba_a } = await req.json();
+    const { jugador_id, periodo, prueba_a, radar_url, peso_url, talla_url, leyenda } = await req.json();
     if (!jugador_id || !periodo) return json({ error: 'Faltan jugador_id o periodo' }, 400);
+    // Solo se insertan imágenes alojadas en el bucket público del propio proyecto
+    const okImg = (u: unknown) => typeof u === 'string' && u.startsWith(`${SUPABASE_URL}/storage/v1/object/public/academias-media/`) ? u : null;
+    const imgRadar = okImg(radar_url), imgPeso = okImg(peso_url), imgTalla = okImg(talla_url);
 
     const api = async (path: string) => {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -92,7 +95,17 @@ Deno.serve(async (req) => {
       </div>
       <div style="border:1px solid #e9e6e0;border-top:0;padding:18px 22px;border-radius:0 0 12px 12px">
         <p style="margin:0 0 12px">Hola${t && t.nombres ? ' ' + esc(t.nombres.split(' ')[0]) : ''} 👋, compartimos el informe mensual del entrenador${prev ? ` (comparado con ${esc(mesLabel(prev.periodo))})` : ''}:</p>
+        ${imgRadar ? `
+        <div style="text-align:center;margin:0 0 14px">
+          <img src="${imgRadar}" width="280" height="280" alt="Radar de atributos" style="max-width:100%;height:auto"/>
+          ${leyenda ? `<div style="font-size:11px;color:#8b93a7;margin-top:2px">${esc(leyenda)}</div>` : ''}
+        </div>` : ''}
         <table style="border-collapse:collapse;width:100%;font-size:14px">${filas}</table>
+        ${(imgPeso || imgTalla) ? `
+        <table style="width:100%;margin-top:14px"><tr>
+          ${imgPeso ? `<td style="text-align:center;vertical-align:top"><div style="font-size:12px;font-weight:bold;color:#64748b">⚖ Evolución del peso (kg)</div><img src="${imgPeso}" width="250" alt="Evolución de peso" style="max-width:100%;height:auto"/></td>` : ''}
+          ${imgTalla ? `<td style="text-align:center;vertical-align:top"><div style="font-size:12px;font-weight:bold;color:#64748b">📏 Evolución de la talla (cm)</div><img src="${imgTalla}" width="250" alt="Evolución de talla" style="max-width:100%;height:auto"/></td>` : ''}
+        </tr></table>` : ''}
         ${(ev.peso != null || ev.talla != null) ? `
         <p style="margin:14px 0 0;font-size:14px">
           ${ev.peso != null ? `⚖ <b>Peso:</b> ${ev.peso} kg ${delta(ev.peso, prev && prev.peso, 1)}` : ''}
