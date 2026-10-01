@@ -3613,9 +3613,20 @@ window.pantallaCierres = (periodoSel) => {
       const p = prevDe(c);
       st.al += +c.alumnos || 0; st.cap += +c.capacidad || 0; st.ing += +c.ingresos || 0;
       st.cancha += +c.costo_cancha || 0; st.prof += +c.costo_profesores || 0; st.u += +c.utilidad || 0;
+      // Altas y bajas con nombre: requiere que ambos cierres tengan nómina (alumnos_ids)
+      let movs = '';
+      if (Array.isArray(c.alumnos_ids) && p && Array.isArray(p.alumnos_ids)) {
+        const ahora = new Set(c.alumnos_ids), antes = new Set(p.alumnos_ids);
+        const nombres = (ids) => ids.map((id) => { const jj = jugador(id); return jj ? nom(jj) : '?'; });
+        const altas = nombres(c.alumnos_ids.filter((id) => !antes.has(id)));
+        const bajas = nombres(p.alumnos_ids.filter((id) => !ahora.has(id)));
+        const lista = (arr, max = 3) => arr.slice(0, max).join(', ') + (arr.length > max ? ` y ${arr.length - max} más` : '');
+        if (altas.length) movs += `<div class="text-[11px] text-emerald-600" title="${altas.join(', ').replace(/"/g, '&quot;')}">+ ${lista(altas)}</div>`;
+        if (bajas.length) movs += `<div class="text-[11px] text-rose-600" title="${bajas.join(', ').replace(/"/g, '&quot;')}">− ${lista(bajas)}</div>`;
+      }
       return [
         `<b>${c.nombre_track || '(track eliminado)'}</b><div class="text-[11px] text-slate-400">${c.entrenadores || ''}</div>`,
-        `${c.alumnos}/${c.capacidad || '—'}${delta(c.alumnos, p && p.alumnos)}`,
+        `${c.alumnos}/${c.capacidad || '—'}${delta(c.alumnos, p && p.alumnos)}${movs}`,
         S0d(c.ingresos) + delta(c.ingresos, p && p.ingresos, true),
         S0d(c.costo_cancha), S0d(c.costo_profesores),
         fmtU(c.utilidad) + delta(c.utilidad, p && p.utilidad, true),
@@ -3680,6 +3691,8 @@ window.ejecutarCierreMensual = (e) => {
         nombre_track: t.nombre_track,
         entrenadores: coachesNombres(t).join(', ') || 'Sin asignar',
         alumnos: x.insc.length, capacidad: +t.capacidad_maxima || 0,
+        alumnos_ids: x.insc.map((i) => i.jugador_id),   // nómina del cierre: permite ver altas y bajas por periodo
+
         ingresos: x.ingresos, costo_cancha: +t.costo_mensual_cancha || 0,
         costo_profesores: costoEntrenadores(t), utilidad: x.utilidad,
         cr_promedio: x.crPromedio,

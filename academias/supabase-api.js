@@ -154,6 +154,7 @@ window.AcademiasDB = (() => {
     trackCierres: {
       table: 'track_cierres',
       toRow: (c) => ({ ...pick(c, ['id', 'sede_id', 'track_id', 'periodo', 'nombre_track', 'entrenadores']),
+        alumnos_ids: (Array.isArray(c.alumnos_ids) && c.alumnos_ids.length) ? c.alumnos_ids : null,
         alumnos: N(c.alumnos) || 0, capacidad: N(c.capacidad) || 0, ingresos: N(c.ingresos) || 0,
         costo_cancha: N(c.costo_cancha) || 0, costo_profesores: N(c.costo_profesores) || 0,
         utilidad: N(c.utilidad) || 0, cr_promedio: N(c.cr_promedio) || 0, academia_id: ACADEMIA_ID }),
