@@ -461,6 +461,7 @@ let PROMO_EDIT = null;         // id de promoción en edición (o null)
 let STAFF_EDIT = null;         // id de profesor/staff en edición (o null)
 let CR_EDIT_ID = null;         // id del CR en edición en el estado de cuenta (o null)
 let FICHA_CR_INSC = null;      // inscripción con el panel "Agregar CR" abierto en la pestaña Tracks
+let FICHA_CORTE_INSC = null;   // inscripción con el panel "Fijar corte" abierto (migración: pagado fuera del sistema)
 let FICHA_ADD_TRACK = false;   // panel "Agregar a un nuevo track" expandido en la ficha
 let FICHA_ADD_CNR = false;     // panel "Agregar CNR" expandido en la ficha
 let FICHA_ADD_EVAL = false;    // panel "Nueva evaluación" expandido en la ficha
@@ -2107,7 +2108,8 @@ function fichaTracksHTML(jid) {
       <div class="flex items-center justify-between">
         <div>
           <b>${t.nombre_track}</b> <span class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</span>
-          <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)'}</div>
+          <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)'}${
+            DB.cargos.some((c) => c.inscripcion_id === i.id && c.tipo === 'CR') ? '' : ` <button type="button" onclick="formFijarCorte('${i.id}','${jid}')" class="text-indigo-600 hover:underline" title="Migración: registra hasta qué fecha ya está pagado, sin generar CR">✏️ Fijar corte</button>`}</div>
         </div>
         <div class="flex items-center gap-2">
           <span class="text-xs text-slate-400">S/</span>
@@ -2125,6 +2127,7 @@ function fichaTracksHTML(jid) {
           class="w-full rounded border border-slate-200 px-2 py-1 text-xs ${i.observaciones ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-slate-500'}">
       </div>
       ${FICHA_CR_INSC === i.id ? crFormPanelHTML(i, jid) : ''}
+      ${FICHA_CORTE_INSC === i.id ? fijarCortePanelHTML(i, jid) : ''}
     </div>`;
   }).join('') || '<p class="text-xs text-slate-400">Sin tracks asignados. Agrégalo abajo.</p>';
   const promoLink = insc.length && promocionesSede().length
@@ -2159,6 +2162,42 @@ function fichaTracksHTML(jid) {
   return `<div class="space-y-2">${lista}</div>${promoLink}${addForm}`;
 }
 window.renderFichaTracks = (jid) => { if (el('nj_tracks')) el('nj_tracks').innerHTML = fichaTracksHTML(jid); };
+// Migración desde el sistema anterior: el alumno ya pagó fuera del sistema hasta una
+// fecha. Se fija ultima_fecha_corte SIN generar CR ni deuda; el generador de CR por
+// ciclo retoma desde el día siguiente. Solo disponible si la inscripción no tiene CR.
+function fijarCortePanelHTML(i, jid) {
+  const ciclos = ciclosPagoSede();
+  const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
+  return `
+    <div class="mt-2 rounded-lg bg-indigo-50 ring-1 ring-indigo-200 p-3 space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-indigo-700">✏️ Fijar fecha de corte (migración)</span>
+        <button type="button" onclick="FICHA_CORTE_INSC = null; renderFichaTracks('${jid}')" class="text-xs text-slate-400 hover:text-slate-600">✕ Cerrar</button>
+      </div>
+      <p class="text-[11px] text-slate-500">Registra hasta qué fecha el alumno ya está pagado (pagos del sistema anterior). <b>No genera CR ni deuda</b>; el siguiente CR del ciclo iniciará al día siguiente.</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="text-xs text-slate-500 shrink-0">Pagado hasta</label>
+        <input id="fc_fecha" type="date" value="${i.ultima_fecha_corte || ''}" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+        ${ciclos.length ? `<label class="text-xs text-slate-500 shrink-0">Ciclo</label>
+        <select id="fc_ciclo" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          ${ciclos.map((c) => `<option value="${c.id}" ${(i.ciclo_dia === c.dia || (!i.ciclo_dia && cicloDef && c.id === cicloDef.id)) ? 'selected' : ''}>${nombreCiclo(c)}</option>`).join('')}
+        </select>` : ''}
+        <button type="button" onclick="fijarCorteInsc('${i.id}','${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Fijar corte</button>
+      </div>
+    </div>`;
+}
+window.formFijarCorte = (iid, jid) => { FICHA_CORTE_INSC = iid; FICHA_CR_INSC = null; renderFichaTracks(jid); };
+window.fijarCorteInsc = (iid, jid) => {
+  const i = DB.inscripciones.find((x) => x.id === iid); if (!i) return;
+  const f = val('fc_fecha');
+  if (!f) { toast('Elige hasta qué fecha está pagado'); return; }
+  i.ultima_fecha_corte = f;
+  const ciclo = el('fc_ciclo') && DB.ciclosPago.find((c) => c.id === el('fc_ciclo').value);
+  if (ciclo) i.ciclo_dia = ciclo.dia;   // sin ciclo, el proceso masivo no lo tomaría
+  FICHA_CORTE_INSC = null;
+  toast(`✓ Corte fijado al ${fmtDMY(f)} · el siguiente CR inicia el ${fmtDMY(isoAddDays(f, 1))}`);
+  renderFichaTracks(jid);
+};
 window.quitarInscripcion = (iid, jid) => {
   const i = DB.inscripciones.find((x) => x.id === iid);
   if (i) { i.activo = false; i.baja_fecha = HOY; toast('Track quitado'); renderFichaTracks(jid); renderCuenta(jid); }
@@ -3162,6 +3201,7 @@ window.formEditarAlumno = (jid) => {
   NJ_FOTO = j.foto_url || null;
   CR_EDIT_ID = null;
   FICHA_CR_INSC = null;
+  FICHA_CORTE_INSC = null;
   FICHA_ADD_TRACK = false;
   FICHA_ADD_CNR = false;
   FICHA_ADD_EVAL = false;
