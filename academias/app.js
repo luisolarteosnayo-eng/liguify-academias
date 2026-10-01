@@ -2314,7 +2314,8 @@ function estadoCuentaHTML(jid) {
           <input id="crEd_monto" type="number" step="0.01" value="${c.monto}" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right bg-white">
         </div>
         <div class="flex items-center justify-end gap-2">
-          ${c.tipo === 'CNR' ? `<button type="button" onclick="eliminarCargoCNR('${c.id}','${jid}')" class="mr-auto text-sm text-rose-600 hover:underline">Eliminar cargo</button>` : ''}
+          ${c.tipo === 'CNR' ? `<button type="button" onclick="eliminarCargoCNR('${c.id}','${jid}')" class="mr-auto text-sm text-rose-600 hover:underline">Eliminar cargo</button>`
+            : ROL === 'admin' ? `<button type="button" onclick="eliminarCargoCR('${c.id}','${jid}')" class="mr-auto text-sm text-rose-600 hover:underline">Eliminar cargo</button>` : ''}
           <button type="button" onclick="cancelarEdicionCR('${jid}')" class="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
           <button type="button" onclick="guardarEdicionCR('${c.id}','${jid}')" class="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700">Guardar cambios</button>
         </div>
@@ -2425,6 +2426,29 @@ window.eliminarCargoCNR = (cid, jid) => {
   toast(salida ? 'Cargo eliminado · stock devuelto al almacén' : 'Cargo eliminado');
   renderFichaCNR(jid);
   renderCuenta(jid);
+};
+// Eliminar un CR pendiente (solo Administrador, sin pagos asociados). Si era el
+// último CR generado de su inscripción, la fecha de corte retrocede al día
+// anterior al inicio de su ciclo, para que el proceso regenere ese periodo.
+window.eliminarCargoCR = (cid, jid) => {
+  if (ROL !== 'admin') { toast('Solo el Administrador puede eliminar CRs'); return; }
+  const c = DB.cargos.find((x) => x.id === cid);
+  if (!c || c.tipo !== 'CR') return;
+  const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => (p.detalle || []).some((d) => d.cargo_id === cid));
+  if (tienePagos) { toast('No se puede eliminar: tiene pagos asociados'); return; }
+  const i = c.inscripcion_id ? DB.inscripciones.find((x) => x.id === c.inscripcion_id) : null;
+  const esUltimo = i && c.ciclo_fin && i.ultima_fecha_corte === c.ciclo_fin;
+  const msg = `¿Eliminar el CR "${descCargo(c)}" de ${S(c.monto)}? Esta acción no se puede deshacer.`
+    + (esUltimo ? `\n\nLa fecha de corte del track volverá al ${fmtDMY(isoAddDays(c.ciclo_inicio, -1))} (el proceso podrá regenerar este periodo).`
+                : (i ? '\n\n⚠ No es el último CR del track: la fecha de corte no cambia y el periodo eliminado quedará sin CR.' : ''));
+  if (!confirm(msg)) return;
+  DB.cargos = DB.cargos.filter((x) => x.id !== cid);
+  if (esUltimo) i.ultima_fecha_corte = c.ciclo_inicio ? isoAddDays(c.ciclo_inicio, -1) : null;
+  liquidarCargosGratis(jid);   // si era parte de una promo, reevalúa su mes gratis
+  CR_EDIT_ID = null;
+  toast('CR eliminado' + (esUltimo ? ` · corte del track al ${fmtDMY(i.ultima_fecha_corte)}` : ''));
+  renderCuenta(jid);
+  renderFichaTracks(jid);
 };
 window.cancelarEdicionCR = (jid) => { CR_EDIT_ID = null; renderCuenta(jid); };
 window.guardarEdicionCR = (cid, jid) => {
