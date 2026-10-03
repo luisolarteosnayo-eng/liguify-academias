@@ -569,7 +569,15 @@ const SCREENS = {
     const sedesDash = sedesActivas().filter((s) => inDash(s.id));
     const alumnosDash = DB.jugadores.filter((j) => inDash(j.sede_id));
     const tracksDash = DB.tracks.filter((t) => t.activo !== false && inDash(t.sede_id));
-    const nuevos = alumnosDash.filter((j) => j.fecha_registro && j.fecha_registro >= win.inicio && j.fecha_registro <= win.fin);
+    // Nuevos = altas reales del periodo. Los prospectos (clase de prueba) NO son
+    // nuevos: cuentan recién al convertirse en activos (la conversión re-fecha su
+    // registro). Un prospecto descartado (baja sin haber tenido track) tampoco.
+    const tuvoTrack = (jid) => DB.inscripciones.some((i) => i.jugador_id === jid);
+    const nuevos = alumnosDash.filter((j) => j.fecha_registro && j.fecha_registro >= win.inicio && j.fecha_registro <= win.fin
+      && j.estado_alumno !== 'prospecto'
+      && !(j.estado_alumno === 'baja' && j.fue_prospecto && !tuvoTrack(j.id)));
+    // Clases de prueba del periodo (prospectos actuales, convertidos y descartados)
+    const clasesPrueba = alumnosDash.filter((j) => j.prueba_fecha && j.prueba_fecha >= win.inicio && j.prueba_fecha <= win.fin);
     const activos = alumnosDash.filter((j) => j.estado_alumno === 'activo').length;
     const pagosDash = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin);
     const ingresosItems = pagosDash.flatMap((p) => (p.detalle || []).map((d) => ({ cat: d.cat || (d.tipo === 'CR' ? 'Mensualidades' : d.concepto || 'Otros'), monto: d.monto })))
@@ -625,6 +633,10 @@ const SCREENS = {
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Alumnos nuevos por día</h3>
       <div class="mb-6">${chartNuevosPorDia(nuevos)}</div>
+
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">🎈 Clases de prueba por día
+        ${clasesPrueba.length ? `<span class="font-normal text-xs text-slate-400">· ${clasesPrueba.length} clase(s) · ${clasesPrueba.filter((j) => j.estado_alumno === 'activo').length} convertido(s) en alumno</span>` : ''}</h3>
+      <div class="mb-6">${chartNuevosPorDia(clasesPrueba, (j) => j.prueba_fecha)}</div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Tracks por sede (break-even)</h3>
       ${(() => {
@@ -904,9 +916,11 @@ const SCREENS = {
     }, { util: 0, ing: 0, cos: 0, al: 0, cap: 0, n: 0, pot: 0, cupos: 0, cancha: 0, profes: 0 });
     const utilCls = tot.util > 0 ? 'text-emerald-600' : tot.util < 0 ? 'text-rose-600' : 'text-slate-700';
     const ocup = tot.cap ? Math.round(tot.al * 100 / tot.cap) : 0;
-    // Bajas del mes en curso en la sede (con fecha de baja registrada)
+    // Bajas del mes en curso en la sede (con fecha de baja registrada); un
+    // prospecto descartado (nunca tuvo track) no cuenta como baja de alumno
     const bajasMes = alumnosSede().filter((j) =>
-      j.estado_alumno === 'baja' && (j.baja_fecha || '').slice(0, 7) === HOY.slice(0, 7)).length;
+      j.estado_alumno === 'baja' && (j.baja_fecha || '').slice(0, 7) === HOY.slice(0, 7)
+      && DB.inscripciones.some((i) => i.jugador_id === j.id)).length;
     const desgloseProf = Object.entries(porProfesor).sort((a, b) => b[1] - a[1])
       .map(([n2, c2]) => `${n2} <b>${S(c2)}</b>`).join(' · ');
     el('content').innerHTML = `
@@ -1344,14 +1358,14 @@ window.dashSet = (key, val) => {
   else if (key === 'periodo') DASH_PERIODO = val;
   SCREENS.dashboard();
 };
-function chartNuevosPorDia(nuevos) {
+function chartNuevosPorDia(nuevos, fechaDe = (j) => j.fecha_registro) {
   if (!nuevos.length) return '<div class="rounded-xl bg-white ring-1 ring-slate-200 p-6 text-center text-sm text-slate-400">Sin registros en el periodo.</div>';
   const palette = ['#d9232e', '#171e2e', '#8b93a7', '#10b981', '#f59e0b', '#0ea5e9'];
   const sedeIds = DB.sedes.map((s) => s.id).filter((sid) => nuevos.some((j) => j.sede_id === sid));
   const colorDe = {}; sedeIds.forEach((sid, i) => { colorDe[sid] = palette[i % palette.length]; });
-  const dias = [...new Set(nuevos.map((j) => j.fecha_registro))].sort();
-  const conteo = (dia, sid) => nuevos.filter((j) => j.fecha_registro === dia && j.sede_id === sid).length;
-  const totalDia = (dia) => nuevos.filter((j) => j.fecha_registro === dia).length;
+  const dias = [...new Set(nuevos.map(fechaDe))].sort();
+  const conteo = (dia, sid) => nuevos.filter((j) => fechaDe(j) === dia && j.sede_id === sid).length;
+  const totalDia = (dia) => nuevos.filter((j) => fechaDe(j) === dia).length;
   const maxDia = Math.max(...dias.map(totalDia), 1);
   const barW = 34, gap = 12, padL = 10, padB = 22, padT = 16, h = 170;
   const w = padL * 2 + dias.length * (barW + gap);
@@ -4030,6 +4044,7 @@ window.guardarClasePrueba = (e) => {
 window.convertirProspecto = (jid) => {
   const j = jugador(jid); if (!j) return;
   j.estado_alumno = 'activo';
+  j.fecha_registro = HOY;   // la ALTA real es hoy: recién ahora cuenta como alumno nuevo
   toast(`✓ ${nom(j)} ahora es alumno · asígnale su track`);
   formEditarAlumno(jid);
   njTab('tracks');   // directo a asignarle track + CR
