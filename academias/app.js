@@ -434,6 +434,7 @@ function statsTorneo(t) {
 // ---------- Menú por rol ----------
 const MENU = [
   { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor','operador','cobranza'] },
+  { id: 'gerencial',   label: 'Gerencial',     icon: '📈', roles: ['admin'] },
   { id: 'tracks',      label: 'Tracks · Rentabilidad', icon: '🎯', roles: ['admin','coordinador','operador'] },
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador','operador'] },
   { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
@@ -487,6 +488,7 @@ let AL_FILTRO = 'activos';     // filtro de la lista de Alumnos: activos | prosp
 let AL_ORDEN = 'nombre';       // orden de la lista: nombre | deuda | corte
 let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
+let GER_PERIODO = 'mes';       // periodo del Dashboard Gerencial
 // Conectado: fecha real del dispositivo · demo: fecha fija de los datos mock
 const HOY = (window.AcademiasDB && window.AcademiasDB.on)
   ? isoDate(new Date())
@@ -894,6 +896,76 @@ const SCREENS = {
         <div id="configTab"></div>
       </div>`;
     CONFIG_TABS[CONFIG_TAB]();
+  },
+
+  // ---------- Dashboard Gerencial (solo Administrador General) ----------
+  // Resultado del periodo, general y por sede: Ingresos − Gastos = Utilidad
+  // operativa, Pendiente de cobro, y el movimiento de alumnos (clases de
+  // prueba, nuevos, bajas).
+  gerencial() {
+    if (ROL !== 'admin') { el('content').innerHTML = '<p class="p-4 text-sm text-slate-400">Solo el Administrador General puede ver este panel.</p>'; return; }
+    const win = GER_PERIODO === 'anterior' ? mesAnteriorWindow(HOY) : mesActualWindow(HOY);
+    const tuvoTrack = (jid) => DB.inscripciones.some((i) => i.jugador_id === jid);
+    const porSede = sedesActivas().map((s) => {
+      const ids = new Set(DB.jugadores.filter((j) => j.sede_id === s.id).map((j) => j.id));
+      const ingresos = DB.pagos.filter((p) => p.estado === 'aprobado' && ids.has(p.jugador_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
+        .reduce((sm, p) => sm + (p.detalle || []).reduce((s2, d) => s2 + (d.monto > 0 ? d.monto : 0), 0), 0);
+      const gastos = DB.egresos.filter((e2) => e2.sede_id === s.id && (e2.fecha || '') >= win.inicio && (e2.fecha || '') <= win.fin)
+        .reduce((sm, e2) => sm + (+e2.monto || 0), 0);
+      const porCobrar = DB.cargos.filter((c) => ids.has(c.jugador_id) && (c.monto - (c.pagado_monto || 0)) > 0)
+        .reduce((sm, c) => sm + (c.monto - (c.pagado_monto || 0)), 0);
+      const { nuevos, clasesPrueba } = altasYPruebasDash(win, (sid) => sid === s.id);
+      const bajas = DB.jugadores.filter((j) => j.sede_id === s.id && j.estado_alumno === 'baja'
+        && (j.baja_fecha || '') >= win.inicio && (j.baja_fecha || '') <= win.fin && tuvoTrack(j.id)).length;
+      return { s, ingresos, gastos, utilidad: ingresos - gastos, porCobrar,
+        nuevos: nuevos.length, pruebas: clasesPrueba.length, bajas };
+    });
+    const tot = porSede.reduce((a, x) => { ['ingresos', 'gastos', 'porCobrar', 'nuevos', 'pruebas', 'bajas'].forEach((k) => { a[k] += x[k]; }); return a; },
+      { ingresos: 0, gastos: 0, porCobrar: 0, nuevos: 0, pruebas: 0, bajas: 0 });
+    const maxBar = Math.max(...porSede.map((x) => Math.max(x.ingresos, x.gastos)), 1);
+    const fmtU2 = (u) => `<span class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S0(Math.abs(u))}</span>`;
+    const barra = (label, v, color) => `
+      <div class="flex items-center gap-2 text-xs mt-1">
+        <span class="w-16 shrink-0 text-slate-400">${label}</span>
+        <div class="flex-1 bg-slate-100 rounded h-4 overflow-hidden"><div class="h-4 rounded" style="width:${Math.max(1, Math.round(v * 100 / maxBar))}%;background:${color}"></div></div>
+        <span class="w-20 shrink-0 text-right font-medium">${S0(v)}</span>
+      </div>`;
+    el('content').innerHTML = `
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 class="text-xl font-bold">📈 Dashboard Gerencial</h2>
+        <div class="inline-flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-sm">
+          <button onclick="gerSet('mes')" class="px-3 py-2 ${GER_PERIODO === 'mes' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Mes actual</button>
+          <button onclick="gerSet('anterior')" class="px-3 py-2 ${GER_PERIODO === 'anterior' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Mes anterior</button>
+        </div>
+      </div>
+      <p class="text-xs text-slate-400 mb-4">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · resultado general y por sede</p>
+      <div class="grid gap-3 grid-cols-2 md:grid-cols-4 mb-3">
+        ${card('Ingresos', S0(tot.ingresos), 'pagos aprobados del periodo')}
+        ${card('Gastos', `<span class="text-rose-600">${S0(tot.gastos)}</span>`, 'del periodo')}
+        ${card('Utilidad operativa', fmtU2(tot.ingresos - tot.gastos), 'ingresos − gastos')}
+        ${card('Pendiente de cobro', S0(tot.porCobrar), 'saldo total por cobrar')}
+      </div>
+      <div class="grid gap-3 grid-cols-3 mb-6">
+        ${card('🎈 Clases de prueba', tot.pruebas, 'en el periodo')}
+        ${card('🧒 Alumnos nuevos', `<span class="text-emerald-600">+${tot.nuevos}</span>`, 'altas del periodo')}
+        ${card('Bajas', `<span class="${tot.bajas ? 'text-rose-600' : ''}">−${tot.bajas}</span>`, 'del periodo')}
+      </div>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Ingresos vs gastos por sede</h3>
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 px-4 py-2 mb-6">
+        ${porSede.map((x) => `
+          <div class="py-2.5 border-b border-slate-100 last:border-0">
+            <div class="text-sm font-medium text-slate-700">${x.s.nombre_sede} <span class="text-xs font-normal text-slate-400">· Utilidad ${fmtU2(x.utilidad)} · Por cobrar ${S0(x.porCobrar)}</span></div>
+            ${barra('Ingresos', x.ingresos, '#d9232e')}
+            ${barra('Gastos', x.gastos, '#171e2e')}
+          </div>`).join('') || '<p class="py-3 text-sm text-slate-400">Sin sedes activas.</p>'}
+      </div>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Detalle por sede</h3>
+      ${table(['Sede', 'Ingresos', 'Gastos', 'Utilidad operativa', 'Pendiente de cobro', '🎈 Clases de prueba', '🧒 Nuevos', 'Bajas'], [
+        ...porSede.map((x) => [`<b>${x.s.nombre_sede}</b>`, S0(x.ingresos), S0(x.gastos), fmtU2(x.utilidad), S0(x.porCobrar),
+          String(x.pruebas), `<span class="text-emerald-600 font-medium">+${x.nuevos}</span>`, x.bajas ? `<span class="text-rose-600 font-medium">−${x.bajas}</span>` : '0']),
+        [`<b class="text-slate-500">Total general</b>`, `<b>${S0(tot.ingresos)}</b>`, `<b>${S0(tot.gastos)}</b>`, fmtU2(tot.ingresos - tot.gastos), `<b>${S0(tot.porCobrar)}</b>`,
+          `<b>${tot.pruebas}</b>`, `<b class="text-emerald-600">+${tot.nuevos}</b>`, `<b class="${tot.bajas ? 'text-rose-600' : ''}">−${tot.bajas}</b>`],
+      ])}`;
   },
 
   tracks() {
@@ -1362,6 +1434,7 @@ function renderAlumnosList() {
 }
 
 // ---------- Dashboard: control + gráfico de alumnos nuevos por día ----------
+window.gerSet = (v) => { GER_PERIODO = v; SCREENS.gerencial(); };
 window.dashSet = (key, val) => {
   if (key === 'sede') DASH_SEDE = val;
   else if (key === 'periodo') DASH_PERIODO = val;
