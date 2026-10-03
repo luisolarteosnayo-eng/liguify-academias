@@ -5069,34 +5069,54 @@ window.eliminarCatTorneo = (cid) => {
   toast('Categoría eliminada'); renderTorneoDetalle();
 };
 
-// Agregar jugadores a una categoría: por track, selección múltiple, sin repetir en la misma categoría
+// Agregar jugadores a una categoría: por track o buscando por nombre en toda la
+// sede; selección múltiple que se conserva al cambiar el filtro, sin repetir en
+// la misma categoría
+let TJ_SEL = new Set();   // jugadores marcados en el modal (sobrevive a los re-render del filtro)
 window.formAgregarJugTorneo = (catId) => {
   const c = DB.torneoCategorias.find((x) => x.id === catId);
   const tks = tracksSede();
+  TJ_SEL = new Set();
   openModal(`Agregar jugadores · Categoría ${c.nombre}`, `
     <form onsubmit="guardarJugadoresTorneo(event,'${catId}')">
+      ${field('Buscar por nombre (toda la sede)', input('tj_q', `placeholder="Escribe un nombre…" oninput="tjListaJugadores('${catId}')"`))}
       ${field('Track', select('tj_track', tks.map((tk) => ({ v: tk.id, t: tk.nombre_track })), `onchange="tjListaJugadores('${catId}')"`))}
       <div id="tj_lista" class="mb-3 max-h-64 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100"></div>
+      <div id="tj_selinfo" class="mb-2 text-xs text-indigo-600 empty:hidden"></div>
       ${submitBar('Agregar seleccionados')}
     </form>`);
   tjListaJugadores(catId);
 };
+window.tjMarcar = (jid, on) => {
+  if (on) TJ_SEL.add(jid); else TJ_SEL.delete(jid);
+  if (el('tj_selinfo')) el('tj_selinfo').textContent = TJ_SEL.size ? `${TJ_SEL.size} seleccionado(s)` : '';
+};
 window.tjListaJugadores = (catId) => {
-  const tid = val('tj_track');
+  const q = (val('tj_q') || '').trim().toLowerCase();
   const yaIds = new Set(DB.torneoJugadores.filter((x) => x.categoria_id === catId).map((x) => x.jugador_id));
-  const jugs = DB.inscripciones.filter((i) => i.track_id === tid && i.activo)
-    .map((i) => jugador(i.jugador_id)).filter((j) => j && !yaIds.has(j.id));
+  let jugs;
+  if (q) {
+    // Con búsqueda: todos los alumnos activos de la sede que coincidan, sin importar el track
+    jugs = alumnosSede().filter((j) => j.estado_alumno === 'activo' && !yaIds.has(j.id)
+      && nom(j).toLowerCase().includes(q));
+  } else {
+    const tid = val('tj_track');
+    jugs = DB.inscripciones.filter((i) => i.track_id === tid && i.activo)
+      .map((i) => jugador(i.jugador_id)).filter((j) => j && j.estado_alumno !== 'baja' && !yaIds.has(j.id));
+  }
   el('tj_lista').innerHTML = jugs.length
     ? jugs.map((j) => `<label class="flex items-center gap-2.5 px-3 py-2.5 text-sm cursor-pointer hover:bg-slate-50">
-        <input type="checkbox" class="tjChk h-4 w-4 accent-indigo-600" value="${j.id}">
+        <input type="checkbox" class="tjChk h-4 w-4 accent-indigo-600" value="${j.id}" ${TJ_SEL.has(j.id) ? 'checked' : ''}
+          onchange="tjMarcar('${j.id}', this.checked)">
         <span>${nom(j)} <span class="text-xs text-slate-400">· Cat. ${anio(j.fecha_nacimiento)}</span></span>
       </label>`).join('')
-    : '<p class="p-3 text-sm text-slate-400">No hay jugadores disponibles en este track (o ya están en la categoría).</p>';
+    : `<p class="p-3 text-sm text-slate-400">${q ? `Sin coincidencias para "${q}" en la sede.` : 'No hay jugadores disponibles en este track (o ya están en la categoría).'}</p>`;
+  tjMarcar(null, false);   // refresca el contador (null nunca está en el set)
 };
 window.guardarJugadoresTorneo = (e, catId) => {
   e.preventDefault();
   const c = DB.torneoCategorias.find((x) => x.id === catId);
-  const sel = [...document.querySelectorAll('.tjChk:checked')].map((x) => x.value);
+  const sel = [...TJ_SEL];
   if (!sel.length) { toast('Selecciona al menos un jugador'); return; }
   const cnTorneo = DB.conceptosCNR.find((x) => x.es_torneo && x.activo);
   const precioDef = cnTorneo ? (+cnTorneo.precio || 0) : 0;
