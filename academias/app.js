@@ -4051,7 +4051,19 @@ window.chkSimilares = (pref, boxId) => {
   const toks = sinTildes(`${val(pref + '_nombre')} ${val(pref + '_apellido')}`)
     .split(/\s+/).filter((t) => t.length >= 3);
   if (!toks.length) { box.innerHTML = ''; return; }
-  const sim = DB.jugadores.filter((j) => { const n = sinTildes(nom(j)); return toks.every((t) => n.includes(t)); }).slice(0, 3);
+  // Ranking: primero los nombres cuyas palabras EMPIEZAN con lo escrito (no una
+  // coincidencia en medio, como "Vera-ste-gui"), y entre iguales las bajas primero
+  // (son el caso que evita duplicar); recién entonces se corta la lista.
+  const rankEstado = { baja: 0, prospecto: 1 };
+  const sim = DB.jugadores
+    .map((j) => {
+      const n = sinTildes(nom(j));
+      if (!toks.every((t) => n.includes(t))) return null;
+      const palabras = n.split(/\s+/);
+      const empieza = toks.every((t) => palabras.some((p) => p.startsWith(t)));
+      return { j, score: (empieza ? 0 : 10) + (rankEstado[j.estado_alumno] ?? 2) };
+    })
+    .filter(Boolean).sort((a, b) => a.score - b.score).slice(0, 4).map((x) => x.j);
   box.innerHTML = sim.length ? `
     <div class="mb-3 rounded-lg bg-amber-50 ring-1 ring-amber-200 p-2.5 text-xs">
       <div class="font-medium text-amber-700 mb-1">⚠ Ya existe un alumno con nombre parecido — ¿es el mismo?</div>
