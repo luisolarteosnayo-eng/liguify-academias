@@ -5079,8 +5079,8 @@ window.formAgregarJugTorneo = (catId) => {
   TJ_SEL = new Set();
   openModal(`Agregar jugadores · Categoría ${c.nombre}`, `
     <form onsubmit="guardarJugadoresTorneo(event,'${catId}')">
-      ${field('Buscar por nombre (toda la sede)', input('tj_q', `placeholder="Escribe un nombre…" oninput="tjListaJugadores('${catId}')"`))}
       ${field('Track', select('tj_track', tks.map((tk) => ({ v: tk.id, t: tk.nombre_track })), `onchange="tjListaJugadores('${catId}')"`))}
+      ${field('Buscar por nombre (en el track)', input('tj_q', `placeholder="Escribe un nombre…" oninput="tjListaJugadores('${catId}')"`))}
       <div id="tj_lista" class="mb-3 max-h-64 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100"></div>
       <div id="tj_selinfo" class="mb-2 text-xs text-indigo-600 empty:hidden"></div>
       ${submitBar('Agregar seleccionados')}
@@ -5093,24 +5093,19 @@ window.tjMarcar = (jid, on) => {
 };
 window.tjListaJugadores = (catId) => {
   const q = (val('tj_q') || '').trim().toLowerCase();
+  const tid = val('tj_track');
   const yaIds = new Set(DB.torneoJugadores.filter((x) => x.categoria_id === catId).map((x) => x.jugador_id));
-  let jugs;
-  if (q) {
-    // Con búsqueda: todos los alumnos activos de la sede que coincidan, sin importar el track
-    jugs = alumnosSede().filter((j) => j.estado_alumno === 'activo' && !yaIds.has(j.id)
-      && nom(j).toLowerCase().includes(q));
-  } else {
-    const tid = val('tj_track');
-    jugs = DB.inscripciones.filter((i) => i.track_id === tid && i.activo)
-      .map((i) => jugador(i.jugador_id)).filter((j) => j && j.estado_alumno !== 'baja' && !yaIds.has(j.id));
-  }
+  // Primero el track, luego el nombre: la búsqueda filtra DENTRO del track elegido
+  let jugs = DB.inscripciones.filter((i) => i.track_id === tid && i.activo)
+    .map((i) => jugador(i.jugador_id)).filter((j) => j && j.estado_alumno !== 'baja' && !yaIds.has(j.id));
+  if (q) jugs = jugs.filter((j) => nom(j).toLowerCase().includes(q));
   el('tj_lista').innerHTML = jugs.length
     ? jugs.map((j) => `<label class="flex items-center gap-2.5 px-3 py-2.5 text-sm cursor-pointer hover:bg-slate-50">
         <input type="checkbox" class="tjChk h-4 w-4 accent-indigo-600" value="${j.id}" ${TJ_SEL.has(j.id) ? 'checked' : ''}
           onchange="tjMarcar('${j.id}', this.checked)">
         <span>${nom(j)} <span class="text-xs text-slate-400">· Cat. ${anio(j.fecha_nacimiento)}</span></span>
       </label>`).join('')
-    : `<p class="p-3 text-sm text-slate-400">${q ? `Sin coincidencias para "${q}" en la sede.` : 'No hay jugadores disponibles en este track (o ya están en la categoría).'}</p>`;
+    : `<p class="p-3 text-sm text-slate-400">${q ? `Sin coincidencias para "${q}" en este track.` : 'No hay jugadores disponibles en este track (o ya están en la categoría).'}</p>`;
   tjMarcar(null, false);   // refresca el contador (null nunca está en el set)
 };
 window.guardarJugadoresTorneo = (e, catId) => {
