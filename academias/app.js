@@ -2130,6 +2130,23 @@ function fichaTracksHTML(jid) {
       ${FICHA_CORTE_INSC === i.id ? fijarCortePanelHTML(i, jid) : ''}
     </div>`;
   }).join('') || '<p class="text-xs text-slate-400">Sin tracks asignados. Agrégalo abajo.</p>';
+  // Tracks anteriores (inscripciones inactivas): se conservan con su precio para
+  // saber de dónde venía el alumno y poder restaurarlos al reactivarlo
+  const j = jugador(jid);
+  const inactivas = DB.inscripciones.filter((i) => i.jugador_id === jid && !i.activo);
+  const inactivasHTML = inactivas.length ? `
+    <div class="mt-3 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
+      <div class="text-xs font-medium text-slate-500 mb-1.5">Tracks anteriores (inactivos)</div>
+      ${inactivas.map((i) => { const t = track(i.track_id);
+        const precio = i.costo_mensual_personalizado ?? (t ? t.mensualidad_sugerida : null);
+        return `<div class="flex items-center justify-between py-1 text-sm text-slate-500">
+          <span>${t ? t.nombre_track : '(track eliminado)'} <span class="text-xs text-slate-400">· ${precio != null ? S(precio) : '—'}${i.baja_fecha ? ' · baja ' + fmtDMY(i.baja_fecha) : ''}</span></span>
+          ${j && j.estado_alumno === 'activo' && t && t.activo !== false
+            ? `<button type="button" onclick="restaurarInscripcion('${i.id}','${jid}')" class="text-xs text-indigo-600 hover:underline">↩ Restaurar</button>`
+            : ''}
+        </div>`; }).join('')}
+      ${j && j.estado_alumno === 'baja' ? '<p class="text-[11px] text-slate-400 mt-1">Reactiva al alumno (botón al pie) para poder restaurar sus tracks.</p>' : ''}
+    </div>` : '';
   const promoLink = insc.length && promocionesSede().length
     ? `<div class="mt-2"><button type="button" onclick="formPromo('${jid}')" class="text-xs text-indigo-600 hover:underline">🎁 Aplicar promoción (genera varios CR)</button></div>` : '';
 
@@ -2159,9 +2176,24 @@ function fichaTracksHTML(jid) {
            <button type="button" onclick="agregarInscripcion('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
          </div>
        </div>`;
-  return `<div class="space-y-2">${lista}</div>${promoLink}${addForm}`;
+  return `<div class="space-y-2">${lista}</div>${inactivasHTML}${promoLink}${addForm}`;
 }
 window.renderFichaTracks = (jid) => { if (el('nj_tracks')) el('nj_tracks').innerHTML = fichaTracksHTML(jid); };
+// Restaurar una inscripción inactiva: vuelve al track con su precio anterior,
+// re-inscrito HOY y sin deuda retroactiva (corte en blanco: genera su CR desde
+// la ficha o fíjale el corte).
+window.restaurarInscripcion = (iid, jid) => {
+  const i = DB.inscripciones.find((x) => x.id === iid); if (!i || i.activo) return;
+  const t = track(i.track_id);
+  if (DB.inscripciones.some((x) => x.jugador_id === jid && x.track_id === i.track_id && x.activo)) {
+    toast('Ya tiene una inscripción activa en ese track'); return;
+  }
+  i.activo = true; i.baja_fecha = null;
+  i.fecha_inscripcion = HOY;        // re-inscripción: cuenta como alta del mes
+  i.ultima_fecha_corte = null;      // sin deuda retroactiva por los meses fuera
+  toast(`↩ Restaurado en ${t ? t.nombre_track : 'el track'} · genera su CR o fija su corte`);
+  renderFichaTracks(jid); renderCuenta(jid);
+};
 // Migración desde el sistema anterior: el alumno ya pagó fuera del sistema hasta una
 // fecha. Se fija ultima_fecha_corte SIN generar CR ni deuda; el generador de CR por
 // ciclo retoma desde el día siguiente. Solo disponible si la inscripción no tiene CR.
@@ -3359,7 +3391,22 @@ window.toggleBajaAlumno = (jid) => {
   } else {
     j.estado_alumno = 'activo';
     j.baja_fecha = null;
-    closeModal(); toast('Alumno reactivado · asígnale su track');
+    // Reactivación: ofrecer restaurar sus tracks anteriores (quedaron inactivos
+    // con su precio al darse de baja)
+    const prev = DB.inscripciones.filter((i) => i.jugador_id === jid && !i.activo
+      && track(i.track_id) && track(i.track_id).activo !== false
+      && !DB.inscripciones.some((x) => x.jugador_id === jid && x.track_id === i.track_id && x.activo));
+    let n = 0;
+    if (prev.length) {
+      const det = prev.map((i) => { const t = track(i.track_id);
+        return `· ${t.nombre_track} (${S(i.costo_mensual_personalizado ?? t.mensualidad_sugerida)})`; }).join('\n');
+      if (confirm(`¿Restaurar también sus tracks anteriores?\n\n${det}\n\nSe re-inscribe HOY con su precio anterior, sin deuda retroactiva (luego genera su CR o fija su corte).`)) {
+        prev.forEach((i) => { i.activo = true; i.baja_fecha = null; i.fecha_inscripcion = HOY; i.ultima_fecha_corte = null; n++; });
+      }
+    }
+    closeModal(); toast(n ? `Alumno reactivado · ${n} track(s) restaurados` : 'Alumno reactivado · asígnale su track');
+    formEditarAlumno(jid); njTab('tracks');   // directo a revisar sus tracks
+    return;
   }
   if (TRACK_SEL) renderTrackRows(); else go(SCREEN);
 };
@@ -3924,9 +3971,10 @@ window.formClasePrueba = () => {
     <form onsubmit="guardarClasePrueba(event)">
       <p class="text-xs text-slate-400 mb-3">Registra al interesado como <b>Prospecto</b>: no cuenta como alumno ni ocupa cupo. Si se queda, lo conviertes en alumno con un clic desde su ficha.</p>
       <div class="grid grid-cols-2 gap-3">
-        ${field('Nombre', input('cp_nombre', 'required'))}
-        ${field('Apellido', input('cp_apellido', 'required'))}
+        ${field('Nombre', input('cp_nombre', `required oninput="chkSimilares('cp','cp_simBox')"`))}
+        ${field('Apellido', input('cp_apellido', `required oninput="chkSimilares('cp','cp_simBox')"`))}
       </div>
+      <div id="cp_simBox"></div>
       ${field('Fecha de nacimiento', input('cp_fnac', 'type="date" required'))}
       <div class="grid grid-cols-2 gap-3">
         ${field('DNI del tutor (opcional)', input('cp_dni', 'placeholder="8 dígitos; vacío si no lo tiene"'))}
@@ -3995,15 +4043,35 @@ window.descartarProspecto = (jid) => {
   closeModal(); toast('Prospecto descartado'); go('alumnos');
 };
 
+// Al registrar, avisa si ya existe un alumno con nombre parecido (sobre todo
+// bajas y prospectos): evita duplicados y lleva directo a la ficha para reactivar.
+const sinTildes = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+window.chkSimilares = (pref, boxId) => {
+  const box = el(boxId); if (!box) return;
+  const toks = sinTildes(`${val(pref + '_nombre')} ${val(pref + '_apellido')}`)
+    .split(/\s+/).filter((t) => t.length >= 3);
+  if (!toks.length) { box.innerHTML = ''; return; }
+  const sim = DB.jugadores.filter((j) => { const n = sinTildes(nom(j)); return toks.every((t) => n.includes(t)); }).slice(0, 3);
+  box.innerHTML = sim.length ? `
+    <div class="mb-3 rounded-lg bg-amber-50 ring-1 ring-amber-200 p-2.5 text-xs">
+      <div class="font-medium text-amber-700 mb-1">⚠ Ya existe un alumno con nombre parecido — ¿es el mismo?</div>
+      ${sim.map((j) => `<div class="flex items-center justify-between py-0.5">
+        <span>${nom(j)} <span class="text-slate-400">· Cat. ${anio(j.fecha_nacimiento)} · ${j.estado_alumno === 'baja' ? '<b class="text-rose-600">Baja</b>' : j.estado_alumno === 'prospecto' ? 'Prospecto' : 'Activo'}${j.sede_id !== SEDE_ACTUAL && sede(j.sede_id) ? ' · ' + sede(j.sede_id).nombre_sede : ''}</span></span>
+        <button type="button" onclick="closeModal(); formEditarAlumno('${j.id}')" class="text-indigo-600 hover:underline shrink-0 ml-2">${j.estado_alumno === 'baja' ? 'Abrir y reactivar' : 'Abrir ficha'}</button>
+      </div>`).join('')}
+    </div>` : '';
+};
+
 // ---------- Registro cero fricción (Flujo A) ----------
 window.formRegistroExpress = () => {
   openModal('Registro cero fricción (Flujo A)', `
     <form onsubmit="guardarRegistro(event)">
       <p class="text-xs text-slate-400 mb-3">Datos mínimos en cancha. El correo del tutor es opcional.</p>
       <div class="grid grid-cols-2 gap-3">
-        ${field('Nombre del alumno', input('f_nombre', 'required'))}
-        ${field('Apellido', input('f_apellido', 'required'))}
+        ${field('Nombre del alumno', input('f_nombre', `required oninput="chkSimilares('f','f_simBox')"`))}
+        ${field('Apellido', input('f_apellido', `required oninput="chkSimilares('f','f_simBox')"`))}
       </div>
+      <div id="f_simBox"></div>
       ${field('Fecha de nacimiento', input('f_fnac', 'type="date" required oninput="onFnac()"'))}
       <div id="catBox" class="hidden mb-3 rounded-lg bg-indigo-50 text-indigo-700 text-sm px-3 py-2"></div>
       <div class="grid grid-cols-2 gap-3">
