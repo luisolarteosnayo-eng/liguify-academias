@@ -559,6 +559,21 @@ const badge = (txt, color) =>
 const estadoColor = { pagado: 'emerald', por_pagar: 'amber', vencido: 'rose', parcial: 'sky',
                       aprobado: 'emerald', registrado: 'emerald', pendiente: 'amber', rechazado: 'rose' };
 
+// Nuevos = altas reales del periodo. Los prospectos (clase de prueba) NO son
+// nuevos: cuentan recién al convertirse en activos (la conversión re-fecha su
+// registro). Un prospecto descartado (baja sin haber tenido track) tampoco.
+// Clases de prueba = por fecha de la clase (vigentes, convertidos y descartados).
+function altasYPruebasDash(win, inDash) {
+  const tuvoTrack = (jid) => DB.inscripciones.some((i) => i.jugador_id === jid);
+  const als = DB.jugadores.filter((j) => inDash(j.sede_id));
+  return {
+    nuevos: als.filter((j) => j.fecha_registro && j.fecha_registro >= win.inicio && j.fecha_registro <= win.fin
+      && j.estado_alumno !== 'prospecto'
+      && !(j.estado_alumno === 'baja' && j.fue_prospecto && !tuvoTrack(j.id))),
+    clasesPrueba: als.filter((j) => j.prueba_fecha && j.prueba_fecha >= win.inicio && j.prueba_fecha <= win.fin),
+  };
+}
+
 // ---------- Pantallas ----------
 const SCREENS = {
   dashboard() {
@@ -569,15 +584,7 @@ const SCREENS = {
     const sedesDash = sedesActivas().filter((s) => inDash(s.id));
     const alumnosDash = DB.jugadores.filter((j) => inDash(j.sede_id));
     const tracksDash = DB.tracks.filter((t) => t.activo !== false && inDash(t.sede_id));
-    // Nuevos = altas reales del periodo. Los prospectos (clase de prueba) NO son
-    // nuevos: cuentan recién al convertirse en activos (la conversión re-fecha su
-    // registro). Un prospecto descartado (baja sin haber tenido track) tampoco.
-    const tuvoTrack = (jid) => DB.inscripciones.some((i) => i.jugador_id === jid);
-    const nuevos = alumnosDash.filter((j) => j.fecha_registro && j.fecha_registro >= win.inicio && j.fecha_registro <= win.fin
-      && j.estado_alumno !== 'prospecto'
-      && !(j.estado_alumno === 'baja' && j.fue_prospecto && !tuvoTrack(j.id)));
-    // Clases de prueba del periodo (prospectos actuales, convertidos y descartados)
-    const clasesPrueba = alumnosDash.filter((j) => j.prueba_fecha && j.prueba_fecha >= win.inicio && j.prueba_fecha <= win.fin);
+    const { nuevos, clasesPrueba } = altasYPruebasDash(win, inDash);
     const activos = alumnosDash.filter((j) => j.estado_alumno === 'activo').length;
     const pagosDash = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin);
     const ingresosItems = pagosDash.flatMap((p) => (p.detalle || []).map((d) => ({ cat: d.cat || (d.tipo === 'CR' ? 'Mensualidades' : d.concepto || 'Otros'), monto: d.monto })))
@@ -617,7 +624,7 @@ const SCREENS = {
         ${card('Gastos', `<span class="text-rose-600">${S0(gastosPeriodo)}</span>`, 'del periodo')}
         ${card('Utilidad', `<span class="${totalIngresos - gastosPeriodo > 0 ? 'text-emerald-600' : totalIngresos - gastosPeriodo < 0 ? 'text-rose-600' : 'text-slate-700'}">${totalIngresos - gastosPeriodo < 0 ? '−' : ''}${S0(Math.abs(totalIngresos - gastosPeriodo))}</span>`, 'recaudado − gastos')}
         ${card('Por cobrar', S0(totalPorCobrar), 'pendiente total')}
-        ${card('Alumnos nuevos', nuevos.length, 'en el periodo')}
+        <div class="cursor-pointer hover:opacity-80" onclick="reporteNuevosPruebas('nuevos')" title="Ver el detalle de alumnos nuevos">${card('Alumnos nuevos', nuevos.length, 'en el periodo · ver detalle →')}</div>
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2 mb-6">
@@ -631,12 +638,14 @@ const SCREENS = {
         </div>
       </div>
 
-      <h3 class="mb-2 text-sm font-semibold text-slate-600">Alumnos nuevos por día</h3>
-      <div class="mb-6">${chartNuevosPorDia(nuevos)}</div>
+      <h3 class="mb-2 text-sm font-semibold text-slate-600">Alumnos nuevos por día
+        <button onclick="reporteNuevosPruebas('nuevos')" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">Ver detalle →</button></h3>
+      <div class="mb-6 cursor-pointer" onclick="reporteNuevosPruebas('nuevos')">${chartNuevosPorDia(nuevos)}</div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">🎈 Clases de prueba por día
-        ${clasesPrueba.length ? `<span class="font-normal text-xs text-slate-400">· ${clasesPrueba.length} clase(s) · ${clasesPrueba.filter((j) => j.estado_alumno === 'activo').length} convertido(s) en alumno</span>` : ''}</h3>
-      <div class="mb-6">${chartNuevosPorDia(clasesPrueba, (j) => j.prueba_fecha)}</div>
+        ${clasesPrueba.length ? `<span class="font-normal text-xs text-slate-400">· ${clasesPrueba.length} clase(s) · ${clasesPrueba.filter((j) => j.estado_alumno === 'activo').length} convertido(s) en alumno</span>` : ''}
+        <button onclick="reporteNuevosPruebas('prueba')" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">Ver detalle →</button></h3>
+      <div class="mb-6 cursor-pointer" onclick="reporteNuevosPruebas('prueba')">${chartNuevosPorDia(clasesPrueba, (j) => j.prueba_fecha)}</div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Tracks por sede (break-even)</h3>
       ${(() => {
@@ -1358,6 +1367,55 @@ window.dashSet = (key, val) => {
   else if (key === 'periodo') DASH_PERIODO = val;
   SCREENS.dashboard();
 };
+// Reporte en pantalla completa: detalle de alumnos nuevos (matriculados) y de
+// clases de prueba del periodo del dashboard, agrupado por sede, para que el
+// encargado de cada sede sepa quién llega y a qué track/hora/profesor va.
+window.reporteNuevosPruebas = (tab = 'nuevos') => {
+  const win = DASH_PERIODO === 'anterior' ? mesAnteriorWindow(HOY) : mesActualWindow(HOY);
+  const inDash = (sedeId) => { const s = sede(sedeId); return !!s && s.activo !== false && (!DASH_SEDE || sedeId === DASH_SEDE); };
+  const { nuevos, clasesPrueba } = altasYPruebasDash(win, inDash);
+  const coachDe = (t) => t ? (coachesNombres(t).join(', ') || '—') : '—';
+  const porSede = (lista, fechaDe, filaDe, cols) => {
+    const sids = [...new Set(lista.map((j) => j.sede_id))];
+    if (!lista.length) return '<p class="text-sm text-slate-400">Sin registros en el periodo.</p>';
+    return sids.map((sid) => {
+      const ls = lista.filter((j) => j.sede_id === sid).sort((a, b) => (fechaDe(a) < fechaDe(b) ? 1 : -1));
+      return `<h3 class="mt-5 mb-2 text-sm font-semibold text-slate-600">📍 ${sede(sid) ? sede(sid).nombre_sede : 'Sede'} (${ls.length})</h3>
+        ${table(cols, ls.map(filaDe))}`;
+    }).join('');
+  };
+  const cuerpo = tab === 'prueba'
+    ? porSede(clasesPrueba, (j) => j.prueba_fecha, (j) => {
+        const t = j.prueba_track_id ? track(j.prueba_track_id) : null;
+        const tut = DB.tutores.find((x) => x.id === j.tutor_id);
+        const estado = j.estado_alumno === 'activo' ? badge('Convertido ✓', 'emerald')
+          : j.estado_alumno === 'prospecto' ? badge('Prospecto', 'fuchsia') : badge('Descartado', 'slate');
+        return [fmtDMY(j.prueba_fecha), `<b>${nom(j)}</b>`, anio(j.fecha_nacimiento),
+          t ? `${t.nombre_track}<div class="text-[11px] text-slate-400">${t.dias_horario || ''}</div>` : '—',
+          coachDe(t), estado, (tut && tut.telefono_celular) || '—'];
+      }, ['Fecha clase', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Estado', 'Cel. tutor'])
+    : porSede(nuevos, (j) => j.fecha_registro, (j) => {
+        const insc = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo);
+        const tr = insc.map((i) => { const t = track(i.track_id);
+          return t ? `${t.nombre_track}<div class="text-[11px] text-slate-400">${t.dias_horario || ''}</div>` : ''; }).join('') || '<span class="text-rose-500 text-xs">sin track</span>';
+        const profes = [...new Set(insc.map((i) => coachDe(track(i.track_id))))].filter((x) => x !== '—').join(', ') || '—';
+        const obs = insc.map((i) => i.observaciones).filter(Boolean).join(' · ');
+        return [fmtDMY(j.fecha_registro), `<b>${nom(j)}</b>${j.fue_prospecto ? ' <span class="text-[10px] text-fuchsia-600">· vino de clase de prueba</span>' : ''}`,
+          anio(j.fecha_nacimiento), tr, profes, obs || '—'];
+      }, ['Alta', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Observaciones']);
+  el('content').innerHTML = `
+    <button onclick="go('dashboard')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver al dashboard</button>
+    <div class="mb-1 flex flex-wrap items-center gap-3">
+      <h2 class="text-xl font-bold">${tab === 'prueba' ? '🎈 Clases de prueba' : '🧒 Alumnos nuevos'}</h2>
+      <div class="inline-flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-sm">
+        <button onclick="reporteNuevosPruebas('nuevos')" class="px-3 py-1.5 ${tab === 'nuevos' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Nuevos (${nuevos.length})</button>
+        <button onclick="reporteNuevosPruebas('prueba')" class="px-3 py-1.5 ${tab === 'prueba' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Clases de prueba (${clasesPrueba.length})</button>
+      </div>
+    </div>
+    <p class="text-xs text-slate-400 mb-3">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'} · más recientes primero</p>
+    ${cuerpo}`;
+};
+
 function chartNuevosPorDia(nuevos, fechaDe = (j) => j.fecha_registro) {
   if (!nuevos.length) return '<div class="rounded-xl bg-white ring-1 ring-slate-200 p-6 text-center text-sm text-slate-400">Sin registros en el periodo.</div>';
   const palette = ['#d9232e', '#171e2e', '#8b93a7', '#10b981', '#f59e0b', '#0ea5e9'];
