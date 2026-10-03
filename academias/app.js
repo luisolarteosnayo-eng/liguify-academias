@@ -5221,11 +5221,14 @@ window.generarCNRsTorneo = (tid, catId) => {
   const cat = catId ? DB.torneoCategorias.find((c) => c.id === catId) : null;
   const pend = DB.torneoJugadores.filter((x) => x.torneo_id === tid && !x.cargo_id && (!catId || x.categoria_id === catId));
   if (!pend.length) { toast('No hay CNRs pendientes de generar'); return; }
+  // Genera a los que tienen precio asignado; los de S/ 0 o sin precio quedan
+  // Pendientes y se generan en una próxima corrida cuando se les asigne precio
   const sinPrecio = pend.filter((x) => !(+x.precio_inscripcion > 0));
-  if (sinPrecio.length) { toast(`⚠ ${sinPrecio.length} alumno(s) sin precio de inscripción; asígnalo primero`); return; }
+  const conPrecio = pend.filter((x) => +x.precio_inscripcion > 0);
+  if (!conPrecio.length) { toast(`⚠ Ningún alumno tiene precio de inscripción asignado (${sinPrecio.length} pendiente(s))`); return; }
   const cnTorneo = DB.conceptosCNR.find((x) => x.es_torneo && x.activo);
   const glosa = glosaTorneo(t);
-  pend.forEach((x) => {
+  conPrecio.forEach((x) => {
     const j = jugador(x.jugador_id);
     const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR',
       concepto_cnr_id: cnTorneo ? cnTorneo.id : null,
@@ -5235,7 +5238,7 @@ window.generarCNRsTorneo = (tid, catId) => {
     DB.cargos.push(cargo);
     x.cargo_id = cargo.id;
   });
-  toast(`✓ ${pend.length} CNR generados${cat ? ` · Categoría ${cat.nombre}` : ''} · "Inscripción a torneo ${glosa}"`);
+  toast(`✓ ${conPrecio.length} CNR generados${cat ? ` · Categoría ${cat.nombre}` : ''}${sinPrecio.length ? ` · ${sinPrecio.length} sin precio quedan pendientes` : ''}`);
   renderTorneoDetalle();
 };
 
