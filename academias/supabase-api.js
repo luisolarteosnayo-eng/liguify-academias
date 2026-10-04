@@ -26,7 +26,9 @@ window.AcademiasDB = (() => {
   const T = {
     sedes: {
       table: 'sedes',
-      toRow: (s) => ({ ...pick(s, ['id', 'nombre_sede', 'ciudad', 'pais', 'codigo_postal', 'telefono_coordinador', 'google_maps_url', 'cabecera_url', 'logo_url', 'dias_clase']),
+      toRow: (s) => ({ ...pick(s, ['id', 'nombre_sede', 'ciudad', 'pais', 'codigo_postal', 'telefono_coordinador', 'google_maps_url', 'cabecera_url', 'logo_url', 'dias_clase',
+        'ruc_emisor', 'razon_social_emisor', 'direccion_fiscal', 'serie_boleta', 'serie_factura']),
+        correlativo_boleta: N(s.correlativo_boleta), correlativo_factura: N(s.correlativo_factura), correlativo_recibo: N(s.correlativo_recibo),
         direccion_linea1: s.direccion1 ?? null, direccion_linea2: s.direccion2 ?? null,
         activo: s.activo !== false, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, direccion1: r.direccion_linea1, direccion2: r.direccion_linea2 }),
@@ -112,14 +114,16 @@ window.AcademiasDB = (() => {
     pagos: {
       table: 'pagos',
       toRow: (p) => ({ ...pick(p, ['id', 'tutor_id', 'jugador_id', 'sede_id', 'fecha', 'medio', 'num_operacion',
-        'voucher_url', 'estado', 'fecha_aprobacion', 'fecha_rechazo', 'sunat_exportado']),
+        'voucher_url', 'estado', 'fecha_aprobacion', 'fecha_rechazo', 'sunat_exportado',
+        'doc_tipo', 'doc_serie', 'doc_pdf_url', 'doc_xml_url', 'sunat_estado', 'sunat_error', 'emitido_at']),
+        doc_numero: N(p.doc_numero),
         monto: N(p.total) || 0,
         _detalle: (p.detalle || []).map((d) => ({ cargo_id: d.cargo_id, concepto: d.concepto ?? null, cat: d.cat ?? null, tipo: d.tipo ?? null, monto: N(d.monto) || 0 })) }),
-      fromRow: (r) => ({ ...r, total: N(r.monto), detalle: [] }),
+      fromRow: (r) => ({ ...r, total: N(r.monto), doc_numero: N(r.doc_numero), detalle: [] }),
     },
     mediosPago: {
       table: 'medios_pago',
-      toRow: (m) => ({ ...pick(m, ['id', 'nombre', 'sede_id']), activo: m.activo !== false,
+      toRow: (m) => ({ ...pick(m, ['id', 'nombre', 'sede_id']), activo: m.activo !== false, genera_sunat: !!m.genera_sunat,
         sede_ids: (Array.isArray(m.sede_ids) && m.sede_ids.length) ? m.sede_ids : null, academia_id: ACADEMIA_ID }),
       fromRow: (r) => ({ ...r, sede_ids: r.sede_ids || null }),
     },

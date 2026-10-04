@@ -1088,6 +1088,7 @@ const SCREENS = {
     el('content').innerHTML = `
       <div class="mb-4 flex flex-wrap justify-end gap-2">
         <button onclick="reporteTutores()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">👪 Tutores · facturación</button>
+        ${(ROL === 'admin' || ROL === 'tesorero') ? `<button onclick="colaEmision()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Boletas, facturas y recibos de los pagos aprobados">🧾 Emitir comprobantes</button>` : ''}
         <button onclick="liquidarGratisSede()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Marca como pagados los CR de S/ 0: becas, y meses gratis de promociones ya pagadas">✓ Liquidar CR gratis/beca</button>
         <button onclick="formGenerarCR()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">⚙️ Generar CR por ciclo</button>
         <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
@@ -1138,7 +1139,9 @@ const SCREENS = {
           p.jugador_id ? nom(jugador(p.jugador_id)) : ((tutor(p.tutor_id) || {}).nombres || 'Tutor ' + ((tutor(p.tutor_id) || {}).dni_tutor || 's/DNI')),
           S(p.total ?? p.monto ?? 0), p.medio || '—', p.num_operacion || '—', fmtDMY(p.fecha),
           badge(p.estado, estadoColor[p.estado] || 'emerald'),
-          p.sunat_exportado ? `<span class="text-xs text-emerald-600" title="Exportado para SUNAT">📄 ${fmtDMY(p.sunat_exportado)}</span>` : '<span class="text-slate-300">—</span>',
+          p.doc_tipo
+            ? `<span class="text-xs ${p.doc_tipo === 'recibo' ? 'text-slate-500' : 'text-emerald-600'}" title="${p.doc_tipo}${p.emitido_at ? ' · ' + fmtDMY(String(p.emitido_at).slice(0, 10)) : ''}">${p.doc_tipo === 'recibo' ? '🧾' : '📄'} ${p.doc_serie || ''}-${p.doc_numero || ''}</span>${p.doc_pdf_url ? ` <a href="${p.doc_pdf_url}" target="_blank" class="text-xs text-indigo-600 hover:underline">PDF</a>` : ''}`
+            : p.sunat_exportado ? `<span class="text-xs text-emerald-600" title="Exportado para SUNAT">📄 ${fmtDMY(p.sunat_exportado)}</span>` : '<span class="text-slate-300">—</span>',
           p.voucher_url ? `<button onclick="verComprobante('${p.id}')" class="text-indigo-600 hover:underline text-xs">🖼️ Ver</button>` : '<span class="text-slate-300">—</span>']))
         : '<p class="text-sm text-slate-400">Sin documentos de pago con esos filtros.</p>'}
       </div>`;
@@ -4522,6 +4525,19 @@ const CONFIG_TABS = {
             ${field('Teléfono', input('sd_tel', `value="${g('telefono_coordinador')}" placeholder="+51 999 999 999"`))}
             ${field('Google Maps URL', input('sd_maps', `value="${g('google_maps_url')}" placeholder="https://maps.google.com/..."`))}
           </div>
+          <div class="pt-2 pb-1 text-sm font-semibold text-slate-600">🧾 Facturación electrónica (SUNAT)</div>
+          <p class="text-xs text-slate-400 mb-2">El RUC emisor es por sede (sedes de la misma empresa pueden compartirlo), pero cada sede lleva su propia serie y correlativo.</p>
+          <div class="grid grid-cols-2 gap-3">
+            ${field('RUC emisor', input('sd_ruc', `value="${g('ruc_emisor')}" placeholder="20XXXXXXXXX"`))}
+            ${field('Razón social emisora', input('sd_rz', `value="${g('razon_social_emisor')}" placeholder="como figura en SUNAT"`))}
+          </div>
+          ${field('Dirección fiscal', input('sd_dirf', `value="${g('direccion_fiscal')}" placeholder="domicilio fiscal del RUC"`))}
+          <div class="grid grid-cols-4 gap-3">
+            ${field('Serie boleta', input('sd_sb', `value="${g('serie_boleta')}" placeholder="B001"`))}
+            ${field('Próx. N° boleta', input('sd_cb', `type="number" min="1" value="${g('correlativo_boleta', 1) || 1}"`))}
+            ${field('Serie factura', input('sd_sf', `value="${g('serie_factura')}" placeholder="F001"`))}
+            ${field('Próx. N° factura', input('sd_cf', `type="number" min="1" value="${g('correlativo_factura', 1) || 1}"`))}
+          </div>
           <div class="mb-3">
             <span class="block text-xs font-medium text-slate-500 mb-1">Logo de la sede</span>
             <div class="flex items-center gap-3">
@@ -4677,6 +4693,10 @@ const CONFIG_TABS = {
         <form onsubmit="guardarMedioPago(event)">
           ${field('Nombre del medio *', input('mp_nombre', `required value="${e ? e.nombre.replace(/"/g, '&quot;') : ''}" placeholder="Ej: Yape"`))}
           ${sedesChecksHTML('mp-sede-chk', e ? scopeSedes(e) : [SEDE_ACTUAL])}
+          <label class="mb-3 flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <input id="mp_sunat" type="checkbox" class="h-4 w-4 accent-indigo-600" ${e && e.genera_sunat ? 'checked' : ''}>
+            🧾 Genera comprobante SUNAT (boleta/factura) · <span class="text-xs text-slate-400">sin marcar, sus pagos solo emiten recibo simple</span>
+          </label>
           <div class="flex gap-2">
             <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">${e ? 'Guardar cambios' : 'Agregar'}</button>
             ${e ? `<button type="button" onclick="cancelMPEdit()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>` : ''}
@@ -4684,9 +4704,10 @@ const CONFIG_TABS = {
         </form>
       </div>
       <p class="text-xs text-slate-400 mb-2">Los medios <b>activos</b> aparecen al registrar un pago.</p>
-      ${table(['Medio', 'Sedes', 'Estado', ''],
+      ${table(['Medio', 'Sedes', 'SUNAT', 'Estado', ''],
         DB.mediosPago.map((m) => [
           `<b>${m.nombre}</b>`, sedesScopeNom(m),
+          m.genera_sunat ? badge('🧾 Boleta/Factura', 'emerald') : badge('Recibo simple', 'slate'),
           badge(m.activo ? 'Activo' : 'Inactivo', m.activo ? 'emerald' : 'slate'),
           `<button onclick="editarMedioPago('${m.id}')" class="text-indigo-600 hover:underline text-xs mr-3">Editar</button>
            <button onclick="toggleMedioPago('${m.id}')" class="text-slate-500 hover:underline text-xs mr-3">${m.activo ? 'Desactivar' : 'Activar'}</button>
@@ -4962,7 +4983,8 @@ window.guardarMedioPago = (ev) => {
   ev.preventDefault();
   const nombre = val('mp_nombre');
   const sedeIds = sedesChecksVal('mp-sede-chk');
-  const data = { nombre, sede_ids: sedeIds, sede_id: sedeIds[0] || null };
+  const data = { nombre, sede_ids: sedeIds, sede_id: sedeIds[0] || null,
+    genera_sunat: !!(el('mp_sunat') && el('mp_sunat').checked) };
   if (MP_EDIT) { Object.assign(DB.mediosPago.find((m) => m.id === MP_EDIT), data); MP_EDIT = null; toast('Medio actualizado'); }
   else { DB.mediosPago.push({ id: uid('mp'), activo: true, ...data }); toast('Medio agregado'); }
   SCREENS.config();
@@ -5072,6 +5094,10 @@ window.guardarSedeInline = async (e) => {
     nombre_sede: val('sd_nombre'), direccion1: val('sd_dir1'), direccion2: val('sd_dir2'),
     ciudad: val('sd_ciudad'), pais: val('sd_pais'), codigo_postal: val('sd_cp'),
     telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'), cabecera_url: SEDE_CABECERA, logo_url: SEDE_LOGO,
+    ruc_emisor: val('sd_ruc').trim() || null, razon_social_emisor: val('sd_rz').trim() || null,
+    direccion_fiscal: val('sd_dirf').trim() || null,
+    serie_boleta: val('sd_sb').trim().toUpperCase() || null, serie_factura: val('sd_sf').trim().toUpperCase() || null,
+    correlativo_boleta: num('sd_cb') || 1, correlativo_factura: num('sd_cf') || 1,
   };
   if (SEDE_EDIT) {
     Object.assign(sede(SEDE_EDIT), data); SEDE_EDIT = null; toast('Sede actualizada');
@@ -5386,6 +5412,106 @@ window.generarCNRsTorneo = (tid, catId) => {
   });
   toast(`✓ ${conPrecio.length} CNR generados${cat ? ` · Categoría ${cat.nombre}` : ''}${sinPrecio.length ? ` · ${sinPrecio.length} sin precio quedan pendientes` : ''}`);
   renderTorneoDetalle();
+};
+
+// ---------- Emisión de comprobantes (boleta / factura / recibo) ----------
+// El tipo se decide solo: medio sin SUNAT → recibo simple; tutor con RUC+razón
+// social → factura; lo demás → boleta (sin DNI sale a "cliente varios").
+function clasificaDoc(p) {
+  const m = DB.mediosPago.find((x) => x.nombre === p.medio);
+  if (!m || !m.genera_sunat) return 'recibo';
+  const t = DB.tutores.find((x) => x.id === p.tutor_id);
+  if (t && /^\d{11}$/.test(String(t.ruc || '').trim()) && t.razon_social) return 'factura';
+  return 'boleta';
+}
+window.colaEmision = () => {
+  const s = sede(SEDE_ACTUAL);
+  const ids = new Set(alumnosSede().map((j) => j.id));
+  const cola = DB.pagos.filter((p) => p.estado === 'aprobado' && !p.doc_tipo && ids.has(p.jugador_id))
+    .sort((a, b) => ((a.fecha || '') < (b.fecha || '') ? -1 : 1));   // más antiguos primero: se emiten en orden
+  const dniOk = (t) => t && /^\d{8}$/.test(String(t.dni_tutor || '').trim());
+  const rows = cola.map((p) => {
+    const j = jugador(p.jugador_id);
+    const t = DB.tutores.find((x) => x.id === p.tutor_id);
+    const cls = clasificaDoc(p);
+    const cliente = cls === 'factura' ? `${t.razon_social}<div class="text-[11px] text-slate-400">RUC ${t.ruc}</div>`
+      : cls === 'recibo' ? '<span class="text-slate-400 text-xs">—</span>'
+      : dniOk(t) ? `${(t.nombres || nom(j))}<div class="text-[11px] text-slate-400">DNI ${t.dni_tutor}</div>`
+      : '<span class="text-amber-600 text-xs">Cliente varios (sin DNI)</span>';
+    const semaforo = cls === 'recibo' ? '⚪' : cls === 'factura' ? '🟢' : dniOk(t) ? '🟢' : '🟡';
+    return [
+      `<input type="checkbox" class="emChk h-4 w-4 accent-indigo-600" value="${p.id}" checked onchange="emCount()">`,
+      `${semaforo} <b>${j ? nom(j) : '—'}</b><div class="text-[11px] text-slate-400">${fmtDMY(p.fecha)} · ${p.medio || ''}</div>`,
+      S(p.total ?? 0),
+      `<select id="emTipo_${p.id}" class="rounded border border-slate-300 px-2 py-1 text-xs bg-white">
+        ${['recibo', 'boleta', 'factura'].map((x) => `<option value="${x}" ${x === cls ? 'selected' : ''}>${x === 'recibo' ? 'Recibo simple' : x.charAt(0).toUpperCase() + x.slice(1)}</option>`).join('')}
+      </select>`,
+      cliente,
+    ];
+  });
+  const cfgOk = s.ruc_emisor && s.serie_boleta;
+  el('content').innerHTML = `
+    <button onclick="go('tesoreria')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver a Tesorería</button>
+    <div class="mb-1 flex flex-wrap items-center gap-3">
+      <h2 class="text-xl font-bold">🧾 Emitir comprobantes · ${s.nombre_sede}</h2>
+      <span id="emInfo" class="text-xs text-indigo-600"></span>
+    </div>
+    <p class="text-xs text-slate-400 mb-2">Pagos aprobados sin comprobante · 🟢 listo · 🟡 boleta a "cliente varios" (sin DNI) · ⚪ recibo simple (no viaja a SUNAT)</p>
+    ${cfgOk
+      ? `<p class="text-xs text-slate-500 mb-3">Emisor: <b>${s.razon_social_emisor || ''}</b> · RUC <b>${s.ruc_emisor}</b> · Boleta <b>${s.serie_boleta}-${+s.correlativo_boleta || 1}</b>${s.serie_factura ? ` · Factura <b>${s.serie_factura}-${+s.correlativo_factura || 1}</b>` : ''} · precios con IGV incluido</p>`
+      : '<p class="text-xs text-rose-600 mb-3">⚠ Esta sede no tiene RUC emisor o serie de boleta: configúralos en Configuración → Sedes. Mientras tanto solo se pueden generar recibos simples.</p>'}
+    ${cola.length ? `
+      <div class="mb-3">
+        <button onclick="emitirSeleccionados()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Procesar seleccionados</button>
+      </div>
+      ${table(['<input type="checkbox" checked onchange="document.querySelectorAll(\'.emChk\').forEach(c => { c.checked = this.checked; }); emCount()" class="h-4 w-4 accent-indigo-600">',
+        'Alumno · pago', 'Total', 'Documento', 'Cliente'], rows)}`
+      : '<p class="text-sm text-slate-400">🎉 No hay pagos aprobados pendientes de comprobante en esta sede.</p>'}`;
+  window.emCount = () => { const n = document.querySelectorAll('.emChk:checked').length; const i = el('emInfo'); if (i) i.textContent = n ? `${n} seleccionado(s)` : ''; };
+  emCount();
+};
+window.emitirSeleccionados = async () => {
+  const sel = [...document.querySelectorAll('.emChk:checked')].map((c) => c.value);
+  if (!sel.length) { toast('Selecciona al menos un pago'); return; }
+  const s = sede(SEDE_ACTUAL);
+  let recibos = 0, emitidos = 0, errores = 0, err1 = '';
+  for (const pid of sel) {
+    const p = DB.pagos.find((x) => x.id === pid);
+    if (!p || p.doc_tipo) continue;
+    const tipo = el('emTipo_' + pid) ? el('emTipo_' + pid).value : clasificaDoc(p);
+    if (tipo === 'recibo') {
+      const nro = +s.correlativo_recibo || 1;
+      p.doc_tipo = 'recibo'; p.doc_serie = 'R'; p.doc_numero = nro;
+      p.sunat_estado = null; p.emitido_at = new Date().toISOString();
+      s.correlativo_recibo = nro + 1; recibos++;
+      continue;
+    }
+    // Boleta / factura → SUNAT vía edge function (Nubefact)
+    if (!(window.AcademiasDB && AcademiasDB.on)) { errores++; err1 = err1 || 'La emisión SUNAT requiere el modo conectado'; continue; }
+    if (!s.ruc_emisor) { errores++; err1 = err1 || 'Configura el RUC emisor de la sede'; continue; }
+    const serie = tipo === 'factura' ? s.serie_factura : s.serie_boleta;
+    if (!serie) { errores++; err1 = err1 || `Configura la serie de ${tipo} de la sede`; continue; }
+    const numero = tipo === 'factura' ? (+s.correlativo_factura || 1) : (+s.correlativo_boleta || 1);
+    try {
+      const { data, error } = await AcademiasDB.sb.functions.invoke('emitir-comprobante',
+        { body: { pago_id: pid, tipo, serie, numero } });
+      if (error || (data && data.error)) throw new Error((data && data.error) || error.message || 'Error al emitir');
+      p.doc_tipo = tipo; p.doc_serie = serie; p.doc_numero = numero;
+      p.doc_pdf_url = (data && data.pdf) || null; p.doc_xml_url = (data && data.xml) || null;
+      p.sunat_estado = 'emitido'; p.sunat_error = null; p.emitido_at = new Date().toISOString();
+      if (tipo === 'factura') s.correlativo_factura = numero + 1; else s.correlativo_boleta = numero + 1;
+      emitidos++;
+    } catch (ex) {
+      errores++; err1 = err1 || (ex.message || String(ex));
+      p.sunat_estado = 'error'; p.sunat_error = ex.message || String(ex);
+    }
+  }
+  const partes = [];
+  if (emitidos) partes.push(`🧾 ${emitidos} emitido(s) en SUNAT`);
+  if (recibos) partes.push(`${recibos} recibo(s) simple(s)`);
+  if (errores) partes.push(`⚠ ${errores} con error: ${err1}`);
+  toast(partes.join(' · ') || 'Nada que procesar');
+  colaEmision();
 };
 
 // ---------- Gastos por sede ----------
