@@ -1140,7 +1140,7 @@ const SCREENS = {
           S(p.total ?? p.monto ?? 0), p.medio || '—', p.num_operacion || '—', fmtDMY(p.fecha),
           badge(p.estado, estadoColor[p.estado] || 'emerald'),
           p.doc_tipo
-            ? `<span class="text-xs ${p.doc_tipo === 'recibo' ? 'text-slate-500' : 'text-emerald-600'}" title="${p.doc_tipo}${p.emitido_at ? ' · ' + fmtDMY(String(p.emitido_at).slice(0, 10)) : ''}">${p.doc_tipo === 'recibo' ? '🧾' : '📄'} ${p.doc_serie || ''}-${p.doc_numero || ''}</span>${p.doc_pdf_url ? ` <a href="${p.doc_pdf_url}" target="_blank" class="text-xs text-indigo-600 hover:underline">PDF</a>` : ''}`
+            ? `<button type="button" onclick="verComprobantePago('${p.id}')" class="text-xs ${p.doc_tipo === 'recibo' ? 'text-slate-600' : 'text-emerald-600'} hover:underline" title="${p.doc_tipo}${p.emitido_at ? ' · ' + fmtDMY(String(p.emitido_at).slice(0, 10)) : ''} · clic para ver el comprobante">${p.doc_tipo === 'recibo' ? '🧾' : '📄'} ${p.doc_serie || ''}-${p.doc_numero || ''}</button>`
             : p.sunat_exportado ? `<span class="text-xs text-emerald-600" title="Exportado para SUNAT">📄 ${fmtDMY(p.sunat_exportado)}</span>` : '<span class="text-slate-300">—</span>',
           p.voucher_url ? `<button onclick="verComprobante('${p.id}')" class="text-indigo-600 hover:underline text-xs">🖼️ Ver</button>` : '<span class="text-slate-300">—</span>']))
         : '<p class="text-sm text-slate-400">Sin documentos de pago con esos filtros.</p>'}
@@ -3329,6 +3329,7 @@ function pagosDocsHTML(jid) {
         <div class="text-right shrink-0">
           <div class="text-lg font-bold text-emerald-600">${S(p.total ?? p.monto ?? 0)}</div>
           ${p.voucher_url ? `<button type="button" onclick="verComprobante('${p.id}')" class="mt-1 text-xs text-indigo-600 hover:underline">🖼️ Ver voucher</button>` : ''}
+          ${p.doc_tipo ? `<button type="button" onclick="verComprobantePago('${p.id}')" class="mt-1 block w-full text-right text-xs text-indigo-600 hover:underline">${p.doc_tipo === 'recibo' ? '🧾 Recibo' : p.doc_tipo === 'factura' ? '📄 Factura' : '📄 Boleta'} ${p.doc_serie || ''}-${p.doc_numero || ''}</button>` : ''}
         </div>
       </div>
       <div class="mt-2 border-t border-slate-100 pt-2 space-y-1">
@@ -5512,6 +5513,80 @@ window.emitirSeleccionados = async () => {
   if (errores) partes.push(`⚠ ${errores} con error: ${err1}`);
   toast(partes.join(' · ') || 'Nada que procesar');
   colaEmision();
+};
+
+// Ver el comprobante de un pago: boleta/factura abre el PDF de SUNAT; el recibo
+// simple se genera en pantalla (descargable/compartible como imagen).
+window.verComprobantePago = (pid) => {
+  const p = DB.pagos.find((x) => x.id === pid);
+  if (!p || !p.doc_tipo) { toast('Este pago aún no tiene comprobante emitido'); return; }
+  if (p.doc_tipo !== 'recibo') {
+    if (p.doc_pdf_url) { window.open(p.doc_pdf_url, '_blank'); return; }
+    toast(p.sunat_error ? '⚠ ' + p.sunat_error : 'El comprobante no tiene PDF disponible'); return;
+  }
+  const j = jugador(p.jugador_id);
+  const t = DB.tutores.find((x) => x.id === p.tutor_id);
+  const sd = j ? sede(j.sede_id) : sede(p.sede_id);
+  const a = DB.academia;
+  const nro = `${p.doc_serie || 'R'}-${String(p.doc_numero || '').padStart(6, '0')}`;
+  const det = (p.detalle && p.detalle.length) ? p.detalle : [{ concepto: 'Pago de servicios', monto: p.total ?? 0 }];
+  const arch = `recibo_${nro}`;
+  openModal('Recibo simple', `
+    <div id="docCuenta" class="bg-white">
+      ${sd && sd.cabecera_url
+        ? `<img src="${sd.cabecera_url}" class="w-full block object-cover">`
+        : `<div class="bg-indigo-600 text-white px-4 py-5 text-center"><div class="text-lg font-bold">${a.nombre_academia}</div><div class="text-sm opacity-80">${sd ? sd.nombre_sede : ''}</div></div>`}
+      <div class="px-4 py-4">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Recibo</div>
+            <div class="text-lg font-bold text-slate-800">${nro}</div>
+            <div class="text-xs text-slate-400">${sd ? sd.nombre_sede : ''}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Fecha de pago</div>
+            <div class="text-sm text-slate-700">${fmtDMY(p.fecha)}</div>
+            ${p.emitido_at ? `<div class="text-[11px] text-slate-400">Emitido: ${fmtDMY(String(p.emitido_at).slice(0, 10))}</div>` : ''}
+          </div>
+        </div>
+        <div class="mb-3 text-sm">
+          <div><span class="text-slate-400">Alumno:</span> <b>${j ? nom(j) : '—'}</b>${j ? ` <span class="text-xs text-slate-400">· Cat. ${anio(j.fecha_nacimiento)}</span>` : ''}</div>
+          ${t && t.nombres ? `<div><span class="text-slate-400">Recibido de:</span> ${t.nombres}</div>` : ''}
+          <div><span class="text-slate-400">Medio:</span> ${p.medio || '—'}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}</div>
+        </div>
+        <table class="w-full text-sm border-t border-slate-200">
+          <thead><tr class="text-left text-slate-500"><th class="py-1.5 font-medium">Concepto</th><th class="py-1.5 font-medium text-right">Monto</th></tr></thead>
+          <tbody>${det.map((d) => `<tr class="border-t border-slate-100"><td class="py-1.5 pr-2">${d.tipo ? d.tipo + ' · ' : ''}${d.concepto || ''}</td><td class="py-1.5 text-right">${S(d.monto)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr class="border-t-2 border-slate-300 font-bold"><td class="py-2">Total</td><td class="py-2 text-right text-emerald-600">${S(p.total ?? 0)}</td></tr></tfoot>
+        </table>
+        <div class="mt-3 text-[11px] text-slate-400">Documento interno de control · no es comprobante de pago válido para SUNAT.</div>
+      </div>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2 mt-3">
+      <button onclick="descargarComprobante('${arch}')" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">📥 Descargar</button>
+      <button onclick="compartirComprobante('${arch}')" class="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">📲 Compartir</button>
+    </div>`);
+};
+window.compartirComprobante = async (nombre) => {
+  if (typeof html2canvas === 'undefined') { toast('No se pudo cargar el generador de imagen'); return; }
+  const canvas = await docCanvas();
+  canvas.toBlob(async (blob) => {
+    const file = new File([blob], `${nombre}.png`, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Recibo' }); } catch (e) { /* cancelado */ }
+    } else {
+      const link = document.createElement('a'); link.download = file.name; link.href = canvas.toDataURL('image/png'); link.click();
+      toast('Imagen descargada · adjúntala en WhatsApp');
+    }
+  }, 'image/png');
+};
+window.descargarComprobante = async (nombre) => {
+  if (typeof html2canvas === 'undefined') { toast('No se pudo cargar el generador de imagen'); return; }
+  const canvas = await docCanvas();
+  const link = document.createElement('a');
+  link.download = `${nombre}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
 };
 
 // ---------- Gastos por sede ----------
