@@ -4033,7 +4033,29 @@ window.pantallaCierres = (periodoSel) => {
       ${card('Costos', S0d(tot.cancha + tot.prof), 'cancha + profesores')}
       ${card('Utilidad', fmtU(tot.u))}
     </div>
-    ${bloques}`;
+    ${bloques}
+    ${(() => {
+      // Consolidado POR PROFESOR del periodo (foco: evaluar las bajas de cada
+      // uno). Un track con varios entrenadores cuenta completo para cada uno.
+      const porProf = {};
+      cierres.forEach((c) => {
+        String(c.entrenadores || 'Sin asignar').split(',').map((x) => x.trim()).filter(Boolean).forEach((nomP) => {
+          const o = porProf[nomP] || (porProf[nomP] = { tracks: 0, al: 0, nu: 0, ba: 0, ing: 0, u: 0 });
+          o.tracks++; o.al += +c.alumnos || 0; o.nu += +c.nuevos || 0; o.ba += +c.bajas || 0;
+          o.ing += +c.ingresos || 0; o.u += +c.utilidad || 0;
+        });
+      });
+      const filas = Object.entries(porProf)
+        .sort((a, b) => (b[1].ba - a[1].ba) || (b[1].al - a[1].al))
+        .map(([nomP, o]) => [`<b>${nomP}</b>`, String(o.tracks), String(o.al),
+          o.nu ? `<span class="text-emerald-600 font-medium">+${o.nu}</span>` : '0',
+          o.ba ? `<span class="text-rose-600 font-bold">−${o.ba}</span>` : '<span class="text-slate-300">0</span>',
+          S0d(o.ing), fmtU(o.u)]);
+      return filas.length ? `
+        <h3 class="mt-6 mb-1 text-sm font-semibold text-slate-600">👤 Por profesor</h3>
+        <p class="text-[11px] text-slate-400 mb-2">Ordenado por bajas del periodo · un track con varios entrenadores cuenta completo para cada uno</p>
+        ${table(['Profesor', 'Tracks', 'Alumnos', 'Nuevos', 'Bajas', 'Ingresos', 'Utilidad'], filas)}` : '';
+    })()}`;
 };
 
 // ---------- Cierre mensual de tracks (snapshot para evaluar evolución) ----------
