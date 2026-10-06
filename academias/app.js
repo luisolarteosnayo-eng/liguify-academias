@@ -4045,11 +4045,12 @@ window.pantallaCierres = (periodoSel) => {
           o.ing += +c.ingresos || 0; o.u += +c.utilidad || 0;
         });
       });
+      const pct = (n, al) => al ? ` <span class="text-[11px] opacity-70">(${Math.round(n * 100 / al)}%)</span>` : '';
       const filas = Object.entries(porProf)
         .sort((a, b) => (b[1].ba - a[1].ba) || (b[1].al - a[1].al))
         .map(([nomP, o]) => [`<b>${nomP}</b>`, String(o.tracks), String(o.al),
-          o.nu ? `<span class="text-emerald-600 font-medium">+${o.nu}</span>` : '0',
-          o.ba ? `<span class="text-rose-600 font-bold">−${o.ba}</span>` : '<span class="text-slate-300">0</span>',
+          o.nu ? `<span class="text-emerald-600 font-medium">+${o.nu}${pct(o.nu, o.al)}</span>` : '0',
+          o.ba ? `<span class="text-rose-600 font-bold">−${o.ba}${pct(o.ba, o.al)}</span>` : '<span class="text-slate-300">0</span>',
           S0d(o.ing), fmtU(o.u)]);
       return filas.length ? `
         <h3 class="mt-6 mb-1 text-sm font-semibold text-slate-600">👤 Por profesor</h3>
