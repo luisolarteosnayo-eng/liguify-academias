@@ -1155,7 +1155,7 @@ const SCREENS = {
           badge(p.estado, estadoColor[p.estado] || 'emerald'),
           p.doc_tipo
             ? `<button type="button" onclick="verComprobantePago('${p.id}')" class="text-xs ${p.doc_tipo === 'recibo' ? 'text-slate-600' : 'text-emerald-600'} hover:underline" title="${p.doc_tipo}${p.emitido_at ? ' · ' + fmtDMY(String(p.emitido_at).slice(0, 10)) : ''} · clic para ver el comprobante">${p.doc_tipo === 'recibo' ? '🧾' : '📄'} ${p.doc_serie || ''}-${p.doc_numero || ''}</button>`
-            : p.sunat_exportado ? `<span class="text-xs text-emerald-600" title="Exportado para SUNAT">📄 ${fmtDMY(p.sunat_exportado)}</span>` : '<span class="text-slate-300">—</span>',
+            : '<span class="text-slate-300">—</span>',
           p.voucher_url ? `<button onclick="verComprobante('${p.id}')" class="text-indigo-600 hover:underline text-xs">🖼️ Ver</button>` : '<span class="text-slate-300">—</span>']))
         : '<p class="text-sm text-slate-400">Sin documentos de pago con esos filtros.</p>'}
       </div>`;
