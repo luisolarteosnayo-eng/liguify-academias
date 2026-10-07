@@ -69,7 +69,7 @@ window.AcademiasDB = (() => {
         'foto_url', 'tipo_documento', 'num_documento', 'telefono', 'talla_camiseta', 'talla_short', 'nombre_camiseta',
         'posicion_juego', 'pierna_habil', 'tipo_sangre', 'notas_medicas', 'historial_lesiones', 'alergias',
         'otras_actividades', 'estado_alumno', 'baja_fecha', 'atributos',
-        'prueba_fecha', 'prueba_track_id', 'ultimo_recordatorio', 'jugador_maestro_id',
+        'prueba_fecha', 'prueba_track_id', 'ultimo_recordatorio', 'jugador_maestro_id', 'seguimiento',
         'doc_scan_frente_url', 'doc_scan_reverso_url', 'consentimiento_fecha']),
         fue_prospecto: !!j.fue_prospecto,
         pais_documento: j.pais_documento || 'PE',

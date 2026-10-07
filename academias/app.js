@@ -1460,23 +1460,31 @@ window.reporteNuevosPruebas = (tab = 'nuevos') => {
         ${table(cols, ls.map(filaDe))}`;
     }).join('');
   };
+  // El nombre abre la ficha del alumno (ahí está la bitácora completa de seguimiento)
+  const nomBtn = (j, extra = '') => `<button type="button" onclick="formEditarAlumno('${j.id}')" class="font-bold text-left hover:text-indigo-600 hover:underline">${nom(j)}</button>${extra}`;
   const cuerpo = tab === 'prueba'
     ? porSede(clasesPrueba, (j) => j.prueba_fecha, (j) => {
         const t = j.prueba_track_id ? track(j.prueba_track_id) : null;
         const tut = DB.tutores.find((x) => x.id === j.tutor_id);
         const estado = j.estado_alumno === 'activo' ? badge('Convertido ✓', 'emerald')
           : j.estado_alumno === 'prospecto' ? badge('Prospecto', 'fuchsia') : badge('Descartado', 'slate');
-        return [fmtDMY(j.prueba_fecha), `<b>${nom(j)}</b>`, anio(j.fecha_nacimiento),
+        // Último seguimiento: solo la observación más reciente; el detalle, en la ficha
+        const seg = (j.seguimiento || []).slice(-1)[0];
+        const segTxt = seg
+          ? `<div class="max-w-[220px]"><span class="text-slate-600" title="${String(seg.texto || '').replace(/"/g, '&quot;')}">${String(seg.texto || '').slice(0, 60)}${String(seg.texto || '').length > 60 ? '…' : ''}</span>
+             <div class="text-[10px] text-slate-400">${fmtDMY(String(seg.fecha).slice(0, 10))} · ${String(seg.usuario || '').replace(/</g, '&lt;')}${(j.seguimiento || []).length > 1 ? ` · <button type="button" onclick="formEditarAlumno('${j.id}')" class="text-indigo-600 hover:underline">+${j.seguimiento.length - 1} más</button>` : ''}</div></div>`
+          : `<button type="button" onclick="formEditarAlumno('${j.id}')" class="text-xs text-indigo-600 hover:underline">+ anotar</button>`;
+        return [fmtDMY(j.prueba_fecha), nomBtn(j), anio(j.fecha_nacimiento),
           t ? `${t.nombre_track}<div class="text-[11px] text-slate-400">${t.dias_horario || ''}</div>` : '—',
-          coachDe(t), estado, (tut && tut.telefono_celular) || '—'];
-      }, ['Fecha clase', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Estado', 'Cel. tutor'])
+          coachDe(t), estado, (tut && tut.telefono_celular) || '—', segTxt];
+      }, ['Fecha clase', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Estado', 'Cel. tutor', 'Último seguimiento'])
     : porSede(nuevos, (j) => j.fecha_registro, (j) => {
         const insc = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo);
         const tr = insc.map((i) => { const t = track(i.track_id);
           return t ? `${t.nombre_track}<div class="text-[11px] text-slate-400">${t.dias_horario || ''}</div>` : ''; }).join('') || '<span class="text-rose-500 text-xs">sin track</span>';
         const profes = [...new Set(insc.map((i) => coachDe(track(i.track_id))))].filter((x) => x !== '—').join(', ') || '—';
         const obs = insc.map((i) => i.observaciones).filter(Boolean).join(' · ');
-        return [fmtDMY(j.fecha_registro), `<b>${nom(j)}</b>${j.fue_prospecto ? ' <span class="text-[10px] text-fuchsia-600">· vino de clase de prueba</span>' : ''}`,
+        return [fmtDMY(j.fecha_registro), nomBtn(j, j.fue_prospecto ? ' <span class="text-[10px] text-fuchsia-600">· vino de clase de prueba</span>' : ''),
           anio(j.fecha_nacimiento), tr, profes, obs || '—'];
       }, ['Alta', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Observaciones']);
   el('content').innerHTML = `
@@ -3509,6 +3517,43 @@ window.compartirDocCuenta = async (nombre) => {
   }, 'image/png');
 };
 
+// ---------- Seguimiento de clase de prueba (bitácora: fecha + usuario) ----------
+// Varias observaciones por alumno: el profesor anota en campo y ventas hace el
+// segundo seguimiento si el prospecto no se matricula.
+function usuarioActual() {
+  if (PERFIL) {
+    const n = PERFIL.email ? PERFIL.email.split('@')[0] : '';
+    return (n ? n + ' · ' : '') + (PERFIL.rol || '') || ROL;
+  }
+  return ROL;
+}
+function seguimientoHTML(j) {
+  const items = [...(j.seguimiento || [])].reverse();   // más reciente arriba
+  return `
+    <div class="mb-4 rounded-lg bg-fuchsia-50/60 ring-1 ring-fuchsia-200 p-3">
+      <div class="text-xs font-semibold text-fuchsia-700 mb-1.5">📝 Seguimiento de clase de prueba</div>
+      <div class="flex gap-2 mb-2">
+        <input id="seg_txt" placeholder="Observación (profesor en campo, seguimiento de ventas…)"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();agregarSeguimiento('${j.id}');}"
+          class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+        <button type="button" onclick="agregarSeguimiento('${j.id}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
+      </div>
+      ${items.length ? `<div class="space-y-1.5 max-h-36 overflow-y-auto">${items.map((s) => `
+        <div class="text-xs">
+          <span class="text-slate-400">${fmtDMY(String(s.fecha).slice(0, 10))} · <b class="text-slate-500">${String(s.usuario || '—').replace(/</g, '&lt;')}</b>:</span>
+          <span class="text-slate-700">${String(s.texto || '').replace(/</g, '&lt;')}</span>
+        </div>`).join('')}</div>` : '<p class="text-[11px] text-slate-400">Sin observaciones aún.</p>'}
+    </div>`;
+}
+window.agregarSeguimiento = (jid) => {
+  const txt = (val('seg_txt') || '').trim();
+  if (!txt) { toast('Escribe la observación'); return; }
+  const j = jugador(jid);
+  j.seguimiento = [...(j.seguimiento || []), { fecha: new Date().toISOString(), usuario: usuarioActual(), texto: txt }];
+  if (el('segBox')) el('segBox').innerHTML = seguimientoHTML(j);
+  toast('Observación registrada ✓');
+};
+
 // Ficha / mantenimiento de alumno (editar)
 window.formEditarAlumno = (jid) => {
   const j = jugador(jid);
@@ -3528,6 +3573,7 @@ window.formEditarAlumno = (jid) => {
           class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Corrige el mes real de la baja (cuenta para el cierre mensual)">` : ''}
         ${j.fecha_registro ? `· Inscrito: <b>${fmtDMY(j.fecha_registro)}</b>` : ''}
         ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <b>${fmtDMY(j.prueba_fecha)}</b>${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}` : ''}</p>
+      ${(j.estado_alumno === 'prospecto' || j.fue_prospecto || (j.seguimiento || []).length) ? `<div id="segBox">${seguimientoHTML(j)}</div>` : ''}
       ${njFormBody(j, jid)}
       <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
         ${j.estado_alumno === 'prospecto'
