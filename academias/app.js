@@ -1477,7 +1477,9 @@ window.reporteNuevosPruebas = (tab = 'nuevos') => {
           ? `<div class="max-w-[220px]"><span class="text-slate-600" title="${String(seg.texto || '').replace(/"/g, '&quot;')}">${String(seg.texto || '').slice(0, 60)}${String(seg.texto || '').length > 60 ? '…' : ''}</span>
              <div class="text-[10px] text-slate-400">${fmtDMY(String(seg.fecha).slice(0, 10))} · ${String(seg.usuario || '').replace(/</g, '&lt;')}${(j.seguimiento || []).length > 1 ? ` · <button type="button" onclick="formEditarAlumno('${j.id}')" class="text-indigo-600 hover:underline">+${j.seguimiento.length - 1} más</button>` : ''}</div></div>`
           : `<button type="button" onclick="formEditarAlumno('${j.id}')" class="text-xs text-indigo-600 hover:underline">+ anotar</button>`;
-        return [fmtDMY(j.prueba_fecha), nomBtn(j), anio(j.fecha_nacimiento),
+        return [fmtDMY(j.prueba_fecha),
+          nomBtn(j, j.registrado_por ? `<div class="text-[10px] font-normal text-slate-400">registró: ${String(j.registrado_por).replace(/</g, '&lt;')}</div>` : ''),
+          anio(j.fecha_nacimiento),
           t ? `${t.nombre_track}<div class="text-[11px] text-slate-400">${t.dias_horario || ''}</div>` : '—',
           coachDe(t), estado, (tut && tut.telefono_celular) || '—', segTxt];
       }, ['Fecha clase', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Estado', 'Cel. tutor', 'Último seguimiento'])
@@ -3598,6 +3600,7 @@ window.formEditarAlumno = (jid) => {
         ${j.estado_alumno === 'baja' ? `· Fecha de baja: <input type="date" value="${j.baja_fecha || ''}" onchange="editarFechaBaja('${jid}', this.value)"
           class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Corrige el mes real de la baja (cuenta para el cierre mensual)">` : ''}
         ${j.fecha_registro ? `· Inscrito: <b>${fmtDMY(j.fecha_registro)}</b>` : ''}
+        ${j.registrado_por ? `· Registró: <b>${String(j.registrado_por).replace(/</g, '&lt;')}</b>` : ''}
         ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <input type="date" value="${j.prueba_fecha}"
           onchange="reprogramarPrueba('${jid}', this.value)" title="¿No asistió? Cámbiala para reprogramarla (queda anotado en el seguimiento)"
           class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white">${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}` : ''}</p>
@@ -4339,6 +4342,7 @@ window.guardarClasePrueba = (e) => {
   DB.tutores.push(t);
   const j = { id: uid('j'), tutor_id: t.id, sede_id: SEDE_ACTUAL, nombre: val('cp_nombre'), apellido: val('cp_apellido'),
     fecha_nacimiento: val('cp_fnac'), estado_alumno: 'prospecto', fue_prospecto: true, fecha_registro: HOY,
+    registrado_por: usuarioActual(),   // quién captó la clase de prueba (comisiones)
     prueba_fecha: val('cp_fecha') || HOY, prueba_track_id: val('cp_track'), atributos: null };
   DB.jugadores.push(j);
   const conCosto = document.querySelector('input[name="cp_costo"]:checked').value === 'pago';
@@ -4461,7 +4465,8 @@ window.guardarRegistro = (e) => {
     email_tutor: val('f_email') || null, perfil_reclamado: !!val('f_email') };
   DB.tutores.push(t);
   const j = { id: uid('j'), tutor_id: t.id, sede_id: val('f_sede'), nombre: val('f_nombre'), apellido: val('f_apellido'),
-    fecha_nacimiento: val('f_fnac'), estado_alumno: 'activo', fecha_registro: HOY, atributos: null };
+    fecha_nacimiento: val('f_fnac'), estado_alumno: 'activo', fecha_registro: HOY,
+    registrado_por: usuarioActual(), atributos: null };
   DB.jugadores.push(j);
   // Inscripciones = definición de los CR (los cargos se generan aparte)
   tracksSel.forEach((tid) => {
