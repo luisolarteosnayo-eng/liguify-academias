@@ -3367,26 +3367,34 @@ function regDMY(p) {
   return isNaN(d) ? '' : fmtDMY(isoDate(d));
 }
 function pagosDocsHTML(jid) {
-  const docs = DB.pagos.filter((p) => p.jugador_id === jid).map((p) => ({ f: p.fecha || '', html: `
-    <div class="rounded-xl ring-1 ring-slate-200 p-4 mb-3">
+  const docs = DB.pagos.filter((p) => p.jugador_id === jid).map((p) => {
+    // Un pago rechazado no cuenta: sus cargos ya volvieron a pendientes y el
+    // documento queda solo como constancia (atenuado, monto tachado).
+    const rech = p.estado === 'rechazado';
+    const pend = p.estado === 'pendiente';
+    return { f: p.fecha || '', html: `
+    <div class="rounded-xl ring-1 ${rech ? 'ring-rose-200 bg-rose-50/40 opacity-80' : 'ring-slate-200'} p-4 mb-3">
       <div class="flex items-start justify-between">
         <div>
-          <div class="font-semibold">Documento de pago · ${fmtDMY(p.fecha)}</div>
+          <div class="font-semibold">Documento de pago · ${fmtDMY(p.fecha)}
+            ${rech ? badge('Rechazado', 'rose') : pend ? badge('Pendiente de aprobación', 'amber') : ''}</div>
           <div class="text-xs text-slate-500">${p.medio || ''}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}</div>
           <div class="text-[11px] text-slate-400">Fecha de pago: ${fmtDMY(p.fecha)}${regDMY(p) ? ` · Registrado en sistema: ${regDMY(p)}${regDMY(p) !== fmtDMY(p.fecha) ? ' <span class="text-amber-600">(regularización)</span>' : ''}` : ''}</div>
+          ${rech ? `<div class="text-[11px] text-rose-600 mt-0.5">✕ Rechazado${p.fecha_rechazo ? ' el ' + fmtDMY(p.fecha_rechazo) : ''} · los cargos volvieron a pendientes de pago</div>` : ''}
         </div>
         <div class="text-right shrink-0">
-          <div class="text-lg font-bold text-emerald-600">${S(p.total ?? p.monto ?? 0)}</div>
+          <div class="text-lg font-bold ${rech ? 'text-slate-400 line-through' : 'text-emerald-600'}">${S(p.total ?? p.monto ?? 0)}</div>
           ${p.voucher_url ? `<button type="button" onclick="verComprobante('${p.id}')" class="mt-1 text-xs text-indigo-600 hover:underline">🖼️ Ver voucher</button>` : ''}
           ${p.doc_tipo ? `<button type="button" onclick="verComprobantePago('${p.id}')" class="mt-1 block w-full text-right text-xs text-indigo-600 hover:underline">${p.doc_tipo === 'recibo' ? '🧾 Recibo' : p.doc_tipo === 'factura' ? '📄 Factura' : '📄 Boleta'} ${p.doc_serie || ''}-${p.doc_numero || ''}</button>` : ''}
         </div>
       </div>
-      <div class="mt-2 border-t border-slate-100 pt-2 space-y-1">
+      <div class="mt-2 border-t border-slate-100 pt-2 space-y-1 ${rech ? 'opacity-60' : ''}">
         ${(p.detalle || []).map((d) => `<div class="flex justify-between text-sm">
           <span>${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span>
-          <span>${S(d.monto)}</span></div>`).join('') || '<div class="text-xs text-slate-400">Sin detalle de cargos</div>'}
+          <span class="${rech ? 'line-through text-slate-400' : ''}">${S(d.monto)}</span></div>`).join('') || '<div class="text-xs text-slate-400">Sin detalle de cargos</div>'}
       </div>
-    </div>` }));
+    </div>` };
+  });
   // CR de S/ 0 liquidados sin documento (beca / mes gratis de promo): figuran en el
   // historial para poder verificar la continuidad de las fechas de corte del alumno
   DB.cargos.filter((c) => c.jugador_id === jid && !(c.monto > 0) && c.estado === 'pagado')
