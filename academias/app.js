@@ -5777,7 +5777,19 @@ window.ejecutarEmision = async () => {
     try {
       const { data, error } = await AcademiasDB.sb.functions.invoke('emitir-comprobante',
         { body: { pago_id: pid, tipo, serie, numero } });
-      if (error || (data && data.error)) throw new Error((data && data.error) || error.message || 'Error al emitir');
+      // El cliente devuelve un mensaje genérico en errores HTTP: la causa real
+      // está en el cuerpo de la respuesta de la función (error.context)
+      let errMsg = null;
+      if (error) {
+        errMsg = error.message || 'Error al emitir';
+        try {
+          const body = error.context && await error.context.json();
+          if (body && body.error) errMsg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+        } catch (e2) { /* se queda el genérico */ }
+      } else if (data && data.error) {
+        errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+      }
+      if (errMsg) throw new Error(errMsg);
       p.doc_tipo = tipo; p.doc_serie = serie; p.doc_numero = numero;
       p.doc_pdf_url = (data && data.pdf) || null; p.doc_xml_url = (data && data.xml) || null;
       p.sunat_estado = 'emitido'; p.sunat_error = null; p.emitido_at = new Date().toISOString();
