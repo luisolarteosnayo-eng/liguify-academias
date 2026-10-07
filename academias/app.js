@@ -2904,13 +2904,14 @@ window.formPagoAlumno = (jid) => {
       <p class="text-xs text-slate-500 mb-2">Marca los cargos a pagar. Puedes editar el monto para un <b>pago parcial</b>; el resto queda pendiente en el cargo.</p>
       <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3 max-h-52 overflow-y-auto">
         ${pend.map((c) => { const pendM = c.monto - (c.pagado_monto || 0); return `<label class="flex items-center gap-2.5 px-3 py-3 text-sm cursor-pointer active:bg-slate-50">
-          <input type="checkbox" class="pgChk h-5 w-5 accent-indigo-600 shrink-0" value="${c.id}" data-monto="${pendM}" checked onchange="pagoChk(this)">
+          <input type="checkbox" class="pgChk h-5 w-5 accent-indigo-600 shrink-0" value="${c.id}" data-monto="${Math.max(0, pendM)}" checked onchange="pagoChk(this)">
           ${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')}
           <span class="flex-1 min-w-0">${descCargo(c)}${c.pagado_monto > 0 ? `<span class="block text-[11px] text-amber-600">parcial: pagado ${S(c.pagado_monto)} de ${S(c.monto)}</span>` : ''}</span>
-          <span class="text-xs text-slate-400 shrink-0">S/</span>
+          ${pendM > 0 ? `<span class="text-xs text-slate-400 shrink-0">S/</span>
           <input type="number" id="pgm_${c.id}" step="0.01" min="0.01" max="${pendM}" value="${pendM}"
             oninput="pagoTotal()" onclick="event.preventDefault()"
-            class="w-24 shrink-0 rounded border border-slate-300 px-2 py-1 text-sm text-right font-medium">
+            class="w-24 shrink-0 rounded border border-slate-300 px-2 py-1 text-sm text-right font-medium">`
+          : `<span class="shrink-0 text-xs font-medium text-emerald-600" title="No se cobra: queda Pagado al completarse la promoción">${c.gratis ? 'Gratis' : 'Beca'} · S/ 0</span>`}
         </label>`; }).join('')}
       </div>
       <div class="mb-3 flex items-center justify-between px-1">
@@ -2963,17 +2964,26 @@ window.guardarPagoAlumno = async (e, jid) => {
   const efectivo = medio && medio.nombre.toLowerCase() === 'efectivo';
   if (!efectivo && !PAGO_VOUCHER) { toast('Sube el voucher del pago'); return; }
   const j = jugador(jid);
-  // Monto por cargo: editable (pago parcial); tope = lo pendiente del cargo
+  // Monto por cargo: editable (pago parcial); tope = lo pendiente del cargo.
+  // Los cargos de S/ 0 (gratis de promo / beca) no se cobran: se omiten del
+  // documento y se liquidan solos cuando la promoción queda cubierta.
   let invalido = null;
-  const detalle = sel.map((cid) => {
+  const detalle = [];
+  sel.forEach((cid) => {
     const c = DB.cargos.find((x) => x.id === cid);
     const pendM = c.monto - (c.pagado_monto || 0);
+    if (!(pendM > 0)) return;
     const m = parseFloat(el('pgm_' + cid) && el('pgm_' + cid).value);
     if (!(m > 0)) invalido = `Ingresa un monto mayor a 0 en "${descCargo(c)}"`;
     else if (m > pendM + 0.001) invalido = `El monto de "${descCargo(c)}" supera lo pendiente (${S(pendM)})`;
-    return { cargo_id: cid, concepto: descCargo(c), cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), tipo: c.tipo, monto: Math.round(m * 100) / 100 };
+    detalle.push({ cargo_id: cid, concepto: descCargo(c), cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), tipo: c.tipo, monto: Math.round(m * 100) / 100 });
   });
   if (invalido) { toast('⚠ ' + invalido); return; }
+  if (!detalle.length) {
+    liquidarCargosGratis(jid);
+    toast('Los cargos gratis/beca no se cobran: quedan Pagados al completarse la promoción');
+    renderCuenta(jid); return;
+  }
   const total = detalle.reduce((s, d) => s + d.monto, 0);
   // Aplicar el pago a cada cargo: completo → Pagado; parcial → queda el resto pendiente
   detalle.forEach((d) => {
