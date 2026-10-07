@@ -3553,6 +3553,18 @@ window.agregarSeguimiento = (jid) => {
   if (el('segBox')) el('segBox').innerHTML = seguimientoHTML(j);
   toast('Observación registrada ✓');
 };
+// No asistió a la clase de prueba → reprogramar: cambia la fecha y deja
+// constancia automática en la bitácora de seguimiento
+window.reprogramarPrueba = (jid, f) => {
+  const j = jugador(jid);
+  if (!j || !f || f === j.prueba_fecha) return;
+  const antes = j.prueba_fecha;
+  j.prueba_fecha = f;
+  j.seguimiento = [...(j.seguimiento || []), { fecha: new Date().toISOString(), usuario: usuarioActual(),
+    texto: `🔁 Clase de prueba reprogramada del ${fmtDMY(antes)} al ${fmtDMY(f)}` }];
+  if (el('segBox')) el('segBox').innerHTML = seguimientoHTML(j);
+  toast(`🎈 Clase de prueba reprogramada al ${fmtDMY(f)}`);
+};
 
 // Ficha / mantenimiento de alumno (editar)
 window.formEditarAlumno = (jid) => {
@@ -3572,7 +3584,9 @@ window.formEditarAlumno = (jid) => {
         ${j.estado_alumno === 'baja' ? `· Fecha de baja: <input type="date" value="${j.baja_fecha || ''}" onchange="editarFechaBaja('${jid}', this.value)"
           class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Corrige el mes real de la baja (cuenta para el cierre mensual)">` : ''}
         ${j.fecha_registro ? `· Inscrito: <b>${fmtDMY(j.fecha_registro)}</b>` : ''}
-        ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <b>${fmtDMY(j.prueba_fecha)}</b>${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}` : ''}</p>
+        ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <input type="date" value="${j.prueba_fecha}"
+          onchange="reprogramarPrueba('${jid}', this.value)" title="¿No asistió? Cámbiala para reprogramarla (queda anotado en el seguimiento)"
+          class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white">${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}` : ''}</p>
       ${(j.estado_alumno === 'prospecto' || j.fue_prospecto || (j.seguimiento || []).length) ? `<div id="segBox">${seguimientoHTML(j)}</div>` : ''}
       ${njFormBody(j, jid)}
       <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
