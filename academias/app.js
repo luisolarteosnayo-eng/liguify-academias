@@ -1496,6 +1496,8 @@ window.reporteNuevosPruebas = (tab = 'nuevos') => {
         <button onclick="reporteNuevosPruebas('nuevos')" class="px-3 py-1.5 ${tab === 'nuevos' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Nuevos (${nuevos.length})</button>
         <button onclick="reporteNuevosPruebas('prueba')" class="px-3 py-1.5 ${tab === 'prueba' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'}">Clases de prueba (${clasesPrueba.length})</button>
       </div>
+      <span class="flex-1"></span>
+      <button onclick="formClasePrueba()" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">🎈 + Registrar clase de prueba</button>
     </div>
     <p class="text-xs text-slate-400 mb-3">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'} · más recientes primero</p>
     ${cuerpo}`;
@@ -4348,6 +4350,8 @@ window.guardarClasePrueba = (e) => {
   }
   closeModal();
   toast(`🎈 ${nom(j)} registrado como prospecto${conCosto ? ' · CNR generado' : ' · clase gratis'}`);
+  // Si se registró desde el reporte de Clases de prueba, quedarse ahí (refrescado)
+  if (el('repNP')) { closeModal(); refrescarReporteNP(); return; }
   AL_FILTRO = 'prospectos';
   go('alumnos');
 };
