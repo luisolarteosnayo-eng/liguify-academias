@@ -2978,6 +2978,8 @@ window.formPagoAlumno = (jid) => {
             <input id="pgt_dni" value="${v(t.dni_tutor)}" placeholder="DNI (8 dígitos · boleta)" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
             <input id="pgt_ruc" value="${v(t.ruc)}" placeholder="RUC (si pide factura)" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
             <input id="pgt_razon" value="${v(t.razon_social)}" placeholder="Razón social" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <input id="pgt_tel" value="${v(t.telefono_celular)}" placeholder="Celular del tutor" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <input id="pgt_email" type="email" value="${v(t.email_tutor)}" placeholder="Email del tutor" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
           </div>
           ${!t.dni_tutor ? '<p class="mt-1 text-[11px] text-amber-600">Sin DNI la boleta saldrá a "cliente varios".</p>' : ''}
         </div>`;
@@ -3048,6 +3050,8 @@ window.guardarPagoAlumno = async (e, jid) => {
     tut.dni_tutor = val('pgt_dni').trim() || null;
     tut.ruc = val('pgt_ruc').trim() || null;
     tut.razon_social = val('pgt_razon').trim() || null;
+    tut.telefono_celular = val('pgt_tel').trim() || tut.telefono_celular;
+    tut.email_tutor = val('pgt_email').trim() || null;
   }
   const total = detalle.reduce((s, d) => s + d.monto, 0);
   // Aplicar el pago a cada cargo: completo → Pagado; parcial → queda el resto pendiente
