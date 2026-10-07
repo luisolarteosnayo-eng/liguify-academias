@@ -5679,8 +5679,11 @@ window.colaEmision = (tipoSel) => {
     const semaforo = cls === 'recibo' ? '⚪' : cls === 'factura' ? '🟢' : dniOk(t) ? '🟢' : '🟡';
     return [
       `<input type="checkbox" class="emChk h-4 w-4 accent-indigo-600" value="${p.id}" checked onchange="emCount()">`,
-      `${semaforo} <b>${j ? nom(j) : '—'}</b><div class="text-[11px] text-slate-400">${fmtDMY(p.fecha)} · ${p.medio || ''}</div>`,
+      `${semaforo} <b>${j ? nom(j) : '—'}</b>`,
       S(p.total ?? 0),
+      p.medio || '—',
+      fmtDMY(p.fecha),
+      p.num_operacion || '—',
       `<select id="emTipo_${p.id}" class="rounded border border-slate-300 px-2 py-1 text-xs bg-white">
         ${['recibo', 'boleta', 'factura'].map((x) => `<option value="${x}" ${x === cls ? 'selected' : ''}>${x === 'recibo' ? 'Recibo simple' : x.charAt(0).toUpperCase() + x.slice(1)}</option>`).join('')}
       </select>`,
@@ -5709,7 +5712,7 @@ window.colaEmision = (tipoSel) => {
         <button onclick="emitirSeleccionados()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Procesar seleccionados</button>
       </div>
       ${table(['<input type="checkbox" checked onchange="document.querySelectorAll(\'.emChk\').forEach(c => { c.checked = this.checked; }); emCount()" class="h-4 w-4 accent-indigo-600">',
-        'Alumno · pago', 'Total', 'Documento', 'Cliente'], rows)}`
+        'Alumno', 'Total', 'Medio de pago', 'Fecha de pago', 'N° Op.', 'Documento', 'Cliente'], rows)}`
       : `<p class="text-sm text-slate-400">${EM_TIPO ? `No hay ${EM_TIPO === 'recibo' ? 'recibos' : EM_TIPO + 's'} por emitir con este filtro.` : '🎉 No hay pagos aprobados pendientes de comprobante en esta sede.'}</p>`}`;
   window.emCount = () => { const n = document.querySelectorAll('.emChk:checked').length; const i = el('emInfo'); if (i) i.textContent = n ? `${n} seleccionado(s)` : ''; };
   emCount();
