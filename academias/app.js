@@ -5717,15 +5717,50 @@ window.colaEmision = (tipoSel) => {
   window.emCount = () => { const n = document.querySelectorAll('.emChk:checked').length; const i = el('emInfo'); if (i) i.textContent = n ? `${n} seleccionado(s)` : ''; };
   emCount();
 };
-window.emitirSeleccionados = async () => {
+// Paso 1: confirmación con el desglose de lo que se va a procesar
+window.emitirSeleccionados = () => {
   const sel = [...document.querySelectorAll('.emChk:checked')].map((c) => c.value);
   if (!sel.length) { toast('Selecciona al menos un pago'); return; }
+  const tipoDe = (pid) => { const p = DB.pagos.find((x) => x.id === pid);
+    return el('emTipo_' + pid) ? el('emTipo_' + pid).value : clasificaDoc(p); };
+  const n = { recibo: 0, boleta: 0, factura: 0 };
+  sel.forEach((pid) => { n[tipoDe(pid)]++; });
+  const partes = [];
+  if (n.recibo) partes.push(`<b>${n.recibo}</b> Recibo(s) simple(s)`);
+  if (n.boleta) partes.push(`<b>${n.boleta}</b> Boleta(s)`);
+  if (n.factura) partes.push(`<b>${n.factura}</b> Factura(s)`);
+  EM_PENDIENTE = sel.map((pid) => ({ pid, tipo: tipoDe(pid) }));   // tipos congelados al confirmar
+  openModal('Emitir comprobantes', `
+    <div class="text-center py-2">
+      <div class="text-3xl mb-2">🧾</div>
+      <p class="text-lg font-semibold mb-1">${sel.length} documento(s) a procesar</p>
+      <p class="text-sm text-slate-600 mb-1">${partes.join(' · ')}</p>
+      ${(n.boleta || n.factura) ? '<p class="text-xs text-slate-400">Boletas y facturas se envían a SUNAT; los recibos solo se numeran.</p>' : ''}
+      <div class="mt-4 flex justify-center gap-2">
+        <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
+        <button type="button" onclick="ejecutarEmision()" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Aceptar</button>
+      </div>
+    </div>`);
+};
+let EM_PENDIENTE = [];
+// Paso 2 y 3: procesar mostrando EN PROCESO, y al terminar el resumen
+window.ejecutarEmision = async () => {
+  const lote = EM_PENDIENTE; EM_PENDIENTE = [];
+  if (!lote.length) { closeModal(); return; }
+  openModal('Emitiendo comprobantes', `
+    <div class="text-center py-6">
+      <div class="inline-block h-10 w-10 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
+      <div class="mt-3 text-sm font-semibold tracking-wide text-slate-700">⏳ EN PROCESO…</div>
+      <div id="emProg" class="mt-1 text-xs text-slate-500">Procesando 0 de ${lote.length}</div>
+      <p class="mt-2 text-[11px] text-slate-400">No cierres esta ventana hasta que termine.</p>
+    </div>`);
   const s = sede(SEDE_ACTUAL);
-  let recibos = 0, emitidos = 0, errores = 0, err1 = '';
-  for (const pid of sel) {
+  let hecho = 0, recibos = 0, emitidos = 0, errores = 0, err1 = '';
+  for (const { pid, tipo } of lote) {
+    if (el('emProg')) el('emProg').textContent = `Procesando ${++hecho} de ${lote.length}`;
+    await new Promise((r) => setTimeout(r));   // deja respirar al spinner
     const p = DB.pagos.find((x) => x.id === pid);
     if (!p || p.doc_tipo) continue;
-    const tipo = el('emTipo_' + pid) ? el('emTipo_' + pid).value : clasificaDoc(p);
     if (tipo === 'recibo') {
       const nro = +s.correlativo_recibo || 1;
       p.doc_tipo = 'recibo'; p.doc_serie = 'R'; p.doc_numero = nro;
@@ -5753,12 +5788,22 @@ window.emitirSeleccionados = async () => {
       p.sunat_estado = 'error'; p.sunat_error = ex.message || String(ex);
     }
   }
-  const partes = [];
-  if (emitidos) partes.push(`🧾 ${emitidos} emitido(s) en SUNAT`);
-  if (recibos) partes.push(`${recibos} recibo(s) simple(s)`);
-  if (errores) partes.push(`⚠ ${errores} con error: ${err1}`);
-  toast(partes.join(' · ') || 'Nada que procesar');
-  colaEmision();
+  // Resumen final del proceso
+  el('modalTitle').textContent = 'Proceso finalizado';
+  el('modalBody').innerHTML = `
+    <div class="text-center py-2">
+      <div class="text-3xl mb-2">${errores ? '⚠️' : '✅'}</div>
+      <p class="text-lg font-semibold mb-2">${errores ? 'Proceso terminado con observaciones' : 'Proceso completado'}</p>
+      <div class="mx-auto max-w-xs rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3 text-sm text-left space-y-1">
+        ${recibos ? `<div>⚪ Recibos simples generados: <b>${recibos}</b></div>` : ''}
+        ${emitidos ? `<div>📄 Emitidos en SUNAT: <b class="text-emerald-600">${emitidos}</b></div>` : ''}
+        ${errores ? `<div class="text-rose-600">✕ Con error: <b>${errores}</b><div class="text-[11px] text-rose-500">${String(err1).replace(/</g, '&lt;')}</div></div>` : ''}
+        ${!recibos && !emitidos && !errores ? '<div class="text-slate-400">Nada que procesar.</div>' : ''}
+      </div>
+      <div class="mt-4">
+        <button type="button" onclick="closeModal(); colaEmision();" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Aceptar</button>
+      </div>
+    </div>`;
 };
 
 // Ver el comprobante de un pago: boleta/factura abre el PDF de SUNAT; el recibo
