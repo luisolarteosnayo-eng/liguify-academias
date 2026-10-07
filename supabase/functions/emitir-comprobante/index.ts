@@ -83,7 +83,8 @@ Deno.serve(async (req) => {
         const valor = r2(precio / 1.18);
         return {
           unidad_de_medida: 'ZZ',               // servicio
-          descripcion: d.concepto || 'Servicio de academia deportiva',
+          // El PDF es el mismo para las 4 sedes: la descripción lleva la sede
+          descripcion: `${d.concepto || 'Servicio de academia deportiva'} - ${s.nombre_sede || ''}`.replace(/ - $/, ''),
           cantidad: 1,
           valor_unitario: valor,
           precio_unitario: precio,
