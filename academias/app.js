@@ -470,7 +470,27 @@ let FICHA_ADD_EVAL = false;    // panel "Nueva evaluación" expandido en la fich
 let CAL_MES = null;            // mes visible del calendario de clases ('2026-07'); null = mes de HOY
 let GASTO_MES = null;          // mes visible de la pantalla de Gastos; null = mes de HOY
 let TES_MES = '';              // filtro de periodo en Documentos de pago ('' = todos, 'YYYY-MM')
-let TES_MEDIO = '';            // filtro de medio de pago en Documentos de pago ('' = todos)
+let TES_MEDIOS = [];           // filtro de medios de pago (varios a la vez; [] = todos)
+let TES_FECHA = '';            // filtro de fecha de pago exacta ('' = todas)
+let TES_Q = '';                // búsqueda: alumno / N° operación / N° de recibo-boleta-factura
+// Un pago pasa los filtros de Documentos de pago de Tesorería
+function tesPasaFiltros(p) {
+  if (TES_MES && !(p.fecha || '').startsWith(TES_MES)) return false;
+  if (TES_FECHA && p.fecha !== TES_FECHA) return false;
+  if (TES_MEDIOS.length && !TES_MEDIOS.includes(p.medio)) return false;
+  const q = TES_Q.trim().toLowerCase();
+  if (q) {
+    const j = p.jugador_id ? jugador(p.jugador_id) : null;
+    const doc = p.doc_tipo ? `${p.doc_tipo} ${p.doc_serie || ''}-${p.doc_numero || ''}` : '';
+    const blob = `${j ? nom(j) : ''} ${p.num_operacion || ''} ${doc}`.toLowerCase();
+    if (!blob.includes(q)) return false;
+  }
+  return true;
+}
+window.tesToggleMedio = (m) => {
+  TES_MEDIOS = TES_MEDIOS.includes(m) ? TES_MEDIOS.filter((x) => x !== m) : [...TES_MEDIOS, m];
+  SCREENS.tesoreria();
+};
 const CONCEPTOS_EGRESO = [['cancha', 'Cancha'], ['materiales', 'Materiales'], ['uniformes', 'Uniformes'], ['nomina', 'Nómina'], ['otro', 'Otro']];
 // Conceptos de gasto configurables (catálogo por sede); si el catálogo está
 // vacío se usan los conceptos legados de CONCEPTOS_EGRESO como fallback.
@@ -1090,33 +1110,41 @@ const SCREENS = {
         <button onclick="formPago()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Registrar pago</button>
       </div>
       ${(() => {
-        const pagosFil = pagosS.filter((p) => (!TES_MES || (p.fecha || '').startsWith(TES_MES)) && (!TES_MEDIO || p.medio === TES_MEDIO));
+        const pagosFil = pagosS.filter(tesPasaFiltros);
         return `<div class="grid gap-4 md:grid-cols-3 mb-6">
         ${card('Por cobrar', S(porCobrar.reduce((s, c) => s + saldoC(c), 0)), `${porCobrar.length} cargos`)}
         ${card('Documentos de pago', pagosFil.length, `${S(pagosFil.filter((p) => p.estado === 'aprobado').reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0))} recaudado`)}
-        ${card('Periodo', TES_MES ? mesLabelDe(TES_MES) : 'Todos', TES_MEDIO ? 'medio: ' + TES_MEDIO : 'todos los medios')}
+        ${card('Periodo', TES_MES ? mesLabelDe(TES_MES) : 'Todos', TES_MEDIOS.length ? 'medios: ' + TES_MEDIOS.join(', ') : 'todos los medios')}
       </div>`;
       })()}
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Documentos de pago</h3>
       ${(() => {
         const medios = [...new Set(pagosS.map((p) => p.medio).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-        const pagosFil = pagosS.filter((p) => (!TES_MES || (p.fecha || '').startsWith(TES_MES)) && (!TES_MEDIO || p.medio === TES_MEDIO))
+        const pagosFil = pagosS.filter(tesPasaFiltros)
           .slice().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+        const hayFiltros = TES_MES || TES_FECHA || TES_MEDIOS.length || TES_Q;
         return `
       <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
+        <input value="${TES_Q.replace(/"/g, '&quot;')}" placeholder="🔎 Alumno · N° operación · N° recibo/boleta/factura"
+          onchange="TES_Q = this.value; SCREENS.tesoreria()"
+          class="w-64 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
         <label class="flex items-center gap-1.5 text-slate-500">Periodo
           <input type="month" value="${TES_MES}" onchange="TES_MES = this.value; SCREENS.tesoreria()"
             class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
-        <label class="flex items-center gap-1.5 text-slate-500">Medio
-          <select onchange="TES_MEDIO = this.value; SCREENS.tesoreria()" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
-            <option value="">Todos</option>
-            ${medios.map((m) => `<option value="${m.replace(/"/g, '&quot;')}" ${TES_MEDIO === m ? 'selected' : ''}>${m}</option>`).join('')}
-          </select></label>
-        ${TES_MES || TES_MEDIO ? `<button onclick="TES_MES=''; TES_MEDIO=''; SCREENS.tesoreria()" class="text-indigo-600 hover:underline">✕ Quitar filtros</button>` : ''}
+        <label class="flex items-center gap-1.5 text-slate-500">Día
+          <input type="date" value="${TES_FECHA}" onchange="TES_FECHA = this.value; SCREENS.tesoreria()"
+            class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
+        ${hayFiltros ? `<button onclick="TES_MES=''; TES_FECHA=''; TES_MEDIOS=[]; TES_Q=''; SCREENS.tesoreria()" class="text-indigo-600 hover:underline">✕ Quitar filtros</button>` : ''}
         <span class="text-slate-400">· ${pagosFil.length} documento(s)</span>
         <span class="flex-1"></span>
         <button onclick="exportarSunat()" class="rounded-lg bg-white ring-1 ring-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">📄 Exportar para SUNAT (<span id="tesSelN">0</span>)</button>
+      </div>
+      <div class="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
+        <span class="text-slate-400">Medios:</span>
+        ${medios.map((m) => `<button onclick="tesToggleMedio('${m.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"
+          class="rounded-full px-2.5 py-1 ring-1 ${TES_MEDIOS.includes(m) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'}">${m}</button>`).join('')}
+        ${TES_MEDIOS.length ? '<span class="text-slate-400">· puedes marcar varios</span>' : ''}
       </div>
       <div class="mb-6">
       ${pagosFil.length ? table([`<input type="checkbox" onchange="document.querySelectorAll('.tesChk').forEach(c => { c.checked = this.checked; }); tesSelCount()" class="h-4 w-4 accent-indigo-600" title="Seleccionar todos">`, 'Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado', 'SUNAT', 'Voucher'],
