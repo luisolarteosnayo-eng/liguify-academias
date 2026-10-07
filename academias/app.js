@@ -2591,7 +2591,8 @@ window.editarCRForm = (cid, jid) => { CR_EDIT_ID = cid; renderCuenta(jid); };
 window.eliminarCargoCNR = (cid, jid) => {
   const c = DB.cargos.find((x) => x.id === cid);
   if (!c || c.tipo !== 'CNR') return;
-  const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => (p.detalle || []).some((d) => d.cargo_id === cid));
+  // Los pagos RECHAZADOS no cuentan: ya devolvieron su monto al cargo
+  const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => p.estado !== 'rechazado' && (p.detalle || []).some((d) => d.cargo_id === cid));
   if (tienePagos) { toast('No se puede eliminar: tiene pagos asociados'); return; }
   if (!confirm(`¿Eliminar el cargo "${descCargo(c)}" de ${S(c.monto)}? Esta acción no se puede deshacer.`)) return;
   DB.cargos = DB.cargos.filter((x) => x.id !== cid);
@@ -2614,7 +2615,8 @@ window.eliminarCargoCR = (cid, jid) => {
   if (ROL !== 'admin') { toast('Solo el Administrador puede eliminar CRs'); return; }
   const c = DB.cargos.find((x) => x.id === cid);
   if (!c || c.tipo !== 'CR') return;
-  const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => (p.detalle || []).some((d) => d.cargo_id === cid));
+  // Los pagos RECHAZADOS no cuentan: ya devolvieron su monto al cargo
+  const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => p.estado !== 'rechazado' && (p.detalle || []).some((d) => d.cargo_id === cid));
   if (tienePagos) { toast('No se puede eliminar: tiene pagos asociados'); return; }
   const i = c.inscripcion_id ? DB.inscripciones.find((x) => x.id === c.inscripcion_id) : null;
   const esUltimo = i && c.ciclo_fin && i.ultima_fecha_corte === c.ciclo_fin;
