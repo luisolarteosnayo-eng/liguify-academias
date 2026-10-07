@@ -3241,37 +3241,86 @@ function pagoAprobCard(p) {
     </div>
   </div>`;
 }
+// Revisión del pago estilo ERP: voucher en grande a la izquierda y, en la misma
+// pantalla, corrección de medio, fecha de pago y montos por cargo (se aplican
+// al Aprobar). En móvil las columnas se apilan.
 window.gestionarPago = (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p) return;
   const j = p.jugador_id ? jugador(p.jugador_id) : null;
   const medios = mediosPagoSede();
+  const imgVoucher = (u) => `<img src="${u}" onclick="verComprobante('${id}')" class="w-full max-h-[68vh] object-contain rounded-lg ring-1 ring-slate-200 cursor-zoom-in bg-slate-50" title="Clic para ampliar">`;
   openModal('Aprobar / Rechazar pago', `
-    <p class="text-sm mb-1">${j ? nom(j) : ''} · <b>${S(p.total ?? p.monto ?? 0)}</b></p>
-    <p class="text-xs text-slate-400 mb-3">${p.num_operacion ? 'Op. ' + p.num_operacion + ' · ' : ''}pagado ${fmtDMY(p.fecha)}${regDMY(p) && regDMY(p) !== fmtDMY(p.fecha) ? ` · <span class="text-amber-600">registrado ${regDMY(p)}</span>` : ''}${p.voucher_url ? ' · voucher adjunto' : ' · sin voucher'}</p>
-    <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3">
-      ${(p.detalle || []).map((d) => `<div class="flex justify-between px-3 py-2 text-sm"><span>${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span><span>${S(d.monto)}</span></div>`).join('')}
-    </div>
-    ${voucherSrc(p)
-      ? `<div class="mb-3"><div class="text-xs font-medium text-slate-500 mb-1">Comprobante</div><img src="${voucherSrc(p)}" onclick="verComprobante('${id}')" class="w-full max-h-52 object-contain rounded-lg ring-1 ring-slate-200 cursor-zoom-in" title="Clic para ampliar"></div>`
-      : p.voucher_url && String(p.voucher_url).startsWith('vstore:')
-        ? `<div class="mb-3"><div class="text-xs font-medium text-slate-500 mb-1">Comprobante</div><div id="apVoucherBox" class="rounded-lg ring-1 ring-slate-200 p-6 text-center text-xs text-slate-400">⏳ cargando comprobante…</div></div>`
-        : '<p class="text-xs text-amber-600 mb-3">⚠️ Este pago no tiene comprobante adjunto.</p>'}
-    ${field('Medio de pago', select('ap_medio', medios.map((m) => ({ v: m.nombre, t: m.nombre })), ''))}
-    <div class="mt-3 flex items-center justify-between gap-2">
-      <button type="button" onclick="rechazarPagoDoc('${id}')" class="rounded-lg px-4 py-2.5 text-sm font-medium text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">Rechazar</button>
-      <button type="button" onclick="aprobarPagoDoc('${id}')" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">Aprobar</button>
-    </div>`);
+    <div class="grid gap-5 md:grid-cols-2">
+      <div>
+        <div class="text-xs font-medium text-slate-500 mb-1">Comprobante</div>
+        ${voucherSrc(p) ? imgVoucher(voucherSrc(p))
+          : p.voucher_url && String(p.voucher_url).startsWith('vstore:')
+            ? `<div id="apVoucherBox" class="rounded-lg ring-1 ring-slate-200 p-10 text-center text-xs text-slate-400">⏳ cargando comprobante…</div>`
+            : '<p class="rounded-lg ring-1 ring-amber-200 bg-amber-50 p-4 text-xs text-amber-700">⚠️ Este pago no tiene comprobante adjunto.</p>'}
+      </div>
+      <div>
+        <p class="text-sm mb-1"><b>${j ? nom(j) : ''}</b> · Total <b id="apTotal">${S(p.total ?? p.monto ?? 0)}</b></p>
+        <p class="text-xs text-slate-400 mb-3">${p.num_operacion ? 'Op. ' + p.num_operacion + ' · ' : ''}registrado ${regDMY(p) || fmtDMY(p.fecha)}</p>
+        <div class="text-xs font-medium text-slate-500 mb-1">Cargos pagados <span class="font-normal text-slate-400">· corrige el monto si no coincide con el voucher</span></div>
+        <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3">
+          ${(p.detalle || []).map((d, k) => `<div class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+            <span class="min-w-0">${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span>
+            <span class="flex items-center gap-1 shrink-0 text-xs text-slate-400">S/
+              <input id="apm_${k}" type="number" step="0.01" min="0.01" value="${d.monto}" oninput="apRecalc('${id}')"
+                class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right"></span>
+          </div>`).join('') || '<div class="px-3 py-2 text-xs text-slate-400">Sin detalle de cargos</div>'}
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          ${field('Medio de pago', select('ap_medio', medios.map((m) => ({ v: m.nombre, t: m.nombre })), ''))}
+          ${field('Fecha de pago', input('ap_fecha', `type="date" value="${p.fecha || HOY}"`))}
+        </div>
+        <p class="text-[11px] text-slate-400 mb-2">Las correcciones se guardan al aprobar. Al rechazar, los cargos vuelven a pendientes.</p>
+        <div class="mt-1 flex items-center justify-between gap-2">
+          <button type="button" onclick="rechazarPagoDoc('${id}')" class="rounded-lg px-4 py-2.5 text-sm font-medium text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">Rechazar</button>
+          <button type="button" onclick="aprobarPagoDoc('${id}')" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">Aprobar</button>
+        </div>
+      </div>
+    </div>`, 'xl');
   if (el('ap_medio')) el('ap_medio').value = p.medio || (medios[0] && medios[0].nombre) || '';
   // Voucher en Storage: resolver la URL firmada después de abrir el modal
-  if (p.voucher_url && String(p.voucher_url).startsWith('vstore:')) {
+  if (!voucherSrc(p) && p.voucher_url && String(p.voucher_url).startsWith('vstore:')) {
     urlVoucher(p.voucher_url)
-      .then((u) => { if (el('apVoucherBox')) el('apVoucherBox').outerHTML = `<img src="${u}" onclick="verComprobante('${id}')" class="w-full max-h-52 object-contain rounded-lg ring-1 ring-slate-200 cursor-zoom-in" title="Clic para ampliar">`; })
+      .then((u) => { if (el('apVoucherBox')) el('apVoucherBox').outerHTML = imgVoucher(u); })
       .catch((e) => { if (el('apVoucherBox')) el('apVoucherBox').textContent = '⚠ No se pudo cargar: ' + (e.message || e); });
   }
 };
+window.apRecalc = (id) => {
+  const p = DB.pagos.find((x) => x.id === id); if (!p) return;
+  const total = (p.detalle || []).reduce((s, d, k) => s + ((el('apm_' + k) && parseFloat(el('apm_' + k).value)) || 0), 0);
+  if (el('apTotal')) el('apTotal').textContent = S(Math.round(total * 100) / 100);
+};
 window.aprobarPagoDoc = (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p || p.estado !== 'pendiente') return; // sin reversión: solo pendientes
+  // 1) Validar las correcciones de monto (tope: lo pendiente del cargo + lo de este pago)
+  const det = p.detalle || [];
+  const nuevos = det.map((d, k) => el('apm_' + k) ? Math.round((parseFloat(el('apm_' + k).value) || 0) * 100) / 100 : d.monto);
+  for (let k = 0; k < det.length; k++) {
+    if (!(nuevos[k] > 0)) { toast(`⚠ Ingresa un monto mayor a 0 en "${det[k].concepto}"`); return; }
+    const c = DB.cargos.find((x) => x.id === det[k].cargo_id);
+    if (c) {
+      const tope = Math.round(((c.monto - (c.pagado_monto || 0)) + det[k].monto) * 100) / 100;
+      if (nuevos[k] > tope + 0.001) { toast(`⚠ El monto de "${det[k].concepto}" supera lo pendiente (${S(tope)})`); return; }
+    }
+  }
+  // 2) Aplicar: ajustar lo abonado en cada cargo por la diferencia
+  det.forEach((d, k) => {
+    if (nuevos[k] === d.monto) return;
+    const c = DB.cargos.find((x) => x.id === d.cargo_id);
+    if (c) {
+      c.pagado_monto = Math.round(((c.pagado_monto || 0) - d.monto + nuevos[k]) * 100) / 100;
+      c.estado = c.pagado_monto >= c.monto ? 'pagado' : (c.pagado_monto > 0 ? 'parcial' : 'por_pagar');
+    }
+    d.monto = nuevos[k];
+  });
+  if (det.length) p.total = Math.round(nuevos.reduce((s, m) => s + m, 0) * 100) / 100;
   p.medio = val('ap_medio') || p.medio;
+  const f = val('ap_fecha'); if (f) p.fecha = f;
+  if (p.jugador_id) liquidarCargosGratis(p.jugador_id);
   p.estado = 'aprobado'; p.fecha_aprobacion = HOY;
   closeModal(); toast('Pago aprobado'); go('aprobar');
 };
@@ -3701,9 +3750,11 @@ window.guardarAgregarAlumno = (e, tid) => {
 // =====================================================================
 // MODALES Y FORMULARIOS
 // =====================================================================
-function openModal(title, bodyHtml) {
+function openModal(title, bodyHtml, ancho) {
   el('modalTitle').textContent = title;
   el('modalBody').innerHTML = bodyHtml;
+  const box = el('modalBox');   // 'xl' = modal ancho (p. ej. aprobación con voucher grande en laptop)
+  if (box) { box.classList.remove('max-w-lg', 'max-w-5xl'); box.classList.add(ancho === 'xl' ? 'max-w-5xl' : 'max-w-lg'); }
   el('modalRoot').classList.remove('hidden');
 }
 window.closeModal = () => el('modalRoot').classList.add('hidden');
