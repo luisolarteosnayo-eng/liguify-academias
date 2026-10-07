@@ -1488,6 +1488,7 @@ window.reporteNuevosPruebas = (tab = 'nuevos') => {
           anio(j.fecha_nacimiento), tr, profes, obs || '—'];
       }, ['Alta', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Observaciones']);
   el('content').innerHTML = `
+    <div id="repNP" data-tab="${tab}"></div>
     <button onclick="go('dashboard')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver al dashboard</button>
     <div class="mb-1 flex flex-wrap items-center gap-3">
       <h2 class="text-xl font-bold">${tab === 'prueba' ? '🎈 Clases de prueba' : '🧒 Alumnos nuevos'}</h2>
@@ -3551,8 +3552,15 @@ window.agregarSeguimiento = (jid) => {
   const j = jugador(jid);
   j.seguimiento = [...(j.seguimiento || []), { fecha: new Date().toISOString(), usuario: usuarioActual(), texto: txt }];
   if (el('segBox')) el('segBox').innerHTML = seguimientoHTML(j);
+  refrescarReporteNP();   // si el reporte de Clases de prueba está detrás, se actualiza al instante
   toast('Observación registrada ✓');
 };
+// Re-render del reporte Nuevos/Clases de prueba si está abierto de fondo (el
+// modal de la ficha vive aparte, así que no se cierra)
+function refrescarReporteNP() {
+  const rep = el('repNP');
+  if (rep) reporteNuevosPruebas(rep.dataset.tab);
+}
 // No asistió a la clase de prueba → reprogramar: cambia la fecha y deja
 // constancia automática en la bitácora de seguimiento
 window.reprogramarPrueba = (jid, f) => {
@@ -3563,6 +3571,7 @@ window.reprogramarPrueba = (jid, f) => {
   j.seguimiento = [...(j.seguimiento || []), { fecha: new Date().toISOString(), usuario: usuarioActual(),
     texto: `🔁 Clase de prueba reprogramada del ${fmtDMY(antes)} al ${fmtDMY(f)}` }];
   if (el('segBox')) el('segBox').innerHTML = seguimientoHTML(j);
+  refrescarReporteNP();
   toast(`🎈 Clase de prueba reprogramada al ${fmtDMY(f)}`);
 };
 
