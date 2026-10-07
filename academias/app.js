@@ -2470,12 +2470,25 @@ function estadoCuentaHTML(jid) {
     ];
   });
 
+  // Tracks del alumno con su fecha de corte: hasta cuándo está matriculado
+  const inscAct = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
+  const tracksInfo = inscAct.map((i) => {
+    const t = track(i.track_id); if (!t) return '';
+    const corteVencido = i.ultima_fecha_corte && i.ultima_fecha_corte < HOY;
+    return `<div class="flex items-center justify-between gap-2 py-1 text-xs">
+      <span class="min-w-0 truncate text-slate-600">🎯 <b>${t.nombre_track}</b> <span class="text-slate-400">${t.dias_horario || ''}</span></span>
+      <span class="shrink-0">${i.ultima_fecha_corte
+        ? `matriculado hasta <b class="${corteVencido ? 'text-rose-600' : 'text-emerald-700'}">${fmtDMY(i.ultima_fecha_corte)}</b>`
+        : '<span class="text-amber-600">sin CR generado</span>'}</span>
+    </div>`;
+  }).join('');
   return `
-    <div class="mb-4 rounded-xl p-4 ${saldo > 0 ? 'bg-rose-50' : saldo < 0 ? 'bg-emerald-50' : 'bg-slate-50'}">
+    <div class="mb-4 rounded-xl p-4 ${saldo > 0 ? 'bg-rose-50' : 'bg-emerald-50'}">
       <div class="text-xs text-slate-500">Saldo actual</div>
-      <div class="text-2xl font-bold ${saldo > 0 ? 'text-rose-600' : saldo < 0 ? 'text-emerald-600' : 'text-slate-700'}">
-        ${saldo > 0 ? `Debe ${S(saldo)}` : saldo < 0 ? `A favor ${S(-saldo)}` : 'Al día'}</div>
+      <div class="text-2xl font-bold ${saldo > 0 ? 'text-rose-600' : 'text-emerald-600'}">
+        ${saldo > 0 ? `Debe ${S(saldo)}` : saldo < 0 ? `ACTIVO · a favor ${S(-saldo)}` : 'ACTIVO'}</div>
       <div class="mt-1 text-xs text-slate-500">Pendiente CR: <b>${S(totCR)}</b> · Pendiente CNR: <b>${S(totCNR)}</b></div>
+      ${tracksInfo ? `<div class="mt-2 border-t ${saldo > 0 ? 'border-rose-200' : 'border-emerald-200'} pt-1.5">${tracksInfo}</div>` : ''}
     </div>
     ${hayPagables ? `<div class="mb-3 flex justify-end">
       <button type="button" onclick="formPagoAlumno('${jid}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Registrar pago</button>
