@@ -435,7 +435,8 @@ function statsTorneo(t) {
 const MENU = [
   { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor','operador','cobranza'] },
   { id: 'gerencial',   label: 'Gerencial',     icon: '📈', roles: ['admin'] },
-  { id: 'tracks',      label: 'Tracks · Rentabilidad', icon: '🎯', roles: ['admin','coordinador','operador'] },
+  { id: 'tracks',      label: 'Tracks · Horarios', icon: '🎯', roles: ['admin','coordinador','operador'] },
+  { id: 'prospectos',  label: 'Clases de prueba · Prospectos', icon: '🎈', roles: ['admin','coordinador','operador','profesor'] },
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador','operador'] },
   { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
   { id: 'almacen',     label: 'Almacén',       icon: '📦', roles: ['admin','coordinador'] },
@@ -968,6 +969,8 @@ const SCREENS = {
       ])}`;
   },
 
+  prospectos() { reporteNuevosPruebas('prueba'); },
+
   tracks() {
     if (TRACK_SEL) { renderTrackDetalle(); return; }
     // Dashboard de la sede: totales de todos sus tracks
@@ -1489,7 +1492,7 @@ window.reporteNuevosPruebas = (tab = 'nuevos') => {
       }, ['Alta', 'Alumno', 'Categoría', 'Track · hora', 'Profesor', 'Observaciones']);
   el('content').innerHTML = `
     <div id="repNP" data-tab="${tab}"></div>
-    <button onclick="go('dashboard')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver al dashboard</button>
+    ${SCREEN === 'prospectos' ? '' : '<button onclick="go(\'dashboard\')" class="mb-3 text-sm text-indigo-600 hover:underline">← Volver al dashboard</button>'}
     <div class="mb-1 flex flex-wrap items-center gap-3">
       <h2 class="text-xl font-bold">${tab === 'prueba' ? '🎈 Clases de prueba' : '🧒 Alumnos nuevos'}</h2>
       <div class="inline-flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-sm">
