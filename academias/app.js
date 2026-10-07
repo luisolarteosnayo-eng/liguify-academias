@@ -1079,14 +1079,6 @@ const SCREENS = {
     const pagosS = pagosSede();
     const saldoC = (c) => c.monto - (c.pagado_monto || 0);
     const porCobrar = cargosS.filter((c) => saldoC(c) > 0);
-    // Estado de cuenta consolidado por tutor (solo tutores con alumnos en la sede)
-    const tIds = tutoresSede();
-    const consolidado = DB.tutores.filter((t) => tIds.has(t.id)).map((t) => {
-      const cargos = cargosS.filter((c) => c.tutor_id === t.id && saldoC(c) > 0);
-      const deuda = cargos.reduce((s, c) => s + saldoC(c), 0);
-      const hijos = alumnosSede().filter((j) => j.tutor_id === t.id).length;
-      return { t, deuda, hijos, cargos };
-    }).filter((x) => x.deuda > 0);
 
     el('content').innerHTML = `
       <div class="mb-4 flex flex-wrap justify-end gap-2">
@@ -1105,15 +1097,6 @@ const SCREENS = {
         ${card('Periodo', TES_MES ? mesLabelDe(TES_MES) : 'Todos', TES_MEDIO ? 'medio: ' + TES_MEDIO : 'todos los medios')}
       </div>`;
       })()}
-
-      <h3 class="mb-2 text-sm font-semibold text-slate-600">Estado de cuenta consolidado (por familia/tutor)</h3>
-      <div class="mb-6">
-      ${table(['Tutor (DNI)', 'Hijos', 'Detalle de cargos', 'Deuda total'],
-        consolidado.map((x) => [
-          x.t.nombres || (x.t.dni_tutor ? `DNI ${x.t.dni_tutor}` : '<span class="text-slate-400">(tutor sin DNI)</span>'), x.hijos,
-          x.cargos.map((c) => `${badge(c.tipo || 'CR', c.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${c.jugador_id ? nom(jugador(c.jugador_id)) + ' · ' : ''}${descCargo(c)} · ${S(saldoC(c))}`).join('<br>'),
-          `<b>${S(x.deuda)}</b>`]))}
-      </div>
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Documentos de pago</h3>
       ${(() => {
