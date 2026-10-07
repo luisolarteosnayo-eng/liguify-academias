@@ -2965,6 +2965,23 @@ window.formPagoAlumno = (jid) => {
       ${field('Fecha de pago', input('pg_fecha', `type="date" required value="${HOY}" max="${HOY}"`) +
         '<p class="-mt-2 mb-3 text-[11px] text-slate-400">Cámbiala solo para <b>regularizar</b> un pago de días anteriores; la fecha de registro en el sistema se guarda aparte.</p>')}
       <div id="pgVoucherBox">${field('Voucher del pago', input('pg_voucher', 'type="file" accept="image/*" onchange="pgVoucherFile(this)"'))}</div>
+      ${(() => {
+        // Datos de facturación del tutor a la vista: se corrigen aquí mismo y se
+        // guardan con el pago (boleta usa el DNI; factura exige RUC + razón social)
+        const t = DB.tutores.find((x) => x.id === j.tutor_id) || {};
+        const v = (x) => (x == null ? '' : String(x)).replace(/"/g, '&quot;');
+        return `
+        <div class="mb-3 rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">
+          <div class="text-xs font-semibold text-slate-600 mb-1.5">🧾 Datos de facturación (tutor) <span class="font-normal text-slate-400">· se actualizan al registrar el pago</span></div>
+          <div class="grid grid-cols-2 gap-2">
+            <input id="pgt_nombre" value="${v(t.nombres)}" placeholder="Nombre del papá/mamá" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <input id="pgt_dni" value="${v(t.dni_tutor)}" placeholder="DNI (8 dígitos · boleta)" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <input id="pgt_ruc" value="${v(t.ruc)}" placeholder="RUC (si pide factura)" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+            <input id="pgt_razon" value="${v(t.razon_social)}" placeholder="Razón social" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          </div>
+          ${!t.dni_tutor ? '<p class="mt-1 text-[11px] text-amber-600">Sin DNI la boleta saldrá a "cliente varios".</p>' : ''}
+        </div>`;
+      })()}
       ${submitBar('Registrar pago')}
     </form>`);
   pagoTotal();
@@ -3023,6 +3040,14 @@ window.guardarPagoAlumno = async (e, jid) => {
     liquidarCargosGratis(jid);
     toast('Los cargos gratis/beca no se cobran: quedan Pagados al completarse la promoción');
     renderCuenta(jid); return;
+  }
+  // Datos de facturación del tutor corregidos en el mismo formulario
+  const tut = DB.tutores.find((x) => x.id === j.tutor_id);
+  if (tut && el('pgt_nombre')) {
+    tut.nombres = val('pgt_nombre').trim() || null;
+    tut.dni_tutor = val('pgt_dni').trim() || null;
+    tut.ruc = val('pgt_ruc').trim() || null;
+    tut.razon_social = val('pgt_razon').trim() || null;
   }
   const total = detalle.reduce((s, d) => s + d.monto, 0);
   // Aplicar el pago a cada cargo: completo → Pagado; parcial → queda el resto pendiente
