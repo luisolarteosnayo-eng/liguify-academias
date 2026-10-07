@@ -1103,7 +1103,7 @@ const SCREENS = {
     el('content').innerHTML = `
       <div class="mb-4 flex flex-wrap justify-end gap-2">
         <button onclick="reporteTutores()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">👪 Tutores · facturación</button>
-        ${(ROL === 'admin' || ROL === 'tesorero') ? `<button onclick="colaEmision()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Boletas, facturas y recibos de los pagos aprobados">🧾 Emitir comprobantes</button>` : ''}
+        ${(ROL === 'admin' || ROL === 'tesorero') ? `<button onclick="colaEmision('')" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Boletas, facturas y recibos de los pagos aprobados">🧾 Emitir comprobantes</button>` : ''}
         <button onclick="liquidarGratisSede()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Marca como pagados los CR de S/ 0: becas, y meses gratis de promociones ya pagadas">✓ Liquidar CR gratis/beca</button>
         <button onclick="formGenerarCR()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">⚙️ Generar CR por ciclo</button>
         <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
@@ -5653,11 +5653,20 @@ function clasificaDoc(p) {
   if (t && /^\d{11}$/.test(String(t.ruc || '').trim()) && t.razon_social) return 'factura';
   return 'boleta';
 }
-window.colaEmision = () => {
+let EM_TIPO = '';   // filtro de la cola de emisión: '' todos | recibo | boleta | factura
+window.colaEmision = (tipoSel) => {
+  if (tipoSel !== undefined) EM_TIPO = tipoSel;
   const s = sede(SEDE_ACTUAL);
   const ids = new Set(alumnosSede().map((j) => j.id));
-  const cola = DB.pagos.filter((p) => p.estado === 'aprobado' && !p.doc_tipo && ids.has(p.jugador_id))
+  // SOLO pagos aprobados y sin comprobante
+  const todos = DB.pagos.filter((p) => p.estado === 'aprobado' && !p.doc_tipo && ids.has(p.jugador_id))
     .sort((a, b) => ((a.fecha || '') < (b.fecha || '') ? -1 : 1));   // más antiguos primero: se emiten en orden
+  // Filtro por tipo de documento a emitir, según la clasificación automática:
+  // recibo = medio sin SUNAT · factura = con RUC registrado · boleta = el resto
+  const nDe = (t) => todos.filter((p) => clasificaDoc(p) === t).length;
+  const cola = EM_TIPO ? todos.filter((p) => clasificaDoc(p) === EM_TIPO) : todos;
+  const chip = (v, txt) => `<button onclick="colaEmision('${v}')"
+    class="rounded-full px-3 py-1.5 ring-1 ${EM_TIPO === v ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'}">${txt}</button>`;
   const dniOk = (t) => t && /^\d{8}$/.test(String(t.dni_tutor || '').trim());
   const rows = cola.map((p) => {
     const j = jugador(p.jugador_id);
@@ -5689,13 +5698,19 @@ window.colaEmision = () => {
     ${cfgOk
       ? `<p class="text-xs text-slate-500 mb-3">Emisor: <b>${s.razon_social_emisor || ''}</b> · RUC <b>${s.ruc_emisor}</b> · Boleta <b>${s.serie_boleta}-${+s.correlativo_boleta || 1}</b>${s.serie_factura ? ` · Factura <b>${s.serie_factura}-${+s.correlativo_factura || 1}</b>` : ''} · precios con IGV incluido</p>`
       : '<p class="text-xs text-rose-600 mb-3">⚠ Esta sede no tiene RUC emisor o serie de boleta: configúralos en Configuración → Sedes. Mientras tanto solo se pueden generar recibos simples.</p>'}
+    <div class="mb-3 flex flex-wrap items-center gap-1.5 text-xs">
+      ${chip('', `Todos (${todos.length})`)}
+      ${chip('recibo', `⚪ Recibos (${nDe('recibo')})`)}
+      ${chip('boleta', `🧾 Boletas (${nDe('boleta')})`)}
+      ${chip('factura', `📄 Facturas (${nDe('factura')})`)}
+    </div>
     ${cola.length ? `
       <div class="mb-3">
         <button onclick="emitirSeleccionados()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Procesar seleccionados</button>
       </div>
       ${table(['<input type="checkbox" checked onchange="document.querySelectorAll(\'.emChk\').forEach(c => { c.checked = this.checked; }); emCount()" class="h-4 w-4 accent-indigo-600">',
         'Alumno · pago', 'Total', 'Documento', 'Cliente'], rows)}`
-      : '<p class="text-sm text-slate-400">🎉 No hay pagos aprobados pendientes de comprobante en esta sede.</p>'}`;
+      : `<p class="text-sm text-slate-400">${EM_TIPO ? `No hay ${EM_TIPO === 'recibo' ? 'recibos' : EM_TIPO + 's'} por emitir con este filtro.` : '🎉 No hay pagos aprobados pendientes de comprobante en esta sede.'}</p>`}`;
   window.emCount = () => { const n = document.querySelectorAll('.emChk:checked').length; const i = el('emInfo'); if (i) i.textContent = n ? `${n} seleccionado(s)` : ''; };
   emCount();
 };
