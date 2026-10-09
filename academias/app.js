@@ -3427,17 +3427,25 @@ const voucherSrc = (p) => {
   const v = String(p.voucher_url);
   return v.startsWith('data:') ? v : v.startsWith('vstore:') ? null : VOUCHER_DEMO;
 };
+// Visor de imagen superpuesto (lightbox): se abre ENCIMA del modal activo y al
+// cerrarse no lo toca — el zoom del voucher ya no pierde la ventana de pago.
+window.zoomImg = (src, caption) => {
+  const ov = document.createElement('div');
+  ov.className = 'fixed inset-0 z-[60] flex flex-col items-center justify-center bg-slate-900/85 p-4 cursor-zoom-out';
+  ov.innerHTML = `
+    <img src="${src}" class="max-h-[88vh] max-w-full rounded-lg shadow-2xl" onclick="event.stopPropagation()" style="cursor:default">
+    ${caption ? `<div class="mt-2 text-xs text-white/70">${caption}</div>` : ''}
+    <button class="absolute top-3 right-5 text-4xl leading-none text-white/80 hover:text-white">&times;</button>`;
+  ov.onclick = () => ov.remove();
+  document.body.appendChild(ov);
+};
 window.verComprobante = async (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p) return;
   if (!p.voucher_url) { toast('Este pago no tiene comprobante'); return; }
   let src;
   try { src = await urlVoucher(p.voucher_url); }
   catch (e) { toast('⚠ No se pudo cargar el comprobante: ' + (e.message || e)); return; }
-  openModal('Comprobante de pago', `
-    <div class="text-center">
-      <img src="${src}" class="mx-auto max-h-[70vh] rounded-lg ring-1 ring-slate-200">
-      <div class="mt-2 text-xs text-slate-400">${p.medio || ''}${p.num_operacion ? ' · Op. ' + p.num_operacion : ''} · ${fmtDMY(p.fecha)}</div>
-    </div>`);
+  zoomImg(src, `${p.medio || ''}${p.num_operacion ? ' · Op. ' + p.num_operacion : ''} · ${fmtDMY(p.fecha)}`);
 };
 
 // Documentos de pago del alumno
