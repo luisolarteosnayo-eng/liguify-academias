@@ -3071,6 +3071,7 @@ window.guardarPagoAlumno = async (e, jid) => {
   DB.pagos.push({ id: pid, jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL,
     fecha: val('pg_fecha') || HOY,                 // fecha de PAGO (editable para regularizaciones)
     created_at: new Date().toISOString(),          // fecha de REGISTRO en el sistema (la BD guarda la suya al insertar)
+    registrado_por: usuarioActual(),               // quién registró el pago (visible al aprobar)
     medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: voucherFinal,
     total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
   closeModal();
@@ -3322,13 +3323,23 @@ function pagoAprobCard(p) {
     </div>
   </div>`;
 }
+// Posible duplicado: otro pago vigente (no rechazado) con el mismo medio y
+// N° de operación — el mismo voucher presentado dos veces.
+function pagoDuplicadoDe(p) {
+  const op = String(p.num_operacion || '').trim();
+  if (!op) return null;
+  return DB.pagos.find((x) => x.id !== p.id && x.estado !== 'rechazado'
+    && x.medio === p.medio && String(x.num_operacion || '').trim() === op) || null;
+}
 // Revisión del pago estilo ERP: voucher en grande a la izquierda y, en la misma
-// pantalla, corrección de medio, fecha de pago y montos por cargo (se aplican
-// al Aprobar). En móvil las columnas se apilan.
+// pantalla, corrección de medio, fecha de pago, N° de operación y montos por
+// cargo (se aplican al Aprobar). En móvil las columnas se apilan.
 window.gestionarPago = (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p) return;
   const j = p.jugador_id ? jugador(p.jugador_id) : null;
   const medios = mediosPagoSede();
+  const dup = pagoDuplicadoDe(p);
+  const dupJ = dup && dup.jugador_id ? jugador(dup.jugador_id) : null;
   const imgVoucher = (u) => `<img src="${u}" onclick="verComprobante('${id}')" class="w-full max-h-[68vh] object-contain rounded-lg ring-1 ring-slate-200 cursor-zoom-in bg-slate-50" title="Clic para ampliar">`;
   openModal('Aprobar / Rechazar pago', `
     <div class="grid gap-5 md:grid-cols-2">
@@ -3340,8 +3351,16 @@ window.gestionarPago = (id) => {
             : '<p class="rounded-lg ring-1 ring-amber-200 bg-amber-50 p-4 text-xs text-amber-700">⚠️ Este pago no tiene comprobante adjunto.</p>'}
       </div>
       <div>
+        ${dup ? `
+        <div class="mb-3 rounded-lg bg-rose-50 ring-1 ring-rose-300 p-3">
+          <div class="text-sm font-bold text-rose-700">⚠️ PAGO DUPLICADO</div>
+          <p class="mt-0.5 text-xs text-rose-700">Ya existe un pago <b>${dup.estado === 'aprobado' ? 'aprobado' : 'pendiente'}</b> con el mismo medio y N° de operación
+            (${dup.medio} · ${fmtDMY(dup.fecha)} · Op. ${dup.num_operacion}) por <b>${S(dup.total ?? dup.monto ?? 0)}</b>
+            de <b>${dupJ ? nom(dupJ) : '—'}</b>. Podría ser un duplicado — verifica antes de aprobar.</p>
+          ${dup.voucher_url ? `<button type="button" onclick="verComprobante('${dup.id}')" class="mt-1 text-xs font-medium text-rose-700 underline hover:text-rose-900">Revisar voucher del pago inicial →</button>` : ''}
+        </div>` : ''}
         <p class="text-sm mb-1"><b>${j ? nom(j) : ''}</b> · Total <b id="apTotal">${S(p.total ?? p.monto ?? 0)}</b></p>
-        <p class="text-xs text-slate-400 mb-3">${p.num_operacion ? 'Op. ' + p.num_operacion + ' · ' : ''}registrado ${regDMY(p) || fmtDMY(p.fecha)}</p>
+        <p class="text-xs text-slate-400 mb-3">Registrado por <b>${String(p.registrado_por || '—').replace(/</g, '&lt;')}</b> · ${regDMY(p) || fmtDMY(p.fecha)}</p>
         <div class="text-xs font-medium text-slate-500 mb-1">Cargos pagados <span class="font-normal text-slate-400">· corrige el monto si no coincide con el voucher</span></div>
         <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3">
           ${(p.detalle || []).map((d, k) => `<div class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
@@ -3351,9 +3370,10 @@ window.gestionarPago = (id) => {
                 class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right"></span>
           </div>`).join('') || '<div class="px-3 py-2 text-xs text-slate-400">Sin detalle de cargos</div>'}
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="grid grid-cols-3 gap-3">
           ${field('Medio de pago', select('ap_medio', medios.map((m) => ({ v: m.nombre, t: m.nombre })), ''))}
           ${field('Fecha de pago', input('ap_fecha', `type="date" value="${p.fecha || HOY}"`))}
+          ${field('N° de operación', input('ap_op', `value="${String(p.num_operacion || '').replace(/"/g, '&quot;')}" placeholder="—"`))}
         </div>
         <p class="text-[11px] text-slate-400 mb-2">Las correcciones se guardan al aprobar. Al rechazar, los cargos vuelven a pendientes.</p>
         <div class="mt-1 flex items-center justify-between gap-2">
@@ -3401,6 +3421,7 @@ window.aprobarPagoDoc = (id) => {
   if (det.length) p.total = Math.round(nuevos.reduce((s, m) => s + m, 0) * 100) / 100;
   p.medio = val('ap_medio') || p.medio;
   const f = val('ap_fecha'); if (f) p.fecha = f;
+  if (el('ap_op')) p.num_operacion = val('ap_op').trim();
   if (p.jugador_id) liquidarCargosGratis(p.jugador_id);
   p.estado = 'aprobado'; p.fecha_aprobacion = HOY;
   closeModal(); toast('Pago aprobado'); go('aprobar');
