@@ -5847,6 +5847,27 @@ window.ejecutarEmision = async () => {
     </div>`;
 };
 
+// Importe en letras (estilo comprobante): "CIENTO CINCUENTA CON 00/100 SOLES"
+function numEnLetras(n) {
+  const U = ['', 'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISEIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE'];
+  const D = ['', '', '', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const C = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+  const h = (x) => {   // 0–999
+    if (!x) return '';
+    if (x === 100) return 'CIEN';
+    let s = C[Math.floor(x / 100)]; x %= 100;
+    if (!x) return s;
+    if (s) s += ' ';
+    if (x <= 20) return s + U[x];
+    const d = Math.floor(x / 10), u = x % 10;
+    return s + (d === 2 ? 'VEINTI' + U[u] : D[d] + (u ? ' Y ' + U[u] : ''));
+  };
+  const ent = Math.floor(+n || 0), cent = Math.round(((+n || 0) - ent) * 100);
+  const miles = Math.floor(ent / 1000), resto = ent % 1000;
+  let letras = ent === 0 ? 'CERO'
+    : `${miles ? (miles === 1 ? 'MIL' : h(miles) + ' MIL') : ''}${resto ? (miles ? ' ' : '') + h(resto) : ''}`;
+  return `${letras} CON ${String(cent).padStart(2, '0')}/100 SOLES`;
+}
 // Ver el comprobante de un pago: boleta/factura abre el PDF de SUNAT; el recibo
 // simple se genera en pantalla (descargable/compartible como imagen).
 window.verComprobantePago = (pid) => {
@@ -5863,35 +5884,65 @@ window.verComprobantePago = (pid) => {
   const nro = `${p.doc_serie || 'R'}-${String(p.doc_numero || '').padStart(6, '0')}`;
   const det = (p.detalle && p.detalle.length) ? p.detalle : [{ concepto: 'Pago de servicios', monto: p.total ?? 0 }];
   const arch = `recibo_${nro}`;
+  const logo = (sd && sd.logo_url) || a.logo_url || null;
+  const dato = (lbl, v) => `<tr><td class="pr-2 py-0.5 align-top text-[11px] font-bold text-slate-500 whitespace-nowrap">${lbl}</td><td class="py-0.5 text-[12px] text-slate-800">: ${v}</td></tr>`;
   openModal('Recibo simple', `
-    <div id="docCuenta" class="bg-white">
-      ${sd && sd.cabecera_url
-        ? `<img src="${sd.cabecera_url}" class="w-full block object-cover">`
-        : `<div class="bg-indigo-600 text-white px-4 py-5 text-center"><div class="text-lg font-bold">${a.nombre_academia}</div><div class="text-sm opacity-80">${sd ? sd.nombre_sede : ''}</div></div>`}
-      <div class="px-4 py-4">
-        <div class="flex items-start justify-between mb-3">
-          <div>
-            <div class="text-[11px] uppercase tracking-wide text-slate-400">Recibo</div>
-            <div class="text-lg font-bold text-slate-800">${nro}</div>
-            <div class="text-xs text-slate-400">${sd ? sd.nombre_sede : ''}</div>
+    <div id="docCuenta" class="bg-white p-4" style="font-family: Arial, Helvetica, sans-serif">
+      <div class="border border-slate-300 rounded-lg overflow-hidden">
+        <!-- Cabecera: logo + sede a la izquierda · caja del número a la derecha -->
+        <div class="flex items-start justify-between gap-3 p-4 pb-3">
+          <div class="flex items-center gap-3 min-w-0">
+            ${logo ? `<img src="${logo}" class="h-16 w-16 shrink-0 rounded-lg object-contain">` : '<div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-2xl">⚽</div>'}
+            <div class="min-w-0">
+              <div class="text-base font-black uppercase tracking-wide text-slate-900">${a.nombre_academia || ''}</div>
+              <div class="text-sm font-semibold text-indigo-600">${sd ? sd.nombre_sede : ''}</div>
+              ${sd && sd.direccion1 ? `<div class="text-[11px] text-slate-400">${sd.direccion1}${sd.ciudad ? ' - ' + sd.ciudad : ''}</div>` : ''}
+            </div>
           </div>
-          <div class="text-right">
-            <div class="text-[11px] uppercase tracking-wide text-slate-400">Fecha de pago</div>
-            <div class="text-sm text-slate-700">${fmtDMY(p.fecha)}</div>
-            ${p.emitido_at ? `<div class="text-[11px] text-slate-400">Emitido: ${fmtDMY(String(p.emitido_at).slice(0, 10))}</div>` : ''}
+          <div class="shrink-0 rounded-lg border-2 border-slate-700 px-4 py-2.5 text-center">
+            <div class="text-[11px] font-bold tracking-wide text-slate-500">RECIBO INTERNO</div>
+            <div class="text-xl font-black text-slate-900">${nro}</div>
           </div>
         </div>
-        <div class="mb-3 text-sm">
-          <div><span class="text-slate-400">Alumno:</span> <b>${j ? nom(j) : '—'}</b>${j ? ` <span class="text-xs text-slate-400">· Cat. ${anio(j.fecha_nacimiento)}</span>` : ''}</div>
-          ${t && t.nombres ? `<div><span class="text-slate-400">Recibido de:</span> ${t.nombres}</div>` : ''}
-          <div><span class="text-slate-400">Medio:</span> ${p.medio || '—'}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}</div>
+        <!-- Cliente y fechas -->
+        <div class="mx-4 mb-3 flex flex-wrap gap-3">
+          <div class="flex-1 min-w-[220px] rounded-lg border border-slate-200 px-3 py-2">
+            <table>${dato('ALUMNO', `<b>${j ? nom(j) : '—'}</b>${j ? ` · Cat. ${anio(j.fecha_nacimiento)}` : ''}`)}
+              ${t && t.nombres ? dato('RECIBIDO DE', t.nombres) : ''}
+              ${dato('MEDIO', `${p.medio || '—'}${p.num_operacion ? ' · Op. ' + p.num_operacion : ''}`)}</table>
+          </div>
+          <div class="rounded-lg border border-slate-200 px-3 py-2">
+            <table>${dato('FECHA DE PAGO', fmtDMY(p.fecha))}
+              ${p.emitido_at ? dato('EMISIÓN', fmtDMY(String(p.emitido_at).slice(0, 10))) : ''}
+              ${dato('MONEDA', 'SOLES')}</table>
+          </div>
         </div>
-        <table class="w-full text-sm border-t border-slate-200">
-          <thead><tr class="text-left text-slate-500"><th class="py-1.5 font-medium">Concepto</th><th class="py-1.5 font-medium text-right">Monto</th></tr></thead>
-          <tbody>${det.map((d) => `<tr class="border-t border-slate-100"><td class="py-1.5 pr-2">${d.tipo ? d.tipo + ' · ' : ''}${d.concepto || ''}</td><td class="py-1.5 text-right">${S(d.monto)}</td></tr>`).join('')}</tbody>
-          <tfoot><tr class="border-t-2 border-slate-300 font-bold"><td class="py-2">Total</td><td class="py-2 text-right text-emerald-600">${S(p.total ?? 0)}</td></tr></tfoot>
-        </table>
-        <div class="mt-3 text-[11px] text-slate-400">Documento interno de control · no es comprobante de pago válido para SUNAT.</div>
+        <!-- Detalle -->
+        <div class="mx-4 mb-3">
+          <table class="w-full text-[12px]">
+            <thead><tr class="bg-slate-700 text-white">
+              <th class="px-2 py-1.5 text-left w-12">CANT.</th>
+              <th class="px-2 py-1.5 text-left">DESCRIPCIÓN</th>
+              <th class="px-2 py-1.5 text-right w-24">IMPORTE</th></tr></thead>
+            <tbody>${det.map((d, i) => `<tr class="${i % 2 ? 'bg-slate-50' : ''} border-b border-slate-100">
+              <td class="px-2 py-1.5 align-top">1</td>
+              <td class="px-2 py-1.5">${d.tipo ? d.tipo + ' · ' : ''}${d.concepto || ''}</td>
+              <td class="px-2 py-1.5 text-right whitespace-nowrap">${S(d.monto)}</td></tr>`).join('')}</tbody>
+          </table>
+          <div class="mt-2 flex justify-end">
+            <div class="flex items-center gap-6 rounded-lg bg-slate-50 ring-1 ring-slate-200 px-4 py-2">
+              <span class="text-sm font-bold text-slate-600">TOTAL</span>
+              <span class="text-lg font-black text-slate-900">${S(p.total ?? 0)}</span>
+            </div>
+          </div>
+        </div>
+        <!-- Importe en letras + pie -->
+        <div class="mx-4 mb-3 rounded-lg border border-slate-200 px-3 py-2 text-[11px] text-slate-600">
+          <b>IMPORTE EN LETRAS:</b> ${numEnLetras(p.total ?? 0)}
+        </div>
+        <div class="bg-slate-50 border-t border-slate-200 px-4 py-2 text-center text-[10px] text-slate-400">
+          Documento interno de control · no es comprobante de pago válido para SUNAT · emitido desde Liguify Academias
+        </div>
       </div>
     </div>
     <div class="flex flex-wrap justify-end gap-2 mt-3">
