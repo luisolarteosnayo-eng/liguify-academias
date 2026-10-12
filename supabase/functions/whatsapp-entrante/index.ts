@@ -122,18 +122,28 @@ Deno.serve(async (req) => {
             if (mediaId && TOKEN) {
               try {
                 // 1) URL temporal del media · 2) descargar · 3) subir al bucket privado
-                const meta = await (await fetch(`${GRAPH}/${mediaId}`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
-                const bin = await (await fetch(meta.url, { headers: { Authorization: `Bearer ${TOKEN}` } })).arrayBuffer();
-                const ext = (meta.mime_type || '').includes('pdf') ? 'pdf' : (meta.mime_type || '').includes('png') ? 'png' : 'jpg';
-                // Nombre saneado: el wamid trae '=' y otros caracteres que Storage rechaza
-                const ruta = `wsp/${conv.id}/${Date.now()}-${String(m.id).replace(/[^a-zA-Z0-9]/g, '').slice(-24)}.${ext}`;
-                const up = await fetch(`${SUPABASE_URL}/storage/v1/object/academias-vouchers/${ruta}`, {
-                  method: 'POST',
-                  headers: { Authorization: `Bearer ${SRK}`, 'Content-Type': meta.mime_type || 'image/jpeg', 'x-upsert': 'true' },
-                  body: bin,
-                });
-                if (up.ok) mediaPath = `vstore:${ruta}`;
-                else console.error('[media] upload', up.status, await up.text());
+                const metaRes = await fetch(`${GRAPH}/${mediaId}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+                const meta = await metaRes.json().catch(() => null);
+                if (!meta || !meta.url) {
+                  console.error('[media] meta sin url', metaRes.status, JSON.stringify(meta || {}).slice(0, 300));
+                } else {
+                  const binRes = await fetch(meta.url, { headers: { Authorization: `Bearer ${TOKEN}`, 'User-Agent': 'Liguify/1.0' } });
+                  if (!binRes.ok) { console.error('[media] download', binRes.status); }
+                  else {
+                    const bin = await binRes.arrayBuffer();
+                    const ext = (meta.mime_type || '').includes('pdf') ? 'pdf' : (meta.mime_type || '').includes('png') ? 'png' : 'jpg';
+                    // Nombre saneado: el wamid trae '=' y otros caracteres que Storage rechaza
+                    const ruta = `wsp/${conv.id}/${Date.now()}-${String(m.id).replace(/[^a-zA-Z0-9]/g, '').slice(-24)}.${ext}`;
+                    const up = await fetch(`${SUPABASE_URL}/storage/v1/object/academias-vouchers/${ruta}`, {
+                      method: 'POST',
+                      headers: { apikey: SRK, Authorization: `Bearer ${SRK}`,   // Storage exige también el apikey
+                        'Content-Type': meta.mime_type || 'image/jpeg', 'x-upsert': 'true' },
+                      body: bin,
+                    });
+                    if (up.ok) mediaPath = `vstore:${ruta}`;
+                    else console.error('[media] upload', up.status, await up.text());
+                  }
+                }
               } catch (e) { console.error('[media]', e); }
             }
           } else cuerpo = `(${m.type})`;   // audio, sticker, ubicación…
