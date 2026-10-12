@@ -444,6 +444,7 @@ const MENU = [
   { id: 'gastos',      label: 'Gastos',        icon: '💸', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero','cobranza'] },
+  { id: 'whatsapp',    label: 'WhatsApp · Bandeja', icon: '💬', roles: ['admin','coordinador','cobranza'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
   { id: 'asistencia',  label: 'Asistencia',    icon: '✅', roles: ['admin','profesor'] },
   { id: 'usuarios',    label: 'Usuarios',      icon: '👥', roles: ['admin','coordinador'] },
@@ -990,6 +991,15 @@ const SCREENS = {
   },
 
   prospectos() { reporteNuevosPruebas('prueba'); },
+
+  whatsapp() {
+    el('content').innerHTML = `
+      <p class="mb-3 text-xs text-slate-400">Mensajes recibidos en el número de WhatsApp de la plataforma · las respuestas dentro de las 24h del último mensaje del tutor no tienen costo${wspOn() ? '' : ' · <b class="text-fuchsia-600">modo demo: conversaciones simuladas</b>'}</p>
+      <div id="wspBox"><p class="text-sm text-slate-400">Cargando conversaciones…</p></div>`;
+    renderWsp();
+    clearInterval(WSP_TIMER);
+    WSP_TIMER = setInterval(() => { if (SCREEN === 'whatsapp') renderWsp(true); else clearInterval(WSP_TIMER); }, 10000);
+  },
 
   tracks() {
     if (TRACK_SEL) { renderTrackDetalle(); return; }
@@ -2932,8 +2942,8 @@ window.agregarCNR = (jid) => {
   renderCuenta(jid);
 };
 // Registrar pago: selecciona CR/CNR pendientes, medio, N° operación y voucher
-window.formPagoAlumno = (jid) => {
-  PAGO_VOUCHER = null;
+window.formPagoAlumno = (jid, voucherPreset) => {
+  PAGO_VOUCHER = voucherPreset || null;   // voucher llegado por WhatsApp, ya adjunto
   const j = jugador(jid);
   const pend = DB.cargos.filter((c) => c.jugador_id === jid && c.estado !== 'pagado')
     .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
@@ -2964,7 +2974,9 @@ window.formPagoAlumno = (jid) => {
       </div>
       ${field('Fecha de pago', input('pg_fecha', `type="date" required value="${HOY}" max="${HOY}"`) +
         '<p class="-mt-2 mb-3 text-[11px] text-slate-400">Cámbiala solo para <b>regularizar</b> un pago de días anteriores; la fecha de registro en el sistema se guarda aparte.</p>')}
-      <div id="pgVoucherBox">${field('Voucher del pago', input('pg_voucher', 'type="file" accept="image/*" onchange="pgVoucherFile(this)"'))}</div>
+      <div id="pgVoucherBox">${voucherPreset
+        ? `<div class="mb-3 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-3 py-2 text-xs text-emerald-700">✓ Voucher adjuntado desde WhatsApp · <button type="button" onclick="zoomImg(PAGO_VOUCHER,'Voucher de WhatsApp')" class="underline">ver</button></div>`
+        : field('Voucher del pago', input('pg_voucher', 'type="file" accept="image/*" onchange="pgVoucherFile(this)"'))}</div>
       ${(() => {
         // Datos de facturación del tutor a la vista: se corrigen aquí mismo y se
         // guardan con el pago (boleta usa el DNI; factura exige RUC + razón social)
@@ -3006,7 +3018,8 @@ window.pagoTotal = () => {
 window.pgVoucher = () => {
   const m = DB.mediosPago.find((x) => x.id === val('pg_medio'));
   const efectivo = m && m.nombre.toLowerCase() === 'efectivo';
-  if (el('pgVoucherBox')) el('pgVoucherBox').style.display = efectivo ? 'none' : '';
+  // Con voucher ya adjunto (p. ej. llegado por WhatsApp) el bloque se muestra siempre
+  if (el('pgVoucherBox')) el('pgVoucherBox').style.display = (efectivo && !PAGO_VOUCHER) ? 'none' : '';
 };
 window.pgVoucherFile = (inp) => {
   const f = inp.files && inp.files[0];
@@ -3121,10 +3134,159 @@ window.waCobroEnviar = (jid, num) => {
   go('porcobrar');
 };
 
-// ---------- Cobranza masiva por WhatsApp (Twilio + plantilla aprobada) ----------
+// ---------- 💬 WhatsApp · Bandeja (Cloud API de Meta, número de plataforma) ----------
+// Las conversaciones las escribe el webhook 'whatsapp-entrante'; aquí se leen
+// con la sesión del usuario (RLS = su academia), se responde dentro de la
+// ventana de 24h vía 'whatsapp-enviar', y un voucher recibido se convierte en
+// pago con un clic. En DEMO funciona con datos simulados para probar el flujo.
+let WSP_SEL = null;
+let WSP_TIMER = null;
+let WSP_CONVS = [];
+const wspOn = () => !!(window.AcademiasDB && AcademiasDB.on);
+function wspDemoSeed() {
+  if (DB.wspDemo) return;
+  const j = alumnosSede()[0] || DB.jugadores[0];
+  const t = tutor(j.tutor_id) || {};
+  const hace = (min) => new Date(Date.now() - min * 60000).toISOString();
+  DB.wspDemo = {
+    convs: [
+      { id: 'wc1', jugador_id: j.id, tutor_id: j.tutor_id, telefono: '51999888777', nombre: t.nombres || nom(j),
+        ultimo_mensaje: '📷 Imagen', ultimo_mensaje_at: hace(30), ultimo_entrante_at: hace(30), no_leidos: 2 },
+      { id: 'wc2', jugador_id: null, tutor_id: null, telefono: '51988777666', nombre: 'María Gonzales',
+        ultimo_mensaje: '¿Hasta cuándo puedo pagar?', ultimo_mensaje_at: hace(240), ultimo_entrante_at: hace(240), no_leidos: 1 },
+    ],
+    msgs: [
+      { id: 'wm1', conversacion_id: 'wc1', direccion: 'out', tipo: 'plantilla', cuerpo: '🔔 Recordatorio: saldo pendiente S/ 250 · ' + (sede(SEDE_ACTUAL) || {}).nombre_sede, created_at: hace(600), enviado_por: 'admin', estado: 'read' },
+      { id: 'wm2', conversacion_id: 'wc1', direccion: 'in', tipo: 'texto', cuerpo: 'Buenas, ya hice el pago 🙌 le envío el voucher', created_at: hace(35) },
+      { id: 'wm3', conversacion_id: 'wc1', direccion: 'in', tipo: 'imagen', cuerpo: null, media_path: 'demo', created_at: hace(30) },
+      { id: 'wm4', conversacion_id: 'wc2', direccion: 'in', tipo: 'texto', cuerpo: '¿Hasta cuándo puedo pagar la mensualidad?', created_at: hace(240) },
+    ],
+  };
+}
+async function wspCargarConvs() {
+  if (!wspOn()) { wspDemoSeed(); WSP_CONVS = DB.wspDemo.convs; return; }
+  const { data, error } = await AcademiasDB.sb.from('wsp_conversaciones')
+    .select('*').order('ultimo_mensaje_at', { ascending: false, nullsFirst: false }).limit(100);
+  if (!error) WSP_CONVS = data || [];
+}
+async function wspCargarMsgs(cid) {
+  if (!wspOn()) { wspDemoSeed(); return DB.wspDemo.msgs.filter((m) => m.conversacion_id === cid); }
+  const { data } = await AcademiasDB.sb.from('wsp_mensajes')
+    .select('*').eq('conversacion_id', cid).order('created_at').limit(300);
+  return data || [];
+}
+window.wspAbrir = async (cid) => {
+  WSP_SEL = cid;
+  const c = WSP_CONVS.find((x) => x.id === cid);
+  if (c && c.no_leidos) {
+    c.no_leidos = 0;
+    if (wspOn()) AcademiasDB.sb.from('wsp_conversaciones').update({ no_leidos: 0 }).eq('id', cid).then(() => {});
+  }
+  renderWsp();
+};
+async function renderWsp(silencioso) {
+  if (SCREEN !== 'whatsapp') { clearInterval(WSP_TIMER); return; }
+  if (!silencioso || !WSP_CONVS.length) await wspCargarConvs();
+  else await wspCargarConvs();
+  const box = el('wspBox'); if (!box) return;
+  const conv = WSP_CONVS.find((x) => x.id === WSP_SEL) || null;
+  const msgs = conv ? await wspCargarMsgs(conv.id) : [];
+  const hhmm = (iso) => iso ? new Date(iso).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '';
+  const ventanaAbierta = conv && conv.ultimo_entrante_at && (Date.now() - new Date(conv.ultimo_entrante_at).getTime()) < 24 * 3600 * 1000;
+  box.innerHTML = `
+    <div class="grid gap-3 md:grid-cols-3" style="height: calc(100vh - 220px); min-height: 420px">
+      <div class="rounded-xl bg-white ring-1 ring-slate-200 overflow-y-auto">
+        ${WSP_CONVS.length ? WSP_CONVS.map((c) => { const jj = c.jugador_id ? jugador(c.jugador_id) : null;
+          return `<button onclick="wspAbrir('${c.id}')" class="block w-full border-b border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50 ${WSP_SEL === c.id ? 'bg-indigo-50' : ''}">
+            <div class="flex items-center justify-between gap-2">
+              <span class="min-w-0 truncate text-sm font-medium">${c.nombre || '+' + c.telefono}</span>
+              ${+c.no_leidos ? `<span class="shrink-0 rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">${c.no_leidos}</span>` : ''}
+            </div>
+            ${jj ? `<div class="text-[11px] text-indigo-600 truncate">🧒 ${nom(jj)}</div>` : '<div class="text-[11px] text-amber-600">sin alumno vinculado</div>'}
+            <div class="truncate text-xs text-slate-400">${c.ultimo_mensaje || ''}</div>
+          </button>`; }).join('')
+        : '<p class="p-4 text-sm text-slate-400">Sin conversaciones aún. Aparecerán cuando los tutores respondan a los recordatorios.</p>'}
+      </div>
+      <div class="md:col-span-2 flex flex-col rounded-xl bg-white ring-1 ring-slate-200 overflow-hidden">
+        ${!conv ? '<div class="flex flex-1 items-center justify-center text-sm text-slate-400">Elige una conversación</div>' : `
+        <div class="border-b border-slate-200 px-4 py-2.5">
+          <div class="text-sm font-semibold">${conv.nombre || '+' + conv.telefono} <span class="text-xs font-normal text-slate-400">· +${conv.telefono}</span></div>
+          ${conv.jugador_id && jugador(conv.jugador_id) ? `<div class="text-[11px] text-slate-500">Alumno: <button onclick="formEditarAlumno('${conv.jugador_id}')" class="text-indigo-600 hover:underline">${nom(jugador(conv.jugador_id))}</button></div>` : ''}
+        </div>
+        <div id="wspHilo" class="flex-1 space-y-2 overflow-y-auto bg-slate-50 p-4">
+          ${msgs.map((m) => `
+            <div class="flex ${m.direccion === 'out' ? 'justify-end' : 'justify-start'}">
+              <div class="max-w-[80%] rounded-xl px-3 py-2 text-sm shadow-sm ${m.direccion === 'out' ? 'bg-emerald-100' : 'bg-white ring-1 ring-slate-200'}">
+                ${m.tipo === 'imagen' || m.tipo === 'documento' ? `
+                  <div class="flex flex-col gap-1.5">
+                    <button onclick="wspVerMedia('${m.id}','${(m.media_path || '').replace(/'/g, '')}')" class="rounded-lg bg-slate-100 px-3 py-4 text-2xl hover:bg-slate-200">${m.tipo === 'imagen' ? '🖼️' : '📄'} <span class="block text-xs text-slate-500">Ver ${m.tipo}</span></button>
+                    ${conv.jugador_id ? `<button onclick="wspUsarVoucher('${conv.id}','${m.id}')" class="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">💳 Registrar pago con este voucher</button>` : ''}
+                  </div>${m.cuerpo ? `<div class="mt-1">${String(m.cuerpo).replace(/</g, '&lt;')}</div>` : ''}`
+                : `<div>${String(m.cuerpo || '').replace(/</g, '&lt;')}</div>`}
+                <div class="mt-0.5 text-right text-[10px] text-slate-400">${m.enviado_por && m.direccion === 'out' ? m.enviado_por + ' · ' : ''}${hhmm(m.created_at)}${m.direccion === 'out' && m.estado ? ' · ' + ({ sent: '✓', delivered: '✓✓', read: '✓✓', failed: '⚠' }[m.estado] || '') : ''}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+        <div class="border-t border-slate-200 p-3">
+          ${ventanaAbierta || !wspOn() ? `
+          <div class="flex gap-2">
+            <input id="wspTxt" placeholder="Escribe una respuesta…" onkeydown="if(event.key==='Enter'){wspEnviar();}"
+              class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <button onclick="wspEnviar()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Enviar</button>
+          </div>`
+          : '<p class="text-xs text-amber-600">⏳ La ventana de 24h está cerrada (el tutor no escribió en el último día). Para contactarlo usa el recordatorio de cobranza desde Por cobrar.</p>'}
+        </div>`}
+      </div>
+    </div>`;
+  const hilo = el('wspHilo'); if (hilo) hilo.scrollTop = hilo.scrollHeight;
+}
+window.wspEnviar = async () => {
+  const txt = (val('wspTxt') || '').trim();
+  const conv = WSP_CONVS.find((x) => x.id === WSP_SEL);
+  if (!txt || !conv) return;
+  if (!wspOn()) {   // DEMO: simula el envío en local
+    DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: 'texto',
+      cuerpo: txt, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
+    conv.ultimo_mensaje = txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
+    renderWsp(); return;
+  }
+  try {
+    const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar',
+      { body: { accion: 'texto', conversacion_id: conv.id, texto: txt } });
+    let msg = null;
+    if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
+    else if (data && data.error) msg = data.error;
+    if (msg) throw new Error(msg);
+    renderWsp();
+  } catch (e) { toast('⚠ ' + (e.message || e)); }
+};
+window.wspVerMedia = async (mid, mediaPath) => {
+  if (!mediaPath) { toast('Este mensaje no tiene archivo'); return; }
+  if (mediaPath === 'demo') { zoomImg(VOUCHER_DEMO, 'Voucher recibido por WhatsApp (demo)'); return; }
+  try { zoomImg(await urlVoucher(mediaPath), 'Recibido por WhatsApp'); }
+  catch (e) { toast('⚠ No se pudo cargar: ' + (e.message || e)); }
+};
+window.wspUsarVoucher = async (cid, mid) => {
+  const conv = WSP_CONVS.find((x) => x.id === cid);
+  if (!conv || !conv.jugador_id) { toast('Vincula la conversación a un alumno primero'); return; }
+  let dataURL = VOUCHER_DEMO;
+  if (wspOn()) {
+    const msgs = await wspCargarMsgs(cid);
+    const m = msgs.find((x) => x.id === mid);
+    if (!m || !m.media_path) { toast('No se encontró el archivo'); return; }
+    try {
+      const u = await urlVoucher(m.media_path);
+      const blob = await (await fetch(u)).blob();
+      dataURL = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
+    } catch (e) { toast('⚠ No se pudo descargar el voucher: ' + (e.message || e)); return; }
+  }
+  formPagoAlumno(conv.jugador_id, dataURL);
+};
+
+// ---------- Cobranza masiva por WhatsApp (Cloud API + plantilla aprobada) ----------
 // Candidatos: alumnos de la sede con deuda, teléfono válido y sin recordatorio
 // en los últimos 7 días. El envío real lo hace la edge function
-// 'enviar-cobranza-whatsapp' (secretos TWILIO_* en Supabase).
+// 'whatsapp-enviar' (secretos WHATSAPP_* en Supabase).
 function candidatosCobranzaMasiva() {
   const saldoC = (c) => c.monto - (c.pagado_monto || 0);
   const hace7 = isoAddDays(HOY, -7);
@@ -3164,27 +3326,28 @@ window.enviarCobranzaMasiva = async () => {
   const sel = [...document.querySelectorAll('.cmChk:checked')].map((c) => window.__cmCand[+c.value]).filter(Boolean);
   if (!sel.length) { toast('Marca al menos un tutor'); return; }
   if (!confirm(`¿Enviar el recordatorio de WhatsApp a ${sel.length} tutor(es)?`)) return;
-  el('cmEnviar').disabled = true; el('cmEnviar').textContent = 'Enviando…';
-  const envios = sel.map((x) => ({ to: '+' + x.num, vars: {
-    '1': (x.t.nombres || 'padre de familia').split(' ')[0],
-    '2': nom(x.j), '3': x.total.toFixed(2),
-    '4': sede(x.j.sede_id) ? sede(x.j.sede_id).nombre_sede : DB.academia.nombre_academia } }));
-  try {
-    const { data, error } = await AcademiasDB.sb.functions.invoke('enviar-cobranza-whatsapp', { body: { envios } });
-    if (error) throw new Error(error.message || 'La función no está desplegada o faltan los secretos TWILIO_*');
-    if (data && data.error) throw new Error(data.error);
-    const rs = (data && data.resultados) || [];
-    let ok = 0;
-    rs.forEach((r, i) => { if (r.ok && sel[i]) { sel[i].j.ultimo_recordatorio = HOY; ok++; } });
-    const fallos = rs.filter((r) => !r.ok);
-    closeModal();
-    toast(`📣 ${ok} recordatorio(s) enviados${fallos.length ? ` · ${fallos.length} fallaron` : ''}`);
-    if (fallos.length) openModal('Envíos con error', `<div class="space-y-1 text-sm">${fallos.map((f) => `<div>• ${f.to}: <span class="text-rose-600">${f.error}</span></div>`).join('')}</div>`);
-    go('porcobrar');
-  } catch (e) {
-    toast('⚠ ' + (e.message || e));
-    if (el('cmEnviar')) { el('cmEnviar').disabled = false; el('cmEnviar').innerHTML = '📣 Enviar (<span id="cmN">' + sel.length + '</span>)'; }
+  el('cmEnviar').disabled = true;
+  let ok = 0; const fallos = [];
+  for (let i = 0; i < sel.length; i++) {
+    const x = sel[i];
+    if (el('cmEnviar')) el('cmEnviar').textContent = `Enviando ${i + 1} de ${sel.length}…`;
+    try {
+      const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body: {
+        accion: 'cobranza', telefono: x.num,
+        variables: [(x.t.nombres || 'padre de familia').split(' ')[0], nom(x.j), 'S/ ' + x.total.toFixed(2),
+          sede(x.j.sede_id) ? sede(x.j.sede_id).nombre_sede : DB.academia.nombre_academia],
+      } });
+      let msg = null;
+      if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
+      else if (data && data.error) msg = data.error;
+      if (msg) throw new Error(msg);
+      x.j.ultimo_recordatorio = HOY; ok++;
+    } catch (e) { fallos.push({ to: '+' + x.num, error: e.message || String(e) }); }
   }
+  closeModal();
+  toast(`📣 ${ok} recordatorio(s) enviados${fallos.length ? ` · ${fallos.length} fallaron` : ''}`);
+  if (fallos.length) openModal('Envíos con error', `<div class="space-y-1 text-sm">${fallos.map((f) => `<div>• ${f.to}: <span class="text-rose-600">${f.error}</span></div>`).join('')}</div>`);
+  go('porcobrar');
 };
 
 // ---------- Exportación de pagos para SUNAT (documentos fiscales) ----------
@@ -4783,6 +4946,7 @@ const CONFIG_TABS = {
             ${field('Teléfono', input('sd_tel', `value="${g('telefono_coordinador')}" placeholder="+51 999 999 999"`))}
             ${field('Google Maps URL', input('sd_maps', `value="${g('google_maps_url')}" placeholder="https://maps.google.com/..."`))}
           </div>
+          ${field('WhatsApp de respuestas (cobranzas)', input('sd_wsp', `value="${g('whatsapp_respuestas')}" placeholder="+51 9XX XXX XXX · adonde se dirige a los tutores que responden los recordatorios"`))}
           <div class="pt-2 pb-1 text-sm font-semibold text-slate-600">🧾 Facturación electrónica (SUNAT)</div>
           <p class="text-xs text-slate-400 mb-2">El RUC emisor es por sede (sedes de la misma empresa pueden compartirlo), pero cada sede lleva su propia serie y correlativo.</p>
           <div class="grid grid-cols-2 gap-3">
@@ -5352,6 +5516,7 @@ window.guardarSedeInline = async (e) => {
     nombre_sede: val('sd_nombre'), direccion1: val('sd_dir1'), direccion2: val('sd_dir2'),
     ciudad: val('sd_ciudad'), pais: val('sd_pais'), codigo_postal: val('sd_cp'),
     telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'), cabecera_url: SEDE_CABECERA, logo_url: SEDE_LOGO,
+    whatsapp_respuestas: val('sd_wsp').trim() || null,
     ruc_emisor: val('sd_ruc').trim() || null, razon_social_emisor: val('sd_rz').trim() || null,
     direccion_fiscal: val('sd_dirf').trim() || null,
     serie_boleta: val('sd_sb').trim().toUpperCase() || null, serie_factura: val('sd_sf').trim().toUpperCase() || null,
