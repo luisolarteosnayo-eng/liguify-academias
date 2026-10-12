@@ -1246,11 +1246,14 @@ const SCREENS = {
       cat: (a, b) => anio(a.j.fecha_nacimiento) - anio(b.j.fecha_nacimiento),
       corte: (a, b) => String(a.corte || '9999-99').localeCompare(String(b.corte || '9999-99')),
       deuda: (a, b) => a.total - b.total,
+      detalle: (a, b) => a.cs.length - b.cs.length,
     }[PC_SORT.col] || ((a, b) => a.total - b.total);
     alumnos.sort((a, b) => cmp(a, b) * PC_SORT.dir);
     PC_LISTA = alumnos;   // para la impresión
 
-    const th = (col, txt, extra = '') => `<button onclick="pcOrdenar('${col}')" class="font-medium hover:text-indigo-600 ${extra}">${txt}${PC_SORT.col === col ? (PC_SORT.dir > 0 ? ' ↑' : ' ↓') : ''}</button>`;
+    const th = (col, txt) => PC_SORT.col === col
+      ? `<button onclick="pcOrdenar('${col}')" class="cursor-pointer font-semibold text-indigo-600">${txt} ${PC_SORT.dir > 0 ? '↑' : '↓'}</button>`
+      : `<button onclick="pcOrdenar('${col}')" title="Ordenar por ${txt}" class="cursor-pointer font-medium underline decoration-dotted decoration-slate-300 underline-offset-4 hover:text-indigo-600">${txt} <span class="text-slate-300">↕</span></button>`;
     const detalleHTML = (a) => {
       const vis = a.cs.slice(0, 3);
       return `<div class="space-y-0.5">${vis.map((c) => { const v = c.fecha_vencimiento && c.fecha_vencimiento < HOY;
@@ -1276,7 +1279,7 @@ const SCREENS = {
         ${kpi('Vencido', S(totVenc), `${alumnos.filter((a) => a.tieneVencido).length} alumno(s)`, 'rose')}
         ${kpi('Por vencer', S(totPorVencer), `${alumnos.filter((a) => !a.tieneVencido).length} alumno(s)`, 'amber')}
       </div>
-      ${alumnos.length ? table([th('alumno', 'Alumno'), th('cat', 'Cat.'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), 'Detalle de deuda', ''],
+      ${alumnos.length ? table([th('alumno', 'Alumno'), th('cat', 'Cat.'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
         alumnos.map((a) => { const j = a.j; const tel = telDe(j);
           const corteVencido = a.corte && a.corte < HOY;
           return [
