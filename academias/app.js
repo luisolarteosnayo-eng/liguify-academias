@@ -3092,6 +3092,42 @@ window.pgVoucherFile = (inp) => {
   r.onload = () => { PAGO_VOUCHER = r.result; };
   r.readAsDataURL(f);
 };
+// Confirmación final del registro de pago: éxito claro o error con reintento
+function pgModalExito(jid, total) {
+  el('modalTitle').textContent = 'Pago registrado';
+  el('modalBody').innerHTML = `
+    <div class="text-center py-6">
+      <div class="mb-2 text-4xl">✅</div>
+      <p class="text-lg font-semibold">Pago registrado y guardado</p>
+      <p class="mt-1 text-3xl font-black text-emerald-600">${S(total)}</p>
+      <p class="mt-1 text-xs text-slate-400">Queda pendiente de aprobación en Tesorería.</p>
+      <button onclick="closeModal(); formEditarAlumno('${jid}'); njTab('pagos');"
+        class="mt-4 rounded-lg bg-emerald-600 px-8 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">Aceptar</button>
+    </div>`;
+}
+function pgModalError(jid, total) {
+  el('modalTitle').textContent = '⚠ Atención';
+  el('modalBody').innerHTML = `
+    <div class="text-center py-6">
+      <div class="mb-2 text-4xl">⚠️</div>
+      <p class="text-lg font-semibold text-rose-600">El pago AÚN NO se guardó en el servidor</p>
+      <p class="mx-auto mt-2 max-w-sm text-sm text-slate-600">El pago de <b>${S(total)}</b> quedó registrado en esta sesión.
+        <b>No cierres la aplicación</b>: se reintenta automáticamente cada pocos segundos, o presiona Reintentar.</p>
+      <button onclick="pgReintentar('${jid}', ${+total})"
+        class="mt-4 rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">🔄 Reintentar ahora</button>
+    </div>`;
+}
+window.pgReintentar = async (jid, total) => {
+  el('modalBody').innerHTML = `
+    <div class="text-center py-10">
+      <div class="inline-block h-10 w-10 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600"></div>
+      <div class="mt-3 text-sm font-semibold text-slate-700">Reintentando guardado…</div>
+    </div>`;
+  const ok = await syncAhora();
+  if (ok) pgModalExito(jid, total);
+  else pgModalError(jid, total);
+};
+
 // Sincronización INMEDIATA y esperada: para operaciones de dinero no se deja
 // el guardado al ciclo de 2.5s (si la pestaña se cierra a mitad del tick, los
 // cargos pueden subir sin su pago — el origen de los descuadres históricos).
@@ -3147,26 +3183,36 @@ window.guardarPagoAlumno = async (e, jid) => {
     c.estado = c.pagado_monto >= c.monto ? 'pagado' : 'parcial';
   });
   liquidarCargosGratis(jid);   // si con esto la promo quedó pagada, su mes gratis también
+  // Datos ya leídos del formulario: desde aquí el proceso es CRÍTICO y bloqueante
+  const fechaPago = val('pg_fecha') || HOY;
+  const numOp = val('pg_op');
+  openModal('Registrando pago', `
+    <div class="text-center py-6">
+      <div class="inline-block h-10 w-10 animate-spin rounded-full border-4 border-emerald-200 border-t-emerald-600"></div>
+      <div class="mt-3 text-sm font-semibold tracking-wide text-slate-700">⏳ EN PROCESO…</div>
+      <div id="pgProg" class="mt-1 text-xs text-slate-500">Preparando el pago…</div>
+      <p class="mt-2 text-[11px] text-slate-400">No cierres esta ventana.</p>
+    </div>`);
+  const prog = (t) => { if (el('pgProg')) el('pgProg').textContent = t; };
   // Voucher al Storage privado (la fila guarda solo la ruta); si falla, queda embebido
   const pid = uid('pg');
   let voucherFinal = PAGO_VOUCHER;
   if (esDataURL(PAGO_VOUCHER) && window.AcademiasDB && AcademiasDB.on) {
+    prog('Subiendo el voucher…');
     try { voucherFinal = await subirVoucher(PAGO_VOUCHER, `${AcademiasDB.academiaId}/vouchers/${pid}.jpg`); }
     catch (ex) { console.warn('[voucher] fallback dataURL:', ex); }
   }
   DB.pagos.push({ id: pid, jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL,
-    fecha: val('pg_fecha') || HOY,                 // fecha de PAGO (editable para regularizaciones)
+    fecha: fechaPago,                              // fecha de PAGO (editable para regularizaciones)
     created_at: new Date().toISOString(),          // fecha de REGISTRO en el sistema (la BD guarda la suya al insertar)
     registrado_por: usuarioActual(),               // quién registró el pago (visible al aprobar)
-    medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: voucherFinal,
+    medio: medio ? medio.nombre : '', num_operacion: numOp, voucher_url: voucherFinal,
     total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
   // Guardar YA en el servidor (pago + cargos juntos) y confirmar recién después
+  prog('Guardando en el servidor…');
   const okSync = await syncAhora();
-  closeModal();
-  toast(okSync ? `✓ Pago registrado y guardado · ${S(total)}`
-    : `⚠ Pago registrado pero AÚN NO guardado en el servidor · NO cierres la app, se reintentará solo`);
-  formEditarAlumno(jid);   // reabre la ficha del alumno...
-  njTab('pagos');          // ...en la pestaña Pagos, con el documento recién creado
+  if (okSync) pgModalExito(jid, total);
+  else pgModalError(jid, total);
 };
 
 // ---------- Cobranza por WhatsApp (wa.me con mensaje personalizado) ----------
