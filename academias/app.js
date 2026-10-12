@@ -3230,7 +3230,7 @@ async function renderWsp(silencioso) {
         <div class="border-t border-slate-200 p-3">
           ${ventanaAbierta || !wspOn() ? `
           <div class="flex gap-2">
-            <input id="wspTxt" placeholder="Escribe una respuesta…" onkeydown="if(event.key==='Enter'){wspEnviar();}"
+            <input id="wspTxt" placeholder="Escribe una respuesta…" onkeydown="if(event.key==='Enter'){event.preventDefault(); if(!event.repeat) wspEnviar();}"
               class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm">
             <button onclick="wspEnviar()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Enviar</button>
           </div>`
@@ -3240,16 +3240,21 @@ async function renderWsp(silencioso) {
     </div>`;
   const hilo = el('wspHilo'); if (hilo) hilo.scrollTop = hilo.scrollHeight;
 }
+let WSP_ENVIANDO = false;   // candado anti doble envío (Enter repetido / doble clic)
 window.wspEnviar = async () => {
-  const txt = (val('wspTxt') || '').trim();
+  if (WSP_ENVIANDO) return;
+  const inp = el('wspTxt');
+  const txt = ((inp && inp.value) || '').trim();
   const conv = WSP_CONVS.find((x) => x.id === WSP_SEL);
   if (!txt || !conv) return;
+  if (inp) inp.value = '';   // se limpia al instante: un segundo Enter ya no reenvía
   if (!wspOn()) {   // DEMO: simula el envío en local
     DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: 'texto',
       cuerpo: txt, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
     conv.ultimo_mensaje = txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
     renderWsp(); return;
   }
+  WSP_ENVIANDO = true;
   try {
     const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar',
       { body: { accion: 'texto', conversacion_id: conv.id, texto: txt } });
@@ -3257,8 +3262,11 @@ window.wspEnviar = async () => {
     if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
     else if (data && data.error) msg = data.error;
     if (msg) throw new Error(msg);
-    renderWsp();
-  } catch (e) { toast('⚠ ' + (e.message || e)); }
+    await renderWsp();
+  } catch (e) {
+    toast('⚠ ' + (e.message || e));
+    const inp2 = el('wspTxt'); if (inp2 && !inp2.value) inp2.value = txt;   // no se pierde lo escrito
+  } finally { WSP_ENVIANDO = false; }
 };
 window.wspVerMedia = async (mid, mediaPath) => {
   if (!mediaPath) { toast('Este mensaje no tiene archivo'); return; }
