@@ -511,6 +511,48 @@ let AL_ORDEN = 'nombre';       // orden de la lista: nombre | deuda | corte
 let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
 let GER_PERIODO = 'mes';       // periodo del Dashboard Gerencial
+let PC_SORT = { col: 'deuda', dir: -1 };   // orden de Por cobrar (clic en cabeceras)
+let PC_LISTA = [];                          // lista vigente (para imprimir)
+window.pcOrdenar = (col) => {
+  PC_SORT = { col, dir: PC_SORT.col === col ? -PC_SORT.dir : (col === 'deuda' ? -1 : 1) };
+  SCREENS.porcobrar();
+};
+// Imprimir / guardar PDF: abre una ventana limpia con la tabla (mismo orden) y
+// lanza el diálogo de impresión (ahí se elige "Guardar como PDF")
+window.pcImprimir = () => {
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const sd = sede(SEDE_ACTUAL);
+  const filas = PC_LISTA.map((a) => `<tr>
+    <td><b>${nom(a.j)}</b></td><td style="text-align:center">${anio(a.j.fecha_nacimiento)}</td>
+    <td style="text-align:center">${a.corte ? fmtDMY(a.corte) : '—'}</td>
+    <td style="text-align:right"><b>${S(a.total)}</b>${a.tieneVencido ? `<div class="venc">${S(a.totalVenc)} vencido</div>` : ''}</td>
+    <td>${a.cs.map((c) => `${c.tipo} · ${descCargo(c)} · ${S(saldoC(c))}${c.fecha_vencimiento && c.fecha_vencimiento < HOY ? ' (vencido)' : ''}`).join('<br>')}</td>
+  </tr>`).join('');
+  const total = PC_LISTA.reduce((s, a) => s + a.total, 0);
+  const w = window.open('', '_blank');
+  if (!w) { toast('El navegador bloqueó la ventana de impresión'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cuentas por cobrar · ${sd ? sd.nombre_sede : ''}</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; color: #171e2e; margin: 24px; }
+      h1 { font-size: 18px; margin: 0 0 2px; } .sub { color: #64748b; font-size: 12px; margin-bottom: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th { background: #f1f5f9; text-align: left; padding: 6px 8px; border-bottom: 2px solid #cbd5e1; }
+      td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+      .venc { color: #c11d27; font-size: 10px; }
+      tfoot td { font-weight: bold; border-top: 2px solid #94a3b8; }
+      @media print { body { margin: 8mm; } }
+    </style></head><body>
+    <h1>Cuentas por cobrar — ${(DB.academia && DB.academia.nombre_academia) || ''} · ${sd ? sd.nombre_sede : ''}</h1>
+    <div class="sub">Generado el ${fmtDMY(HOY)} · ${PC_LISTA.length} alumno(s) con deuda</div>
+    <table>
+      <thead><tr><th>Alumno</th><th style="text-align:center">Cat.</th><th style="text-align:center">Matriculado hasta</th><th style="text-align:right">Deuda total</th><th>Detalle de deuda</th></tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr><td colspan="3">TOTAL</td><td style="text-align:right">${S(total)}</td><td></td></tr></tfoot>
+    </table></body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+};
 // Conectado: fecha real del dispositivo · demo: fecha fija de los datos mock
 const HOY = (window.AcademiasDB && window.AcademiasDB.on)
   ? isoDate(new Date())
@@ -1184,41 +1226,36 @@ const SCREENS = {
   porcobrar() {
     const saldoC = (c) => c.monto - (c.pagado_monto || 0);
     const telDe = (j) => (tutor(j.tutor_id) && tutor(j.tutor_id).telefono_celular) || j.telefono || '';
+    // Un alumno por fila: deuda, vencidos, su corte más próximo y el detalle
     const alumnos = alumnosSede().map((j) => {
-      const cs = cargosSede().filter((c) => c.jugador_id === j.id && saldoC(c) > 0);
+      const cs = cargosSede().filter((c) => c.jugador_id === j.id && saldoC(c) > 0)
+        .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
       if (!cs.length) return null;
       const total = cs.reduce((s, c) => s + saldoC(c), 0);
       const venc = cs.filter((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY);
-      return { j, total, totalVenc: venc.reduce((s, c) => s + saldoC(c), 0), tieneVencido: venc.length > 0 };
+      const cortes = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo && i.ultima_fecha_corte)
+        .map((i) => i.ultima_fecha_corte).sort();
+      return { j, cs, total, totalVenc: venc.reduce((s, c) => s + saldoC(c), 0),
+        tieneVencido: venc.length > 0, corte: cortes[0] || null };
     }).filter(Boolean);
-    const vencidos = alumnos.filter((a) => a.tieneVencido).sort((a, b) => b.totalVenc - a.totalVenc);
-    const porVencer = alumnos.filter((a) => !a.tieneVencido).sort((a, b) => b.total - a.total);
-    const totVenc = vencidos.reduce((s, a) => s + a.total, 0);
-    const totPorVencer = porVencer.reduce((s, a) => s + a.total, 0);
+    const totVenc = alumnos.filter((a) => a.tieneVencido).reduce((s, a) => s + a.total, 0);
+    const totPorVencer = alumnos.filter((a) => !a.tieneVencido).reduce((s, a) => s + a.total, 0);
+    // Orden por columna (clic en la cabecera alterna ↑/↓)
+    const cmp = {
+      alumno: (a, b) => nom(a.j).localeCompare(nom(b.j), 'es'),
+      cat: (a, b) => anio(a.j.fecha_nacimiento) - anio(b.j.fecha_nacimiento),
+      corte: (a, b) => String(a.corte || '9999-99').localeCompare(String(b.corte || '9999-99')),
+      deuda: (a, b) => a.total - b.total,
+    }[PC_SORT.col] || ((a, b) => a.total - b.total);
+    alumnos.sort((a, b) => cmp(a, b) * PC_SORT.dir);
+    PC_LISTA = alumnos;   // para la impresión
 
-    const pcCard = (a, esVencido) => {
-      const j = a.j;
-      const ini = ((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase();
-      const tel = telDe(j); const wa = tel.replace(/\D/g, '');
-      return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-3">
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2 min-w-0">
-            ${j.foto_url ? `<img src="${j.foto_url}" class="h-9 w-9 rounded-full object-cover">` : `<span class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-medium">${ini}</span>`}
-            <div class="min-w-0"><div class="font-medium truncate">${nom(j)}</div><div class="text-xs text-slate-400">Cat. ${anio(j.fecha_nacimiento)}</div></div>
-          </div>
-          <div class="text-right">
-            <div class="font-bold ${esVencido ? 'text-rose-600' : 'text-slate-800'}">${S(a.total)}</div>
-            ${esVencido ? `<div class="text-xs text-rose-500">${S(a.totalVenc)} vencido</div>` : ''}
-          </div>
-        </div>
-        <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-xs">
-          ${tel
-            ? `<button onclick="waCobro('${j.id}')" class="rounded-lg bg-emerald-600 px-2.5 py-1.5 font-medium text-white hover:bg-emerald-700">💬 Enviar cobro</button>`
-            : '<span class="text-slate-400">sin teléfono</span>'}
-          ${j.ultimo_recordatorio ? `<span class="text-slate-400" title="Último recordatorio de cobro enviado">🔔 ${fmtDMY(j.ultimo_recordatorio)}</span>` : ''}
-          <button onclick="formDocumentoCuenta('${j.id}')" class="font-medium text-indigo-600 hover:underline">Ver estado de cuenta</button>
-        </div>
-      </div>`;
+    const th = (col, txt, extra = '') => `<button onclick="pcOrdenar('${col}')" class="font-medium hover:text-indigo-600 ${extra}">${txt}${PC_SORT.col === col ? (PC_SORT.dir > 0 ? ' ↑' : ' ↓') : ''}</button>`;
+    const detalleHTML = (a) => {
+      const vis = a.cs.slice(0, 3);
+      return `<div class="space-y-0.5">${vis.map((c) => { const v = c.fecha_vencimiento && c.fecha_vencimiento < HOY;
+        return `<div class="text-[11px] ${v ? 'text-rose-600' : 'text-slate-500'}">${c.tipo} · ${descCargo(c)} · <b>${S(saldoC(c))}</b>${v ? ' (vencido)' : ''}</div>`; }).join('')}
+        ${a.cs.length > 3 ? `<div class="text-[11px] text-slate-400" title="${a.cs.map((c) => `${descCargo(c)} ${S(saldoC(c))}`).join(' · ').replace(/"/g, '&quot;')}">+${a.cs.length - 3} cargo(s) más</div>` : ''}</div>`;
     };
     const kpi = (label, val, sub, color) => `
       <div class="rounded-xl bg-${color}-50 ring-1 ring-${color}-100 p-4">
@@ -1229,21 +1266,33 @@ const SCREENS = {
 
     el('content').innerHTML = `
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p class="text-sm text-slate-500">Cuentas por cobrar de <b>${sede(SEDE_ACTUAL).nombre_sede}</b></p>
-        <button onclick="formCobranzaMasiva()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">📣 Recordatorios masivos</button>
+        <p class="text-sm text-slate-500">Cuentas por cobrar de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> · ${alumnos.length} alumno(s)</p>
+        <div class="flex gap-2">
+          <button onclick="pcImprimir()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">🖨️ Imprimir / PDF</button>
+          <button onclick="formCobranzaMasiva()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">📣 Recordatorios masivos</button>
+        </div>
       </div>
       <div class="grid grid-cols-2 gap-3 mb-5">
-        ${kpi('Vencido', S(totVenc), `${vencidos.length} alumno(s)`, 'rose')}
-        ${kpi('Por vencer', S(totPorVencer), `${porVencer.length} alumno(s)`, 'amber')}
+        ${kpi('Vencido', S(totVenc), `${alumnos.filter((a) => a.tieneVencido).length} alumno(s)`, 'rose')}
+        ${kpi('Por vencer', S(totPorVencer), `${alumnos.filter((a) => !a.tieneVencido).length} alumno(s)`, 'amber')}
       </div>
-      <h3 class="mb-2 text-sm font-semibold text-rose-600">🔴 Vencidos (${vencidos.length})</h3>
-      <div class="grid gap-2 md:grid-cols-2 mb-6">
-        ${vencidos.length ? vencidos.map((a) => pcCard(a, true)).join('') : '<p class="text-sm text-slate-400">Ningún alumno con cargos vencidos. 🎉</p>'}
-      </div>
-      <h3 class="mb-2 text-sm font-semibold text-amber-600">🟡 Por vencer (${porVencer.length})</h3>
-      <div class="grid gap-2 md:grid-cols-2">
-        ${porVencer.length ? porVencer.map((a) => pcCard(a, false)).join('') : '<p class="text-sm text-slate-400">Sin cuentas por vencer.</p>'}
-      </div>`;
+      ${alumnos.length ? table([th('alumno', 'Alumno'), th('cat', 'Cat.'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), 'Detalle de deuda', ''],
+        alumnos.map((a) => { const j = a.j; const tel = telDe(j);
+          const corteVencido = a.corte && a.corte < HOY;
+          return [
+            `<button onclick="formEditarAlumno('${j.id}')" class="font-semibold text-left hover:text-indigo-600 hover:underline">${nom(j)}</button>
+             ${j.ultimo_recordatorio ? `<div class="text-[10px] text-slate-400" title="Último recordatorio enviado">🔔 ${fmtDMY(j.ultimo_recordatorio)}</div>` : ''}`,
+            String(anio(j.fecha_nacimiento)),
+            a.corte ? `<span class="${corteVencido ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(a.corte)}</span>` : '<span class="text-amber-600 text-xs">sin corte</span>',
+            `<b class="${a.tieneVencido ? 'text-rose-600' : 'text-slate-800'}">${S(a.total)}</b>${a.tieneVencido ? `<div class="text-[10px] text-rose-500">${S(a.totalVenc)} vencido</div>` : ''}`,
+            detalleHTML(a),
+            `<div class="flex flex-col gap-1 text-xs">
+              ${tel ? `<button onclick="waCobro('${j.id}')" class="rounded-lg bg-emerald-600 px-2.5 py-1 font-medium text-white hover:bg-emerald-700">💬 Cobro</button>` : '<span class="text-slate-400">sin tel.</span>'}
+              <button onclick="formDocumentoCuenta('${j.id}')" class="text-indigo-600 hover:underline">📄 Estado</button>
+            </div>`,
+          ];
+        }))
+      : '<p class="text-sm text-slate-400">Ningún alumno con deuda. 🎉</p>'}`;
   },
 
   aprobar() {
