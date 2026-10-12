@@ -96,8 +96,9 @@ Deno.serve(async (req) => {
       const { telefono, variables, plantilla } = body;
       const to = String(telefono || '').replace(/\D/g, '');
       if (!to || !Array.isArray(variables)) return json({ error: 'Faltan telefono o variables' }, 400);
-      // El usuario debe poder ver a algún tutor con ese teléfono (RLS = su academia)
-      const tuts = await apiUser(`tutores?select=id,academia_id&telefono_celular=like.*${to.slice(-9)}*&limit=1`);
+      // El usuario debe poder ver a algún tutor con ese teléfono (RLS = su academia);
+      // compara sobre telefono_norm (solo dígitos: los guardados llevan espacios)
+      const tuts = await apiUser(`tutores?select=id,academia_id&telefono_norm=like.*${to.slice(-9)}&limit=1`);
       if (!tuts.length) return json({ error: 'El teléfono no corresponde a un tutor de tu academia' }, 403);
       const tpl = plantilla || Deno.env.get('WHATSAPP_TPL_COBRANZA') || 'cobranza_liguify';
       const payload = tpl === 'hello_world'

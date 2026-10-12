@@ -77,10 +77,11 @@ Deno.serve(async (req) => {
           if (!telefono) continue;
           const nombrePerfil = (v.contacts && v.contacts[0] && v.contacts[0].profile && v.contacts[0].profile.name) || null;
 
-          // Identificar al tutor por los últimos 9 dígitos (celular peruano)
+          // Identificar al tutor por los últimos 9 dígitos (celular peruano),
+          // sobre el teléfono NORMALIZADO (los guardados llevan espacios)
           const last9 = telefono.slice(-9);
           let tutor = null, jugadorId = null, sedeW = null, sedeId = null;
-          const tuts = await db('GET', `tutores?select=id,academia_id,nombres&telefono_celular=like.*${last9}*&limit=1`);
+          const tuts = await db('GET', `tutores?select=id,academia_id,nombres&telefono_norm=like.*${last9}&limit=1`);
           if (Array.isArray(tuts) && tuts[0]) {
             tutor = tuts[0];
             const js = await db('GET', `jugadores?select=id,sede_id&tutor_id=eq.${tutor.id}&limit=1`);
