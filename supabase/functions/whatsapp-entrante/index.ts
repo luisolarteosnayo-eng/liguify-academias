@@ -125,7 +125,8 @@ Deno.serve(async (req) => {
                 const meta = await (await fetch(`${GRAPH}/${mediaId}`, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
                 const bin = await (await fetch(meta.url, { headers: { Authorization: `Bearer ${TOKEN}` } })).arrayBuffer();
                 const ext = (meta.mime_type || '').includes('pdf') ? 'pdf' : (meta.mime_type || '').includes('png') ? 'png' : 'jpg';
-                const ruta = `wsp/${conv.id}/${m.id}.${ext}`;
+                // Nombre saneado: el wamid trae '=' y otros caracteres que Storage rechaza
+                const ruta = `wsp/${conv.id}/${Date.now()}-${String(m.id).replace(/[^a-zA-Z0-9]/g, '').slice(-24)}.${ext}`;
                 const up = await fetch(`${SUPABASE_URL}/storage/v1/object/academias-vouchers/${ruta}`, {
                   method: 'POST',
                   headers: { Authorization: `Bearer ${SRK}`, 'Content-Type': meta.mime_type || 'image/jpeg', 'x-upsert': 'true' },
