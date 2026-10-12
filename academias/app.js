@@ -2694,7 +2694,10 @@ window.eliminarCargoCNR = (cid, jid) => {
   const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => p.estado !== 'rechazado' && (p.detalle || []).some((d) => d.cargo_id === cid));
   if (tienePagos) { toast('No se puede eliminar: tiene pagos asociados'); return; }
   if (!confirm(`¿Eliminar el cargo "${descCargo(c)}" de ${S(c.monto)}? Esta acción no se puede deshacer.`)) return;
-  DB.cargos = DB.cargos.filter((x) => x.id !== cid);
+  // Soltar las referencias ANTES de borrar (FKs en BD: torneo_jugadores e
+  // inv_movimientos apuntan al cargo y bloquearían el delete). El jugador del
+  // torneo vuelve a "Pendiente" y su CNR se puede regenerar.
+  DB.torneoJugadores.filter((x) => x.cargo_id === cid).forEach((x) => { x.cargo_id = null; });
   // Si el cargo generó salida de almacén, devuelve el stock (ingreso por devolución)
   const salida = DB.invMovimientos.find((m) => m.cargo_id === cid && m.tipo === 'salida');
   if (salida) {
@@ -2702,6 +2705,11 @@ window.eliminarCargoCNR = (cid, jid) => {
       talla: salida.talla, tipo: 'ingreso', cantidad: salida.cantidad,
       motivo: 'Devolución (cargo eliminado)', jugador_id: salida.jugador_id, fecha: HOY });
   }
+  DB.invMovimientos.filter((m) => m.cargo_id === cid).forEach((m) => { m.cargo_id = null; });
+  // Pagos RECHAZADOS que lo referenciaban: su detalle suelta el renglón (FK pago_cargo)
+  DB.pagos.filter((p) => p.estado === 'rechazado' && (p.detalle || []).some((d) => d.cargo_id === cid))
+    .forEach((p) => { p.detalle = p.detalle.filter((d) => d.cargo_id !== cid); });
+  DB.cargos = DB.cargos.filter((x) => x.id !== cid);
   CR_EDIT_ID = null;
   toast(salida ? 'Cargo eliminado · stock devuelto al almacén' : 'Cargo eliminado');
   renderFichaCNR(jid);
@@ -2723,6 +2731,10 @@ window.eliminarCargoCR = (cid, jid) => {
     + (esUltimo ? `\n\nLa fecha de corte del track volverá al ${fmtDMY(isoAddDays(c.ciclo_inicio, -1))} (el proceso podrá regenerar este periodo).`
                 : (i ? '\n\n⚠ No es el último CR del track: la fecha de corte no cambia y el periodo eliminado quedará sin CR.' : ''));
   if (!confirm(msg)) return;
+  // Pagos RECHAZADOS que lo referenciaban: su detalle suelta el renglón (la FK de
+  // pago_cargo en la BD bloquearía el borrado y el cargo "reviviría" al recargar)
+  DB.pagos.filter((p) => p.estado === 'rechazado' && (p.detalle || []).some((d) => d.cargo_id === cid))
+    .forEach((p) => { p.detalle = p.detalle.filter((d) => d.cargo_id !== cid); });
   DB.cargos = DB.cargos.filter((x) => x.id !== cid);
   if (esUltimo) i.ultima_fecha_corte = c.ciclo_inicio ? isoAddDays(c.ciclo_inicio, -1) : null;
   liquidarCargosGratis(jid);   // si era parte de una promo, reevalúa su mes gratis
