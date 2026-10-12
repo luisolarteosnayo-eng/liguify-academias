@@ -3092,6 +3092,15 @@ window.pgVoucherFile = (inp) => {
   r.onload = () => { PAGO_VOUCHER = r.result; };
   r.readAsDataURL(f);
 };
+// Sincronización INMEDIATA y esperada: para operaciones de dinero no se deja
+// el guardado al ciclo de 2.5s (si la pestaña se cierra a mitad del tick, los
+// cargos pueden subir sin su pago — el origen de los descuadres históricos).
+async function syncAhora() {
+  if (!(window.AcademiasDB && AcademiasDB.on)) return true;
+  for (let i = 0; i < 20 && AcademiasDB.sync.busy; i++) await new Promise((r) => setTimeout(r, 150));
+  try { await AcademiasDB.sync.tick(); } catch (e) { console.error('[syncAhora]', e); }
+  return AcademiasDB.sync.status !== 'error';
+}
 window.guardarPagoAlumno = async (e, jid) => {
   e.preventDefault();
   const sel = [...document.querySelectorAll('.pgChk:checked')].map((c) => c.value);
@@ -3151,8 +3160,11 @@ window.guardarPagoAlumno = async (e, jid) => {
     registrado_por: usuarioActual(),               // quién registró el pago (visible al aprobar)
     medio: medio ? medio.nombre : '', num_operacion: val('pg_op'), voucher_url: voucherFinal,
     total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
+  // Guardar YA en el servidor (pago + cargos juntos) y confirmar recién después
+  const okSync = await syncAhora();
   closeModal();
-  toast(`✓ Pago registrado · ${S(total)}`);
+  toast(okSync ? `✓ Pago registrado y guardado · ${S(total)}`
+    : `⚠ Pago registrado pero AÚN NO guardado en el servidor · NO cierres la app, se reintentará solo`);
   formEditarAlumno(jid);   // reabre la ficha del alumno...
   njTab('pagos');          // ...en la pestaña Pagos, con el documento recién creado
 };
@@ -3662,6 +3674,7 @@ window.aprobarPagoDoc = (id) => {
   if (p.jugador_id) liquidarCargosGratis(p.jugador_id);
   p.estado = 'aprobado'; p.fecha_aprobacion = HOY;
   closeModal(); toast('Pago aprobado'); go('aprobar');
+  syncAhora();   // persistir de inmediato (operación de dinero)
 };
 window.rechazarPagoDoc = (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p || p.estado !== 'pendiente') return; // sin reversión: solo pendientes
@@ -3669,6 +3682,7 @@ window.rechazarPagoDoc = (id) => {
   p.estado = 'rechazado'; p.fecha_rechazo = HOY;
   revertirCargosPago(p);   // los CR/CNR vuelven a Pendiente de Pago
   closeModal(); toast('Pago rechazado · cargos vueltos a pendientes'); go('aprobar');
+  syncAhora();   // persistir de inmediato (operación de dinero)
 };
 function revertirCargosPago(p) {
   (p.detalle || []).forEach((d) => {
