@@ -3332,10 +3332,12 @@ window.enviarCobranzaMasiva = async () => {
     const x = sel[i];
     if (el('cmEnviar')) el('cmEnviar').textContent = `Enviando ${i + 1} de ${sel.length}…`;
     try {
+      const sd = sede(x.j.sede_id);
       const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body: {
         accion: 'cobranza', telefono: x.num,
         variables: [(x.t.nombres || 'padre de familia').split(' ')[0], nom(x.j), 'S/ ' + x.total.toFixed(2),
-          sede(x.j.sede_id) ? sede(x.j.sede_id).nombre_sede : DB.academia.nombre_academia],
+          sd ? sd.nombre_sede : DB.academia.nombre_academia,
+          (sd && sd.medios_cobro) || 'consulta los medios de pago con tu sede'],   // {{5}} de la plantilla
       } });
       let msg = null;
       if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
@@ -4947,6 +4949,7 @@ const CONFIG_TABS = {
             ${field('Google Maps URL', input('sd_maps', `value="${g('google_maps_url')}" placeholder="https://maps.google.com/..."`))}
           </div>
           ${field('WhatsApp de respuestas (cobranzas)', input('sd_wsp', `value="${g('whatsapp_respuestas')}" placeholder="+51 9XX XXX XXX · adonde se dirige a los tutores que responden los recordatorios"`))}
+          ${field('Medios de cobro (van en el mensaje de WhatsApp)', input('sd_medios', `value="${g('medios_cobro')}" placeholder="Yape 999 888 777 · BCP 191-1234567-0-12 (VOM SPORT) — en una sola línea"`))}
           <div class="pt-2 pb-1 text-sm font-semibold text-slate-600">🧾 Facturación electrónica (SUNAT)</div>
           <p class="text-xs text-slate-400 mb-2">El RUC emisor es por sede (sedes de la misma empresa pueden compartirlo), pero cada sede lleva su propia serie y correlativo.</p>
           <div class="grid grid-cols-2 gap-3">
@@ -5517,6 +5520,7 @@ window.guardarSedeInline = async (e) => {
     ciudad: val('sd_ciudad'), pais: val('sd_pais'), codigo_postal: val('sd_cp'),
     telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'), cabecera_url: SEDE_CABECERA, logo_url: SEDE_LOGO,
     whatsapp_respuestas: val('sd_wsp').trim() || null,
+    medios_cobro: val('sd_medios').trim().replace(/\s*\n\s*/g, ' · ') || null,   // una sola línea (requisito de Meta)
     ruc_emisor: val('sd_ruc').trim() || null, razon_social_emisor: val('sd_rz').trim() || null,
     direccion_fiscal: val('sd_dirf').trim() || null,
     serie_boleta: val('sd_sb').trim().toUpperCase() || null, serie_factura: val('sd_sf').trim().toUpperCase() || null,

@@ -56,6 +56,9 @@ create policy p_wsp_msj on academias.wsp_mensajes for all to authenticated
 -- WhatsApp propio de cada sede: destino de las respuestas sugerido en los
 -- avisos (botón "responder a la academia") y del auto-reply del webhook
 alter table academias.sedes add column if not exists whatsapp_respuestas text;
+-- Medios de cobro de la sede, en UNA línea (variable {{5}} de la plantilla):
+-- p. ej. 'Yape 999 888 777 · BCP 191-1234567-0-12 (VOM SPORT)'
+alter table academias.sedes add column if not exists medios_cobro text;
 
 -- =====================================================================
 -- FIN v38.
