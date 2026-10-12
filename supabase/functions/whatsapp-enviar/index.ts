@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
       if (!to || !Array.isArray(variables)) return json({ error: 'Faltan telefono o variables' }, 400);
       // El usuario debe poder ver a algún tutor con ese teléfono (RLS = su academia);
       // compara sobre telefono_norm (solo dígitos: los guardados llevan espacios)
-      const tuts = await apiUser(`tutores?select=id,academia_id&telefono_norm=like.*${to.slice(-9)}&limit=1`);
+      const tuts = await apiUser(`tutores?select=id,academia_id,nombres&telefono_norm=like.*${to.slice(-9)}&limit=1`);
       if (!tuts.length) return json({ error: 'El teléfono no corresponde a un tutor de tu academia' }, 403);
       const tpl = plantilla || Deno.env.get('WHATSAPP_TPL_COBRANZA') || 'cobranza_liguify';
       const payload = tpl === 'hello_world'
@@ -110,7 +110,10 @@ Deno.serve(async (req) => {
       const aca = tuts[0].academia_id;
       let [conv] = await apiUser(`wsp_conversaciones?telefono=eq.${to}&academia_id=eq.${aca}&select=id&limit=1`);
       if (!conv) {
-        await dbWrite('POST', 'wsp_conversaciones', { academia_id: aca, tutor_id: tuts[0].id, telefono: to });
+        // La conversación nace vinculada: alumno del tutor + sede + nombre
+        const [jj] = await apiUser(`jugadores?select=id,sede_id&tutor_id=eq.${tuts[0].id}&limit=1`);
+        await dbWrite('POST', 'wsp_conversaciones', { academia_id: aca, tutor_id: tuts[0].id, telefono: to,
+          jugador_id: jj ? jj.id : null, sede_id: jj ? jj.sede_id : null, nombre: tuts[0].nombres || null });
         [conv] = await apiUser(`wsp_conversaciones?telefono=eq.${to}&academia_id=eq.${aca}&select=id&limit=1`);
       }
       if (conv) {

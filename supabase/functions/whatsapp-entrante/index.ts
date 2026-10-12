@@ -103,6 +103,12 @@ Deno.serve(async (req) => {
             })) || [])[0];
           }
           if (!conv) continue;
+          // Backfill: conversación creada antes sin vínculo → se completa ahora
+          if (tutor && !conv.jugador_id && jugadorId) {
+            await db('PATCH', `wsp_conversaciones?id=eq.${conv.id}`,
+              { tutor_id: tutor.id, jugador_id: jugadorId, sede_id: sedeId }, 'return=minimal');
+            conv.jugador_id = jugadorId;
+          }
           const esPrimeroEn20h = !conv.ultimo_entrante_at
             || (Date.now() - new Date(conv.ultimo_entrante_at).getTime()) > 20 * 3600 * 1000;
 
