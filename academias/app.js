@@ -512,6 +512,8 @@ let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
 let GER_PERIODO = 'mes';       // periodo del Dashboard Gerencial
 let PC_SORT = { col: 'deuda', dir: -1 };   // orden de Por cobrar (clic en cabeceras)
+let PC_Q = '';                              // filtro de Por cobrar: nombre del alumno
+let PC_CAT = '';                            // filtro de Por cobrar: categoría ('' = todas)
 let AP_SORT = { col: 'fecha', dir: -1 };   // orden de Aprobar pagos
 window.apOrdenar = (col) => {
   AP_SORT = { col, dir: AP_SORT.col === col ? -AP_SORT.dir : (col === 'monto' || col === 'fecha' ? -1 : 1) };
@@ -1233,7 +1235,7 @@ const SCREENS = {
     const saldoC = (c) => c.monto - (c.pagado_monto || 0);
     const telDe = (j) => (tutor(j.tutor_id) && tutor(j.tutor_id).telefono_celular) || j.telefono || '';
     // Un alumno por fila: deuda, vencidos, su corte más próximo y el detalle
-    const alumnos = alumnosSede().map((j) => {
+    let alumnos = alumnosSede().map((j) => {
       const cs = cargosSede().filter((c) => c.jugador_id === j.id && saldoC(c) > 0)
         .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
       if (!cs.length) return null;
@@ -1244,6 +1246,11 @@ const SCREENS = {
       return { j, cs, total, totalVenc: venc.reduce((s, c) => s + saldoC(c), 0),
         tieneVencido: venc.length > 0, corte: cortes[0] || null, tel: telDe(j) };
     }).filter(Boolean);
+    // Filtros por nombre y categoría (los KPIs y la impresión los respetan)
+    const cats = [...new Set(alumnos.map((a) => anio(a.j.fecha_nacimiento)))].sort();
+    const q = PC_Q.trim().toLowerCase();
+    if (q) alumnos = alumnos.filter((a) => nom(a.j).toLowerCase().includes(q));
+    if (PC_CAT) alumnos = alumnos.filter((a) => String(anio(a.j.fecha_nacimiento)) === PC_CAT);
     const totVenc = alumnos.filter((a) => a.tieneVencido).reduce((s, a) => s + a.total, 0);
     const totPorVencer = alumnos.filter((a) => !a.tieneVencido).reduce((s, a) => s + a.total, 0);
     // Orden por columna (clic en la cabecera alterna ↑/↓)
@@ -1282,9 +1289,20 @@ const SCREENS = {
           <button onclick="formCobranzaMasiva()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">📣 Recordatorios masivos</button>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-3 mb-5">
+      <div class="grid grid-cols-2 gap-3 mb-4">
         ${kpi('Vencido', S(totVenc), `${alumnos.filter((a) => a.tieneVencido).length} alumno(s)`, 'rose')}
         ${kpi('Por vencer', S(totPorVencer), `${alumnos.filter((a) => !a.tieneVencido).length} alumno(s)`, 'amber')}
+      </div>
+      <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <input value="${PC_Q.replace(/"/g, '&quot;')}" placeholder="🔎 Buscar alumno por nombre…"
+          onchange="PC_Q = this.value; SCREENS.porcobrar()"
+          class="w-60 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+        <label class="flex items-center gap-1.5 text-slate-500">Categoría
+          <select onchange="PC_CAT = this.value; SCREENS.porcobrar()" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
+            <option value="">Todas</option>
+            ${cats.map((c2) => `<option value="${c2}" ${PC_CAT === String(c2) ? 'selected' : ''}>${c2}</option>`).join('')}
+          </select></label>
+        ${(PC_Q || PC_CAT) ? `<button onclick="PC_Q=''; PC_CAT=''; SCREENS.porcobrar()" class="text-indigo-600 hover:underline">✕ Quitar filtros</button>` : ''}
       </div>
       ${alumnos.length ? table([th('alumno', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
         alumnos.map((a) => { const j = a.j; const tel = a.tel;
