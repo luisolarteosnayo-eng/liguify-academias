@@ -512,6 +512,11 @@ let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
 let GER_PERIODO = 'mes';       // periodo del Dashboard Gerencial
 let PC_SORT = { col: 'deuda', dir: -1 };   // orden de Por cobrar (clic en cabeceras)
+let AP_SORT = { col: 'fecha', dir: -1 };   // orden de Aprobar pagos
+window.apOrdenar = (col) => {
+  AP_SORT = { col, dir: AP_SORT.col === col ? -AP_SORT.dir : (col === 'monto' || col === 'fecha' ? -1 : 1) };
+  SCREENS.aprobar();
+};
 let PC_LISTA = [];                          // lista vigente (para imprimir)
 window.pcOrdenar = (col) => {
   PC_SORT = { col, dir: PC_SORT.col === col ? -PC_SORT.dir : (col === 'deuda' ? -1 : 1) };
@@ -1324,9 +1329,34 @@ const SCREENS = {
         ${kpi('Rechazados hoy', S(sum(rechazadosHoy)), 'rose')}
       </div>
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Pendientes de aprobación (${pendientes.length})</h3>
-      <div class="grid gap-2 md:grid-cols-2">
-        ${pendientes.length ? pendientes.map(pagoAprobCard).join('') : '<p class="text-sm text-slate-400">No hay pagos pendientes de aprobación. 🎉</p>'}
-      </div>`;
+      ${(() => {
+        // Tabla ordenable: un pago por fila
+        const alumnoDe = (p) => p.jugador_id && jugador(p.jugador_id) ? nom(jugador(p.jugador_id)) : ((tutor(p.tutor_id) || {}).nombres || '—');
+        const cmp = {
+          fecha: (a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')),
+          alumno: (a, b) => alumnoDe(a).localeCompare(alumnoDe(b), 'es'),
+          medio: (a, b) => String(a.medio || '').localeCompare(String(b.medio || ''), 'es'),
+          monto: (a, b) => (a.total ?? a.monto ?? 0) - (b.total ?? b.monto ?? 0),
+          op: (a, b) => String(a.num_operacion || 'zzz').localeCompare(String(b.num_operacion || 'zzz')),
+        }[AP_SORT.col] || ((a, b) => 0);
+        const lista = pendientes.slice().sort((a, b) => cmp(a, b) * AP_SORT.dir);
+        const th = (col, txt) => AP_SORT.col === col
+          ? `<button onclick="apOrdenar('${col}')" class="cursor-pointer font-semibold text-indigo-600">${txt} ${AP_SORT.dir > 0 ? '↑' : '↓'}</button>`
+          : `<button onclick="apOrdenar('${col}')" title="Ordenar por ${txt}" class="cursor-pointer font-medium underline decoration-dotted decoration-slate-300 underline-offset-4 hover:text-indigo-600">${txt} <span class="text-slate-300">↕</span></button>`;
+        return lista.length ? table([th('fecha', 'Fecha'), th('alumno', 'Alumno'), th('medio', 'Medio de pago'), th('monto', 'Monto'), th('op', 'N° Op.'), ''],
+          lista.map((p) => [
+            `<span class="whitespace-nowrap">${fmtDMY(p.fecha)}</span>${regDMY(p) && regDMY(p) !== fmtDMY(p.fecha) ? `<div class="text-[10px] text-amber-600">reg. ${regDMY(p)}</div>` : ''}`,
+            `<b>${alumnoDe(p)}</b><div class="text-[11px] text-slate-400">${(p.detalle || []).map((d) => d.concepto).join(' · ')}</div>`,
+            p.medio || '—',
+            `<b>${S(p.total ?? p.monto ?? 0)}</b>`,
+            p.num_operacion || '—',
+            `<div class="flex flex-col items-end gap-1 text-xs">
+              <button onclick="gestionarPago('${p.id}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-700">Aprobar / Rechazar</button>
+              ${p.voucher_url ? `<button onclick="verComprobante('${p.id}')" class="text-indigo-600 hover:underline">🖼️ Ver comprobante</button>` : '<span class="text-amber-600">sin comprobante</span>'}
+            </div>`,
+          ]))
+        : '<p class="text-sm text-slate-400">No hay pagos pendientes de aprobación. 🎉</p>';
+      })()}`;
   },
 
   asistencia() {
