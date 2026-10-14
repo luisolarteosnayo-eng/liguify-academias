@@ -3287,7 +3287,11 @@ window.waCobro = (jid) => {
   if (!pend.length) { toast('El alumno no tiene deuda pendiente'); return; }
   const total = pend.reduce((s, c) => s + saldoC(c), 0);
   const lineas = pend.map((c) => `• ${descCargo(c)}${c.fecha_vencimiento ? ` (vence ${fmtDMY(c.fecha_vencimiento)})` : ''}: S/ ${saldoC(c).toFixed(2)}${c.fecha_vencimiento && c.fecha_vencimiento < HOY ? ' ⚠️ VENCIDO' : ''}`).join('\n');
-  const medios = mediosPagoSede().map((m) => m.nombre).filter((n) => n.toLowerCase() !== 'efectivo').join(', ');
+  // Medios de cobro CONFIGURADOS por sede (con números de cuenta); si la sede
+  // no los llenó, se listan los nombres del catálogo como respaldo
+  const sdJ = sede(j.sede_id);
+  const medios = (sdJ && sdJ.medios_cobro)
+    || mediosPagoSede().map((m) => m.nombre).filter((n) => n.toLowerCase() !== 'efectivo').join(', ');
   const msj = `Hola${t.nombres ? ' ' + t.nombres.split(' ')[0] : ''} 👋\n`
     + `Le saludamos de *${sede(j.sede_id) ? sede(j.sede_id).nombre_sede : DB.academia.nombre_academia}*.\n`
     + `Le recordamos los pagos pendientes de *${nom(j)}*:\n\n${lineas}\n\n*Total pendiente: S/ ${total.toFixed(2)}*\n\n`
