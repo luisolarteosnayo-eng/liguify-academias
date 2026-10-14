@@ -1234,8 +1234,10 @@ const SCREENS = {
   porcobrar() {
     const saldoC = (c) => c.monto - (c.pagado_monto || 0);
     const telDe = (j) => (tutor(j.tutor_id) && tutor(j.tutor_id).telefono_celular) || j.telefono || '';
-    // Un alumno por fila: deuda, vencidos, su corte más próximo y el detalle
-    let alumnos = alumnosSede().map((j) => {
+    // Un alumno por fila: deuda, vencidos, su corte más próximo y el detalle.
+    // Los dados de BAJA no se gestionan en cobranza (su deuda sigue visible en
+    // su ficha, en Alumnos → Bajas).
+    let alumnos = alumnosSede().filter((j) => j.estado_alumno !== 'baja').map((j) => {
       const cs = cargosSede().filter((c) => c.jugador_id === j.id && saldoC(c) > 0)
         .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
       if (!cs.length) return null;
