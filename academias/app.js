@@ -524,6 +524,7 @@ window.pcImprimir = () => {
   const sd = sede(SEDE_ACTUAL);
   const filas = PC_LISTA.map((a) => `<tr>
     <td><b>${nom(a.j)}</b></td><td style="text-align:center">${anio(a.j.fecha_nacimiento)}</td>
+    <td style="text-align:center">${a.tel || '—'}</td>
     <td style="text-align:center">${a.corte ? fmtDMY(a.corte) : '—'}</td>
     <td style="text-align:right"><b>${S(a.total)}</b>${a.tieneVencido ? `<div class="venc">${S(a.totalVenc)} vencido</div>` : ''}</td>
     <td>${a.cs.map((c) => `${c.tipo} · ${descCargo(c)} · ${S(saldoC(c))}${c.fecha_vencimiento && c.fecha_vencimiento < HOY ? ' (vencido)' : ''}`).join('<br>')}</td>
@@ -545,9 +546,9 @@ window.pcImprimir = () => {
     <h1>Cuentas por cobrar — ${(DB.academia && DB.academia.nombre_academia) || ''} · ${sd ? sd.nombre_sede : ''}</h1>
     <div class="sub">Generado el ${fmtDMY(HOY)} · ${PC_LISTA.length} alumno(s) con deuda</div>
     <table>
-      <thead><tr><th>Alumno</th><th style="text-align:center">Cat.</th><th style="text-align:center">Matriculado hasta</th><th style="text-align:right">Deuda total</th><th>Detalle de deuda</th></tr></thead>
+      <thead><tr><th>Alumno</th><th style="text-align:center">Cat.</th><th style="text-align:center">Cel. tutor</th><th style="text-align:center">Matriculado hasta</th><th style="text-align:right">Deuda total</th><th>Detalle de deuda</th></tr></thead>
       <tbody>${filas}</tbody>
-      <tfoot><tr><td colspan="3">TOTAL</td><td style="text-align:right">${S(total)}</td><td></td></tr></tfoot>
+      <tfoot><tr><td colspan="4">TOTAL</td><td style="text-align:right">${S(total)}</td><td></td></tr></tfoot>
     </table></body></html>`);
   w.document.close();
   w.focus();
@@ -1236,7 +1237,7 @@ const SCREENS = {
       const cortes = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo && i.ultima_fecha_corte)
         .map((i) => i.ultima_fecha_corte).sort();
       return { j, cs, total, totalVenc: venc.reduce((s, c) => s + saldoC(c), 0),
-        tieneVencido: venc.length > 0, corte: cortes[0] || null };
+        tieneVencido: venc.length > 0, corte: cortes[0] || null, tel: telDe(j) };
     }).filter(Boolean);
     const totVenc = alumnos.filter((a) => a.tieneVencido).reduce((s, a) => s + a.total, 0);
     const totPorVencer = alumnos.filter((a) => !a.tieneVencido).reduce((s, a) => s + a.total, 0);
@@ -1245,6 +1246,7 @@ const SCREENS = {
       alumno: (a, b) => nom(a.j).localeCompare(nom(b.j), 'es'),
       cat: (a, b) => anio(a.j.fecha_nacimiento) - anio(b.j.fecha_nacimiento),
       corte: (a, b) => String(a.corte || '9999-99').localeCompare(String(b.corte || '9999-99')),
+      tel: (a, b) => String(a.tel || 'zzz').localeCompare(String(b.tel || 'zzz')),
       deuda: (a, b) => a.total - b.total,
       detalle: (a, b) => a.cs.length - b.cs.length,
     }[PC_SORT.col] || ((a, b) => a.total - b.total);
@@ -1279,13 +1281,14 @@ const SCREENS = {
         ${kpi('Vencido', S(totVenc), `${alumnos.filter((a) => a.tieneVencido).length} alumno(s)`, 'rose')}
         ${kpi('Por vencer', S(totPorVencer), `${alumnos.filter((a) => !a.tieneVencido).length} alumno(s)`, 'amber')}
       </div>
-      ${alumnos.length ? table([th('alumno', 'Alumno'), th('cat', 'Cat.'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
-        alumnos.map((a) => { const j = a.j; const tel = telDe(j);
+      ${alumnos.length ? table([th('alumno', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
+        alumnos.map((a) => { const j = a.j; const tel = a.tel;
           const corteVencido = a.corte && a.corte < HOY;
           return [
             `<button onclick="formEditarAlumno('${j.id}')" class="font-semibold text-left hover:text-indigo-600 hover:underline">${nom(j)}</button>
              ${j.ultimo_recordatorio ? `<div class="text-[10px] text-slate-400" title="Último recordatorio enviado">🔔 ${fmtDMY(j.ultimo_recordatorio)}</div>` : ''}`,
             String(anio(j.fecha_nacimiento)),
+            tel ? `<span class="whitespace-nowrap">${tel}</span>` : '<span class="text-amber-600 text-xs">sin teléfono</span>',
             a.corte ? `<span class="${corteVencido ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(a.corte)}</span>` : '<span class="text-amber-600 text-xs">sin corte</span>',
             `<b class="${a.tieneVencido ? 'text-rose-600' : 'text-slate-800'}">${S(a.total)}</b>${a.tieneVencido ? `<div class="text-[10px] text-rose-500">${S(a.totalVenc)} vencido</div>` : ''}`,
             detalleHTML(a),
