@@ -1592,6 +1592,41 @@ window.reporteNuevosPruebas = (tab = 'nuevos') => {
   };
   // El nombre abre la ficha del alumno (ahí está la bitácora completa de seguimiento)
   const nomBtn = (j, extra = '') => `<button type="button" onclick="formEditarAlumno('${j.id}')" class="font-bold text-left hover:text-indigo-600 hover:underline">${nom(j)}</button>${extra}`;
+  // KPIs mensuales de clases de prueba: total por mes y efectividad (cuántas
+  // terminaron en alumno). Serie de 6 meses, independiente del periodo del reporte.
+  const kpisPruebaHTML = () => {
+    const todas = DB.jugadores.filter((j) => j.prueba_fecha && inDash(j.sede_id));
+    // Convertido = llegó a tener track (aunque hoy esté de baja); el badge de la
+    // tabla usa el estado ACTUAL, aquí medimos si la prueba funcionó
+    const seConvirtio = (j) => j.estado_alumno === 'activo' || DB.inscripciones.some((i) => i.jugador_id === j.id);
+    const meses = [];
+    for (let k = 5; k >= 0; k--) {
+      const t = +HOY.slice(0, 4) * 12 + (+HOY.slice(5, 7) - 1) - k;
+      meses.push(`${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`);
+    }
+    const nomMes = (m) => ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'][+m.slice(5) - 1] + ' ' + m.slice(0, 4);
+    const filas = meses.map((m) => {
+      const del = todas.filter((j) => String(j.prueba_fecha).slice(0, 7) === m);
+      const conv = del.filter(seConvirtio).length;
+      return { m, total: del.length, conv, pct: del.length ? Math.round((conv * 100) / del.length) : 0 };
+    });
+    const act = filas[filas.length - 1];
+    const barPct = (f) => f.total
+      ? `<div class="flex items-center gap-2"><div class="h-1.5 w-24 rounded bg-slate-100"><div class="h-1.5 rounded bg-emerald-500" style="width:${f.pct}%"></div></div><b>${f.pct}%</b></div>`
+      : '—';
+    return `
+      <div class="mb-4 grid gap-3 sm:grid-cols-3">
+        ${card('Clases de prueba · ' + nomMes(act.m), act.total, 'registradas en el mes')}
+        ${card('Convertidos en alumno', act.conv, 'de las pruebas de ' + nomMes(act.m))}
+        ${card('Efectividad del mes', act.total ? act.pct + '%' : '—', 'pruebas que se volvieron alumnos')}
+      </div>
+      <div class="mb-6 rounded-xl bg-white ring-1 ring-slate-200 p-4">
+        <h3 class="mb-2 text-sm font-semibold text-slate-600">📈 Clases de prueba y efectividad por mes</h3>
+        ${table(['Mes', 'Clases de prueba', 'Convertidos', 'Efectividad'],
+          filas.map((f) => [nomMes(f.m), f.total || '—', f.total ? f.conv : '—', barPct(f)]))}
+        <p class="mt-1 text-[11px] text-slate-400">Convertido = la clase de prueba terminó en un alumno inscrito en un track (aunque hoy esté de baja). Los prospectos aún en seguimiento todavía no cuentan como convertidos.</p>
+      </div>`;
+  };
   const cuerpo = tab === 'prueba'
     ? porSede(clasesPrueba, (j) => j.prueba_fecha, (j) => {
         const t = j.prueba_track_id ? track(j.prueba_track_id) : null;
@@ -1632,6 +1667,7 @@ window.reporteNuevosPruebas = (tab = 'nuevos') => {
       <button onclick="formClasePrueba()" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">🎈 + Registrar clase de prueba</button>
     </div>
     <p class="text-xs text-slate-400 mb-3">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'} · más recientes primero</p>
+    ${tab === 'prueba' ? kpisPruebaHTML() : ''}
     ${cuerpo}`;
 };
 
