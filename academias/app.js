@@ -3361,8 +3361,11 @@ let WSP_CONVS = [];
 let WSP_PEND_N = 0;   // conversaciones por responder (alimenta el badge del menú)
 const wspOn = () => !!(window.AcademiasDB && AcademiasDB.on);
 // Pendiente de respuesta = el último movimiento fue del tutor (el auto-reply no
-// actualiza ultimo_mensaje_at, así que no cuenta como respuesta humana)
-const wspPendiente = (c) => !!(c.ultimo_entrante_at && (!c.ultimo_mensaje_at || c.ultimo_entrante_at >= c.ultimo_mensaje_at));
+// actualiza ultimo_mensaje_at, así que no cuenta como respuesta humana).
+// La marca manual (c.marcada) gana sobre el automático; el webhook la limpia
+// cuando entra un mensaje nuevo.
+const wspPendiente = (c) => c.marcada ? c.marcada === 'pendiente'
+  : !!(c.ultimo_entrante_at && (!c.ultimo_mensaje_at || c.ultimo_entrante_at >= c.ultimo_mensaje_at));
 function wspPintarBadge() {
   const b = el('navWspBadge'); if (!b) return;
   if (WSP_PEND_N > 0) { b.textContent = WSP_PEND_N; b.classList.remove('hidden'); }
@@ -3375,7 +3378,7 @@ async function wspPollPendientes(avisar) {
   if (!wspOn()) { wspDemoSeed(); convs = DB.wspDemo.convs; }
   else {
     const { data, error } = await AcademiasDB.sb.from('wsp_conversaciones')
-      .select('id,ultimo_entrante_at,ultimo_mensaje_at').limit(200);
+      .select('id,ultimo_entrante_at,ultimo_mensaje_at,marcada').limit(200);
     if (error) return;
     convs = data || [];
   }
@@ -3431,26 +3434,33 @@ window.wspAbrir = async (cid) => {
 };
 async function renderWsp(silencioso) {
   if (SCREEN !== 'whatsapp') { clearInterval(WSP_TIMER); return; }
-  if (!silencioso || !WSP_CONVS.length) await wspCargarConvs();
-  else await wspCargarConvs();
+  await wspCargarConvs();
   const box = el('wspBox'); if (!box) return;
+  // El autorefresh redibuja todo: conservar scroll de lista e hilo y el borrador
+  // (si el usuario está leyendo arriba o escribiendo, que no se le mueva nada)
+  const pHilo = el('wspHilo'), pLista = el('wspLista'), pTxt = el('wspTxt');
+  const keepHilo = pHilo ? { top: pHilo.scrollTop, abajo: pHilo.scrollHeight - pHilo.scrollTop - pHilo.clientHeight < 60 } : null;
+  const keepLista = pLista ? pLista.scrollTop : null;
+  const draft = pTxt ? { v: pTxt.value, focus: document.activeElement === pTxt } : null;
   const conv = WSP_CONVS.find((x) => x.id === WSP_SEL) || null;
   const msgs = conv ? await wspCargarMsgs(conv.id) : [];
   const hhmm = (iso) => iso ? new Date(iso).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '';
   const ventanaAbierta = conv && conv.ultimo_entrante_at && (Date.now() - new Date(conv.ultimo_entrante_at).getTime()) < 24 * 3600 * 1000;
   box.innerHTML = `
     <div class="grid gap-3 md:grid-cols-3" style="height: calc(100vh - 220px); min-height: 420px">
-      <div class="rounded-xl bg-white ring-1 ring-slate-200 overflow-y-auto">
+      <div id="wspLista" class="rounded-xl bg-white ring-1 ring-slate-200 overflow-y-auto overscroll-contain">
         <div class="sticky top-0 z-10 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold ${WSP_PEND_N ? 'text-rose-600' : 'text-emerald-600'}">
           ${WSP_PEND_N ? `🔔 ${WSP_PEND_N} por responder` : '✅ Todo respondido'}</div>
         ${WSP_CONVS.length ? [...WSP_CONVS].sort((a, b) => wspPendiente(b) - wspPendiente(a)).map((c) => {
           const jj = c.jugador_id ? jugador(c.jugador_id) : null;
           const pend = wspPendiente(c);
+          const hayMsgs = !!(c.ultimo_mensaje_at || c.ultimo_entrante_at);
           return `<button onclick="wspAbrir('${c.id}')" class="block w-full border-b border-slate-100 border-l-4 px-3 py-2.5 text-left hover:bg-slate-50 ${pend ? 'border-l-rose-400 bg-rose-50/40' : 'border-l-transparent'} ${WSP_SEL === c.id ? '!bg-indigo-50' : ''}">
             <div class="flex items-center justify-between gap-2">
               <span class="min-w-0 truncate text-sm ${pend ? 'font-bold' : 'font-medium'}">${c.nombre || '+' + c.telefono}</span>
               <span class="flex shrink-0 items-center gap-1">
-                ${pend ? '<span class="rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600">Por responder</span>' : ''}
+                ${pend ? '<span class="rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600">Por responder</span>'
+                  : hayMsgs ? '<span class="rounded-full bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-600">✓ Respondida</span>' : ''}
                 ${+c.no_leidos ? `<span class="rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">${c.no_leidos}</span>` : ''}
               </span>
             </div>
@@ -3461,11 +3471,16 @@ async function renderWsp(silencioso) {
       </div>
       <div class="md:col-span-2 flex flex-col rounded-xl bg-white ring-1 ring-slate-200 overflow-hidden">
         ${!conv ? '<div class="flex flex-1 items-center justify-center text-sm text-slate-400">Elige una conversación</div>' : `
-        <div class="border-b border-slate-200 px-4 py-2.5">
-          <div class="text-sm font-semibold">${conv.nombre || '+' + conv.telefono} <span class="text-xs font-normal text-slate-400">· +${conv.telefono}</span></div>
-          ${conv.jugador_id && jugador(conv.jugador_id) ? `<div class="text-[11px] text-slate-500">Alumno: <button onclick="formEditarAlumno('${conv.jugador_id}')" class="text-indigo-600 hover:underline">${nom(jugador(conv.jugador_id))}</button></div>` : ''}
+        <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
+          <div class="min-w-0">
+            <div class="truncate text-sm font-semibold">${conv.nombre || '+' + conv.telefono} <span class="text-xs font-normal text-slate-400">· +${conv.telefono}</span></div>
+            ${conv.jugador_id && jugador(conv.jugador_id) ? `<div class="text-[11px] text-slate-500">Alumno: <button onclick="formEditarAlumno('${conv.jugador_id}')" class="text-indigo-600 hover:underline">${nom(jugador(conv.jugador_id))}</button></div>` : ''}
+          </div>
+          <button onclick="wspMarcar('${conv.id}')" title="Cambia el estado de seguimiento de esta conversación"
+            class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium ring-1 ${wspPendiente(conv) ? 'text-emerald-700 ring-emerald-300 hover:bg-emerald-50' : 'text-rose-600 ring-rose-300 hover:bg-rose-50'}">
+            ${wspPendiente(conv) ? '✓ Marcar respondida' : '↩ Marcar por responder'}</button>
         </div>
-        <div id="wspHilo" class="flex-1 space-y-2 overflow-y-auto bg-slate-50 p-4">
+        <div id="wspHilo" class="flex-1 space-y-2 overflow-y-auto overscroll-contain bg-slate-50 p-4">
           ${msgs.map((m) => `
             <div class="flex ${m.direccion === 'out' ? 'justify-end' : 'justify-start'}">
               <div class="max-w-[80%] rounded-xl px-3 py-2 text-sm shadow-sm ${m.direccion === 'out' ? 'bg-emerald-100' : 'bg-white ring-1 ring-slate-200'}">
@@ -3490,8 +3505,27 @@ async function renderWsp(silencioso) {
         </div>`}
       </div>
     </div>`;
-  const hilo = el('wspHilo'); if (hilo) hilo.scrollTop = hilo.scrollHeight;
+  const hilo = el('wspHilo');
+  if (hilo) hilo.scrollTop = (keepHilo && !keepHilo.abajo) ? keepHilo.top : hilo.scrollHeight;
+  const lst = el('wspLista'); if (lst && keepLista != null) lst.scrollTop = keepLista;
+  const txt = el('wspTxt');
+  if (txt && draft && draft.v && !txt.value) {
+    txt.value = draft.v;
+    if (draft.focus) { txt.focus(); try { txt.setSelectionRange(txt.value.length, txt.value.length); } catch (e) { /* ok */ } }
+  } else if (txt && draft && draft.focus) txt.focus();
 }
+// Marca manual de seguimiento: alterna Respondida ⇄ Por responder. El webhook
+// limpia la marca cuando el tutor vuelve a escribir (regresa al automático).
+window.wspMarcar = async (cid) => {
+  const c = WSP_CONVS.find((x) => x.id === cid); if (!c) return;
+  const nueva = wspPendiente(c) ? 'respondida' : 'pendiente';
+  c.marcada = nueva;
+  if (wspOn()) {
+    const { error } = await AcademiasDB.sb.from('wsp_conversaciones').update({ marcada: nueva }).eq('id', cid);
+    if (error) { toast('⚠ No se pudo guardar la marca: ' + error.message); return; }
+  }
+  renderWsp(true);
+};
 let WSP_ENVIANDO = false;   // candado anti doble envío (Enter repetido / doble clic)
 window.wspEnviar = async () => {
   if (WSP_ENVIANDO) return;
@@ -3503,7 +3537,7 @@ window.wspEnviar = async () => {
   if (!wspOn()) {   // DEMO: simula el envío en local
     DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: 'texto',
       cuerpo: txt, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
-    conv.ultimo_mensaje = txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
+    conv.ultimo_mensaje = txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString(); conv.marcada = null;
     renderWsp(); return;
   }
   WSP_ENVIANDO = true;

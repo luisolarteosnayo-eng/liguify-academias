@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
       await dbWrite('POST', 'wsp_mensajes', { conversacion_id: c.id, academia_id: c.academia_id,
         direccion: 'out', tipo: 'texto', cuerpo: texto, wa_id: waId || null, enviado_por: quien, estado: 'sent' });
       await dbWrite('PATCH', `wsp_conversaciones?id=eq.${c.id}`,
-        { ultimo_mensaje: String(texto).slice(0, 120), ultimo_mensaje_at: new Date().toISOString(), no_leidos: 0 });
+        { ultimo_mensaje: String(texto).slice(0, 120), ultimo_mensaje_at: new Date().toISOString(), no_leidos: 0, marcada: null });
       return json({ ok: true, wa_id: waId });
     }
 
@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
           tipo: 'plantilla', cuerpo: cuerpoReal, wa_id: waId || null,
           enviado_por: quien, estado: 'sent' });
         await dbWrite('PATCH', `wsp_conversaciones?id=eq.${conv.id}`,
-          { ultimo_mensaje: '🔔 Recordatorio de cobranza', ultimo_mensaje_at: new Date().toISOString() });
+          { ultimo_mensaje: '🔔 Recordatorio de cobranza', ultimo_mensaje_at: new Date().toISOString(), marcada: null });
       }
       return json({ ok: true, wa_id: waId });
     }
