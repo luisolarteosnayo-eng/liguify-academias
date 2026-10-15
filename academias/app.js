@@ -3360,12 +3360,20 @@ let WSP_TIMER = null;
 let WSP_CONVS = [];
 let WSP_PEND_N = 0;   // conversaciones por responder (alimenta el badge del menú)
 const wspOn = () => !!(window.AcademiasDB && AcademiasDB.on);
-// Pendiente de respuesta = el último movimiento fue del tutor (el auto-reply no
-// actualiza ultimo_mensaje_at, así que no cuenta como respuesta humana).
-// La marca manual (c.marcada) gana sobre el automático; el webhook la limpia
-// cuando entra un mensaje nuevo.
-const wspPendiente = (c) => c.marcada ? c.marcada === 'pendiente'
-  : !!(c.ultimo_entrante_at && (!c.ultimo_mensaje_at || c.ultimo_entrante_at >= c.ultimo_mensaje_at));
+// Estados de cobranza de una conversación (c.marcada, v43):
+//   sin_respuesta  → el cliente escribió y nadie lo atiende (webhook lo pone SIEMPRE que entra mensaje)
+//   pago           → PAGÓ · pagara_cancha → PAGARÁ EN CANCHA · pendiente_pago → PENDIENTE DE PAGO
+// Sin marca: se infiere sin_respuesta si el último movimiento fue del tutor.
+const WSP_ESTADOS = {
+  sin_respuesta: { t: 'SIN RESPUESTA', c: 'rose' },
+  pago: { t: 'PAGÓ', c: 'emerald' },
+  pagara_cancha: { t: 'PAGARÁ EN CANCHA', c: 'sky' },
+  pendiente_pago: { t: 'PENDIENTE DE PAGO', c: 'amber' },
+};
+const wspEstado = (c) => c.marcada
+  || ((c.ultimo_entrante_at && (!c.ultimo_mensaje_at || c.ultimo_entrante_at >= c.ultimo_mensaje_at)) ? 'sin_respuesta' : null);
+const wspPendiente = (c) => wspEstado(c) === 'sin_respuesta';
+let WSP_FILTRO = '';   // '' = todas | clave de WSP_ESTADOS
 function wspPintarBadge() {
   const b = el('navWspBadge'); if (!b) return;
   if (WSP_PEND_N > 0) { b.textContent = WSP_PEND_N; b.classList.remove('hidden'); }
@@ -3383,7 +3391,7 @@ async function wspPollPendientes(avisar) {
     convs = data || [];
   }
   const n = convs.filter(wspPendiente).length;
-  if (avisar && n > WSP_PEND_N && SCREEN !== 'whatsapp') toast(`💬 WhatsApp: ${n} conversación(es) por responder`);
+  if (avisar && n > WSP_PEND_N && SCREEN !== 'whatsapp') toast(`💬 WhatsApp: ${n} conversación(es) sin respuesta`);
   WSP_PEND_N = n;
   wspPintarBadge();
 }
@@ -3397,7 +3405,7 @@ function wspDemoSeed() {
       { id: 'wc1', jugador_id: j.id, tutor_id: j.tutor_id, telefono: '51999888777', nombre: t.nombres || nom(j),
         ultimo_mensaje: '📷 Imagen', ultimo_mensaje_at: hace(30), ultimo_entrante_at: hace(30), no_leidos: 2 },
       { id: 'wc2', jugador_id: null, tutor_id: null, telefono: '51988777666', nombre: 'María Gonzales',
-        ultimo_mensaje: '¿Hasta cuándo puedo pagar?', ultimo_mensaje_at: hace(240), ultimo_entrante_at: hace(240), no_leidos: 1 },
+        ultimo_mensaje: '¿Hasta cuándo puedo pagar?', ultimo_mensaje_at: hace(240), ultimo_entrante_at: hace(240), no_leidos: 1, marcada: 'pagara_cancha' },
     ],
     msgs: [
       { id: 'wm1', conversacion_id: 'wc1', direccion: 'out', tipo: 'plantilla', cuerpo: '🔔 Recordatorio: saldo pendiente S/ 250 · ' + (sede(SEDE_ACTUAL) || {}).nombre_sede, created_at: hace(600), enviado_por: 'admin', estado: 'read' },
@@ -3449,18 +3457,26 @@ async function renderWsp(silencioso) {
   box.innerHTML = `
     <div class="grid gap-3 md:grid-cols-3" style="height: calc(100vh - 220px); min-height: 420px">
       <div id="wspLista" class="rounded-xl bg-white ring-1 ring-slate-200 overflow-y-auto overscroll-contain">
-        <div class="sticky top-0 z-10 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold ${WSP_PEND_N ? 'text-rose-600' : 'text-emerald-600'}">
-          ${WSP_PEND_N ? `🔔 ${WSP_PEND_N} por responder` : '✅ Todo respondido'}</div>
-        ${WSP_CONVS.length ? [...WSP_CONVS].sort((a, b) => wspPendiente(b) - wspPendiente(a)).map((c) => {
+        <div class="sticky top-0 z-10 border-b border-slate-200 bg-white">
+          <div class="px-3 pt-2 text-xs font-semibold ${WSP_PEND_N ? 'text-rose-600' : 'text-emerald-600'}">
+            ${WSP_PEND_N ? `🔔 ${WSP_PEND_N} sin respuesta` : '✅ Todo atendido'}</div>
+          <div class="flex flex-wrap gap-1 px-2 py-1.5">
+            <button onclick="wspFiltrar('')" class="rounded-full px-2 py-0.5 text-[10px] font-medium ${!WSP_FILTRO ? 'bg-ink-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Todas</button>
+            ${Object.entries(WSP_ESTADOS).map(([k, e]) => {
+              const n = WSP_CONVS.filter((c) => wspEstado(c) === k).length;
+              return `<button onclick="wspFiltrar('${k}')" class="rounded-full px-2 py-0.5 text-[10px] font-medium ${WSP_FILTRO === k ? `bg-${e.c}-600 text-white` : `bg-${e.c}-50 text-${e.c}-600 hover:bg-${e.c}-100`}">${e.t}${n ? ` · ${n}` : ''}</button>`;
+            }).join('')}
+          </div>
+        </div>
+        ${WSP_CONVS.length ? [...WSP_CONVS].sort((a, b) => wspPendiente(b) - wspPendiente(a))
+          .filter((c) => !WSP_FILTRO || wspEstado(c) === WSP_FILTRO).map((c) => {
           const jj = c.jugador_id ? jugador(c.jugador_id) : null;
-          const pend = wspPendiente(c);
-          const hayMsgs = !!(c.ultimo_mensaje_at || c.ultimo_entrante_at);
+          const est = wspEstado(c), pend = est === 'sin_respuesta', E = est && WSP_ESTADOS[est];
           return `<button onclick="wspAbrir('${c.id}')" class="block w-full border-b border-slate-100 border-l-4 px-3 py-2.5 text-left hover:bg-slate-50 ${pend ? 'border-l-rose-400 bg-rose-50/40' : 'border-l-transparent'} ${WSP_SEL === c.id ? '!bg-indigo-50' : ''}">
             <div class="flex items-center justify-between gap-2">
               <span class="min-w-0 truncate text-sm ${pend ? 'font-bold' : 'font-medium'}">${c.nombre || '+' + c.telefono}</span>
               <span class="flex shrink-0 items-center gap-1">
-                ${pend ? '<span class="rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600">Por responder</span>'
-                  : hayMsgs ? '<span class="rounded-full bg-emerald-50 px-1.5 text-[10px] font-medium text-emerald-600">✓ Respondida</span>' : ''}
+                ${E ? `<span class="rounded-full bg-${E.c}-100 px-1.5 text-[10px] font-bold text-${E.c}-700">${E.t}</span>` : ''}
                 ${+c.no_leidos ? `<span class="rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">${c.no_leidos}</span>` : ''}
               </span>
             </div>
@@ -3476,9 +3492,12 @@ async function renderWsp(silencioso) {
             <div class="truncate text-sm font-semibold">${conv.nombre || '+' + conv.telefono} <span class="text-xs font-normal text-slate-400">· +${conv.telefono}</span></div>
             ${conv.jugador_id && jugador(conv.jugador_id) ? `<div class="text-[11px] text-slate-500">Alumno: <button onclick="formEditarAlumno('${conv.jugador_id}')" class="text-indigo-600 hover:underline">${nom(jugador(conv.jugador_id))}</button></div>` : ''}
           </div>
-          <button onclick="wspMarcar('${conv.id}')" title="Cambia el estado de seguimiento de esta conversación"
-            class="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium ring-1 ${wspPendiente(conv) ? 'text-emerald-700 ring-emerald-300 hover:bg-emerald-50' : 'text-rose-600 ring-rose-300 hover:bg-rose-50'}">
-            ${wspPendiente(conv) ? '✓ Marcar respondida' : '↩ Marcar por responder'}</button>
+          ${(() => { const est = wspEstado(conv); const col = est ? WSP_ESTADOS[est].c : 'slate';
+            return `<select onchange="wspEstadoSet('${conv.id}', this.value)" title="Estado de seguimiento de la cobranza"
+              class="shrink-0 rounded-lg border px-2 py-1.5 text-xs font-bold border-${col}-300 bg-${col}-50 text-${col}-700">
+              <option value="" ${!est ? 'selected' : ''}>— estado —</option>
+              ${Object.entries(WSP_ESTADOS).map(([k, e]) => `<option value="${k}" ${est === k ? 'selected' : ''}>${e.t}</option>`).join('')}
+            </select>`; })()}
         </div>
         <div id="wspHilo" class="flex-1 space-y-2 overflow-y-auto overscroll-contain bg-slate-50 p-4">
           ${msgs.map((m) => `
@@ -3514,18 +3533,19 @@ async function renderWsp(silencioso) {
     if (draft.focus) { txt.focus(); try { txt.setSelectionRange(txt.value.length, txt.value.length); } catch (e) { /* ok */ } }
   } else if (txt && draft && draft.focus) txt.focus();
 }
-// Marca manual de seguimiento: alterna Respondida ⇄ Por responder. El webhook
-// limpia la marca cuando el tutor vuelve a escribir (regresa al automático).
-window.wspMarcar = async (cid) => {
+// Estado manual de seguimiento (PAGÓ / PAGARÁ EN CANCHA / PENDIENTE DE PAGO /
+// SIN RESPUESTA). El webhook lo regresa a SIN RESPUESTA cada vez que el
+// cliente escribe; el recordatorio de cobranza lo pone en PENDIENTE DE PAGO.
+window.wspEstadoSet = async (cid, estado) => {
   const c = WSP_CONVS.find((x) => x.id === cid); if (!c) return;
-  const nueva = wspPendiente(c) ? 'respondida' : 'pendiente';
-  c.marcada = nueva;
+  c.marcada = estado || null;
   if (wspOn()) {
-    const { error } = await AcademiasDB.sb.from('wsp_conversaciones').update({ marcada: nueva }).eq('id', cid);
-    if (error) { toast('⚠ No se pudo guardar la marca: ' + error.message); return; }
+    const { error } = await AcademiasDB.sb.from('wsp_conversaciones').update({ marcada: estado || null }).eq('id', cid);
+    if (error) { toast('⚠ No se pudo guardar el estado: ' + error.message); return; }
   }
   renderWsp(true);
 };
+window.wspFiltrar = (f) => { WSP_FILTRO = f; renderWsp(true); };
 let WSP_ENVIANDO = false;   // candado anti doble envío (Enter repetido / doble clic)
 window.wspEnviar = async () => {
   if (WSP_ENVIANDO) return;
@@ -3537,7 +3557,8 @@ window.wspEnviar = async () => {
   if (!wspOn()) {   // DEMO: simula el envío en local
     DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: 'texto',
       cuerpo: txt, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
-    conv.ultimo_mensaje = txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString(); conv.marcada = null;
+    conv.ultimo_mensaje = txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
+    if (conv.marcada === 'sin_respuesta') conv.marcada = null;   // responder no borra la clasificación de cobranza
     renderWsp(); return;
   }
   WSP_ENVIANDO = true;

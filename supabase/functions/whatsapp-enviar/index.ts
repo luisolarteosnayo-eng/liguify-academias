@@ -78,15 +78,18 @@ Deno.serve(async (req) => {
       const { conversacion_id, texto } = body;
       if (!conversacion_id || !(texto || '').trim()) return json({ error: 'Faltan conversacion_id o texto' }, 400);
       // RLS: si el usuario no es de la academia dueña, no la ve
-      const [c] = await apiUser(`wsp_conversaciones?id=eq.${conversacion_id}&select=id,academia_id,telefono,ultimo_entrante_at`);
+      const [c] = await apiUser(`wsp_conversaciones?id=eq.${conversacion_id}&select=id,academia_id,telefono,ultimo_entrante_at,marcada`);
       if (!c) return json({ error: 'Conversación no encontrada (¿es de tu academia?)' }, 403);
       const abierta = c.ultimo_entrante_at && (Date.now() - new Date(c.ultimo_entrante_at).getTime()) < 24 * 3600 * 1000;
       if (!abierta) return json({ error: 'La ventana de 24h está cerrada: el cliente no escribió en el último día. Usa el recordatorio (plantilla) o espera su mensaje.' }, 400);
       const waId = await wa({ to: c.telefono, type: 'text', text: { body: String(texto).slice(0, 4000) } });
       await dbWrite('POST', 'wsp_mensajes', { conversacion_id: c.id, academia_id: c.academia_id,
         direccion: 'out', tipo: 'texto', cuerpo: texto, wa_id: waId || null, enviado_por: quien, estado: 'sent' });
+      // Responder quita el SIN RESPUESTA, pero NUNCA borra una clasificación de
+      // cobranza (pago / pagara_cancha / pendiente_pago) puesta por el equipo
       await dbWrite('PATCH', `wsp_conversaciones?id=eq.${c.id}`,
-        { ultimo_mensaje: String(texto).slice(0, 120), ultimo_mensaje_at: new Date().toISOString(), no_leidos: 0, marcada: null });
+        { ultimo_mensaje: String(texto).slice(0, 120), ultimo_mensaje_at: new Date().toISOString(), no_leidos: 0,
+          marcada: c.marcada === 'sin_respuesta' ? null : (c.marcada || null) });
       return json({ ok: true, wa_id: waId });
     }
 
@@ -138,8 +141,9 @@ Deno.serve(async (req) => {
         await dbWrite('POST', 'wsp_mensajes', { conversacion_id: conv.id, academia_id: aca, direccion: 'out',
           tipo: 'plantilla', cuerpo: cuerpoReal, wa_id: waId || null,
           enviado_por: quien, estado: 'sent' });
+        // Recordatorio enviado → la conversación queda en PENDIENTE DE PAGO
         await dbWrite('PATCH', `wsp_conversaciones?id=eq.${conv.id}`,
-          { ultimo_mensaje: '🔔 Recordatorio de cobranza', ultimo_mensaje_at: new Date().toISOString(), marcada: null });
+          { ultimo_mensaje: '🔔 Recordatorio de cobranza', ultimo_mensaje_at: new Date().toISOString(), marcada: 'pendiente_pago' });
       }
       return json({ ok: true, wa_id: waId });
     }
