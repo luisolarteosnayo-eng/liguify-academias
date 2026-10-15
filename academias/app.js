@@ -3103,7 +3103,7 @@ window.formPagoAlumno = (jid, voucherPreset) => {
     .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
   if (!pend.length) { toast('No hay cargos pendientes de pago'); return; }
   const medios = mediosPagoSede();
-  openModal(`Registrar pago · ${nom(j)}`, `
+  const formHTML = `
     <form onsubmit="guardarPagoAlumno(event,'${jid}')">
       <p class="text-xs text-slate-500 mb-2">Marca los cargos a pagar. Puedes editar el monto para un <b>pago parcial</b>; el resto queda pendiente en el cargo.</p>
       <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3 max-h-52 overflow-y-auto">
@@ -3151,7 +3151,18 @@ window.formPagoAlumno = (jid, voucherPreset) => {
         </div>`;
       })()}
       ${submitBar('Registrar pago')}
-    </form>`);
+    </form>`;
+  // Con voucher de WhatsApp: modal ancho con la imagen COMPLETA al lado del
+  // formulario, para copiar el N° de operación y la fecha mirando el voucher
+  openModal(`Registrar pago · ${nom(j)}`, voucherPreset ? `
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="self-start rounded-lg bg-slate-50 p-2 ring-1 ring-slate-200">
+        <div class="mb-1 px-1 text-xs font-medium text-emerald-700">✓ Voucher recibido por WhatsApp <span class="font-normal text-slate-400">· clic para ampliar</span></div>
+        <img src="${voucherPreset}" onclick="zoomImg(PAGO_VOUCHER,'Voucher de WhatsApp')"
+          class="max-h-[70vh] w-full cursor-zoom-in rounded-lg bg-white object-contain ring-1 ring-slate-200">
+      </div>
+      <div>${formHTML}</div>
+    </div>` : formHTML, voucherPreset ? 'xl' : undefined);
   pagoTotal();
   pgVoucher();
 };
