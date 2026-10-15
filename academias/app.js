@@ -4229,6 +4229,21 @@ window.formEditarAlumno = (jid) => {
         </div>
       </div>
     </form>`);
+  // Cabecera enriquecida de la ficha: nombre grande, sede debajo y logo de la
+  // sede a la derecha (openModal la restaura al abrir cualquier otro modal)
+  const sd = sede(j.sede_id);
+  const mt = el('modalTitle');
+  if (mt) {
+    mt.classList.remove('truncate'); mt.classList.add('w-full');
+    mt.innerHTML = `
+      <div class="flex w-full items-center justify-between gap-3 pr-2">
+        <div class="min-w-0">
+          <div class="truncate text-xl font-bold leading-tight">${nom(j)}</div>
+          ${sd ? `<div class="truncate text-xs font-normal text-slate-500">📍 ${sd.nombre_sede}</div>` : ''}
+        </div>
+        ${sd && sd.logo_url ? `<img src="${sd.logo_url}" alt="${sd.nombre_sede}" class="h-11 w-11 shrink-0 rounded-full bg-white object-contain ring-1 ring-slate-200">` : ''}
+      </div>`;
+  }
 };
 window.guardarEdicionAlumno = async (e, jid) => {
   e.preventDefault();
@@ -4469,7 +4484,9 @@ window.guardarAgregarAlumno = (e, tid) => {
 // MODALES Y FORMULARIOS
 // =====================================================================
 function openModal(title, bodyHtml, ancho) {
-  el('modalTitle').textContent = title;
+  const mt = el('modalTitle');
+  mt.classList.add('truncate'); mt.classList.remove('w-full');   // deshace la cabecera enriquecida de la ficha
+  mt.textContent = title;
   el('modalBody').innerHTML = bodyHtml;
   const box = el('modalBox');   // 'xl' = modal ancho (p. ej. aprobación con voucher grande en laptop)
   if (box) { box.classList.remove('max-w-lg', 'max-w-5xl'); box.classList.add(ancho === 'xl' ? 'max-w-5xl' : 'max-w-lg'); }
