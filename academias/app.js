@@ -592,10 +592,11 @@ function renderNav() {
     <button data-screen="${m.id}"
       class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left
              ${SCREEN === m.id ? 'bg-brand-500 text-white font-bold' : 'text-white/70 hover:bg-white/10 hover:text-white'}">
-      <span>${m.icon}</span><span>${m.label}</span>
+      <span>${m.icon}</span><span class="flex-1">${m.label}</span>${m.id === 'whatsapp' ? '<span id="navWspBadge" class="hidden shrink-0 rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white"></span>' : ''}
     </button>`).join('');
   el('nav').querySelectorAll('button').forEach((b) =>
     b.addEventListener('click', () => { TRACK_SEL = null; TORNEO_SEL = null; go(b.dataset.screen); toggleNav(false); }));
+  wspPintarBadge();
 }
 
 function go(screen) {
@@ -3321,7 +3322,32 @@ window.waCobroEnviar = (jid, num) => {
 let WSP_SEL = null;
 let WSP_TIMER = null;
 let WSP_CONVS = [];
+let WSP_PEND_N = 0;   // conversaciones por responder (alimenta el badge del menú)
 const wspOn = () => !!(window.AcademiasDB && AcademiasDB.on);
+// Pendiente de respuesta = el último movimiento fue del tutor (el auto-reply no
+// actualiza ultimo_mensaje_at, así que no cuenta como respuesta humana)
+const wspPendiente = (c) => !!(c.ultimo_entrante_at && (!c.ultimo_mensaje_at || c.ultimo_entrante_at >= c.ultimo_mensaje_at));
+function wspPintarBadge() {
+  const b = el('navWspBadge'); if (!b) return;
+  if (WSP_PEND_N > 0) { b.textContent = WSP_PEND_N; b.classList.remove('hidden'); }
+  else b.classList.add('hidden');
+}
+// Poll ligero desde cualquier pantalla: mantiene el badge y avisa si entra algo nuevo
+async function wspPollPendientes(avisar) {
+  if (!MENU.some((m) => m.id === 'whatsapp' && m.roles.includes(ROL))) return;
+  let convs = [];
+  if (!wspOn()) { wspDemoSeed(); convs = DB.wspDemo.convs; }
+  else {
+    const { data, error } = await AcademiasDB.sb.from('wsp_conversaciones')
+      .select('id,ultimo_entrante_at,ultimo_mensaje_at').limit(200);
+    if (error) return;
+    convs = data || [];
+  }
+  const n = convs.filter(wspPendiente).length;
+  if (avisar && n > WSP_PEND_N && SCREEN !== 'whatsapp') toast(`💬 WhatsApp: ${n} conversación(es) por responder`);
+  WSP_PEND_N = n;
+  wspPintarBadge();
+}
 function wspDemoSeed() {
   if (DB.wspDemo) return;
   const j = alumnosSede()[0] || DB.jugadores[0];
@@ -3343,10 +3369,14 @@ function wspDemoSeed() {
   };
 }
 async function wspCargarConvs() {
-  if (!wspOn()) { wspDemoSeed(); WSP_CONVS = DB.wspDemo.convs; return; }
-  const { data, error } = await AcademiasDB.sb.from('wsp_conversaciones')
-    .select('*').order('ultimo_mensaje_at', { ascending: false, nullsFirst: false }).limit(100);
-  if (!error) WSP_CONVS = data || [];
+  if (!wspOn()) { wspDemoSeed(); WSP_CONVS = DB.wspDemo.convs; }
+  else {
+    const { data, error } = await AcademiasDB.sb.from('wsp_conversaciones')
+      .select('*').order('ultimo_mensaje_at', { ascending: false, nullsFirst: false }).limit(100);
+    if (!error) WSP_CONVS = data || [];
+  }
+  WSP_PEND_N = WSP_CONVS.filter(wspPendiente).length;
+  wspPintarBadge();
 }
 async function wspCargarMsgs(cid) {
   if (!wspOn()) { wspDemoSeed(); return DB.wspDemo.msgs.filter((m) => m.conversacion_id === cid); }
@@ -3375,11 +3405,18 @@ async function renderWsp(silencioso) {
   box.innerHTML = `
     <div class="grid gap-3 md:grid-cols-3" style="height: calc(100vh - 220px); min-height: 420px">
       <div class="rounded-xl bg-white ring-1 ring-slate-200 overflow-y-auto">
-        ${WSP_CONVS.length ? WSP_CONVS.map((c) => { const jj = c.jugador_id ? jugador(c.jugador_id) : null;
-          return `<button onclick="wspAbrir('${c.id}')" class="block w-full border-b border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50 ${WSP_SEL === c.id ? 'bg-indigo-50' : ''}">
+        <div class="sticky top-0 z-10 border-b border-slate-200 bg-white px-3 py-2 text-xs font-semibold ${WSP_PEND_N ? 'text-rose-600' : 'text-emerald-600'}">
+          ${WSP_PEND_N ? `🔔 ${WSP_PEND_N} por responder` : '✅ Todo respondido'}</div>
+        ${WSP_CONVS.length ? [...WSP_CONVS].sort((a, b) => wspPendiente(b) - wspPendiente(a)).map((c) => {
+          const jj = c.jugador_id ? jugador(c.jugador_id) : null;
+          const pend = wspPendiente(c);
+          return `<button onclick="wspAbrir('${c.id}')" class="block w-full border-b border-slate-100 border-l-4 px-3 py-2.5 text-left hover:bg-slate-50 ${pend ? 'border-l-rose-400 bg-rose-50/40' : 'border-l-transparent'} ${WSP_SEL === c.id ? '!bg-indigo-50' : ''}">
             <div class="flex items-center justify-between gap-2">
-              <span class="min-w-0 truncate text-sm font-medium">${c.nombre || '+' + c.telefono}</span>
-              ${+c.no_leidos ? `<span class="shrink-0 rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">${c.no_leidos}</span>` : ''}
+              <span class="min-w-0 truncate text-sm ${pend ? 'font-bold' : 'font-medium'}">${c.nombre || '+' + c.telefono}</span>
+              <span class="flex shrink-0 items-center gap-1">
+                ${pend ? '<span class="rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600">Por responder</span>' : ''}
+                ${+c.no_leidos ? `<span class="rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white">${c.no_leidos}</span>` : ''}
+              </span>
             </div>
             ${jj ? `<div class="text-[11px] text-indigo-600 truncate">🧒 ${nom(jj)}</div>` : '<div class="text-[11px] text-amber-600">sin alumno vinculado</div>'}
             <div class="truncate text-xs text-slate-400">${c.ultimo_mensaje || ''}</div>
@@ -6517,6 +6554,9 @@ function bootApp() {
   renderSedeSelect();
   renderNav();
   go('dashboard');
+  // Alertas de WhatsApp: badge en el menú + aviso si entra algo nuevo (cualquier pantalla)
+  wspPollPendientes();
+  setInterval(() => wspPollPendientes(true), 60000);
 }
 
 // ---------- Auth UI ----------
