@@ -3380,6 +3380,7 @@ const WSP_ESTADOS = {
   pago: { t: 'PAGÓ', c: 'emerald' },
   pagara_cancha: { t: 'PAGARÁ EN CANCHA', c: 'sky' },
   pendiente_pago: { t: 'PENDIENTE DE PAGO', c: 'amber' },
+  baja: { t: 'DADO DE BAJA', c: 'slate' },
 };
 const wspEstado = (c) => c.marcada
   || ((c.ultimo_entrante_at && (!c.ultimo_mensaje_at || c.ultimo_entrante_at >= c.ultimo_mensaje_at)) ? 'sin_respuesta' : null);
