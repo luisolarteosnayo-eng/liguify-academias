@@ -96,10 +96,24 @@ Deno.serve(async (req) => {
       const { telefono, variables, plantilla } = body;
       const to = String(telefono || '').replace(/\D/g, '');
       if (!to || !Array.isArray(variables)) return json({ error: 'Faltan telefono o variables' }, 400);
-      // El usuario debe poder ver a algún tutor con ese teléfono (RLS = su academia);
-      // compara sobre telefono_norm (solo dígitos: los guardados llevan espacios)
-      const tuts = await apiUser(`tutores?select=id,academia_id,nombres&telefono_norm=like.*${to.slice(-9)}&limit=1`);
-      if (!tuts.length) return json({ error: 'El teléfono no corresponde a un tutor de tu academia' }, 403);
+      // El usuario debe poder ver a alguien con ese teléfono (RLS = su academia);
+      // compara sobre telefono_norm (solo dígitos: los guardados llevan espacios).
+      // El celular puede estar en el TUTOR o en la ficha del ALUMNO (datos migrados).
+      const last9 = to.slice(-9);
+      let aca = null, tutorId = null, nombreConv = null, jj = null;
+      const tuts = await apiUser(`tutores?select=id,academia_id,nombres&telefono_norm=like.*${last9}&limit=1`);
+      if (tuts.length) {
+        aca = tuts[0].academia_id; tutorId = tuts[0].id; nombreConv = tuts[0].nombres || null;
+        [jj] = await apiUser(`jugadores?select=id,sede_id&tutor_id=eq.${tutorId}&limit=1`);
+      } else {
+        const js = await apiUser(`jugadores?select=id,sede_id,tutor_id,nombre,apellido&telefono_norm=like.*${last9}&limit=1`);
+        if (!js.length) return json({ error: 'El teléfono no corresponde a un tutor ni a un alumno de tu academia' }, 403);
+        jj = js[0]; tutorId = jj.tutor_id || null;
+        nombreConv = [jj.nombre, jj.apellido].filter(Boolean).join(' ') || null;
+        const [sd] = await apiUser(`sedes?select=academia_id&id=eq.${jj.sede_id}&limit=1`);
+        if (!sd) return json({ error: 'No se pudo resolver la academia del alumno' }, 403);
+        aca = sd.academia_id;
+      }
       const tpl = plantilla || Deno.env.get('WHATSAPP_TPL_COBRANZA') || 'cobranza_liguify';
       const payload = tpl === 'hello_world'
         ? { to, type: 'template', template: { name: 'hello_world', language: { code: 'en_US' } } }   // plantilla de PRUEBAS de Meta
@@ -107,13 +121,11 @@ Deno.serve(async (req) => {
             components: [{ type: 'body', parameters: variables.map((v: unknown) => ({ type: 'text', text: String(v).slice(0, 120) })) }] } };
       const waId = await wa(payload);
       // Registrar también en la bandeja (crea la conversación si no existe)
-      const aca = tuts[0].academia_id;
       let [conv] = await apiUser(`wsp_conversaciones?telefono=eq.${to}&academia_id=eq.${aca}&select=id&limit=1`);
       if (!conv) {
-        // La conversación nace vinculada: alumno del tutor + sede + nombre
-        const [jj] = await apiUser(`jugadores?select=id,sede_id&tutor_id=eq.${tuts[0].id}&limit=1`);
-        await dbWrite('POST', 'wsp_conversaciones', { academia_id: aca, tutor_id: tuts[0].id, telefono: to,
-          jugador_id: jj ? jj.id : null, sede_id: jj ? jj.sede_id : null, nombre: tuts[0].nombres || null });
+        // La conversación nace vinculada: alumno + sede + nombre (tutor si existe)
+        await dbWrite('POST', 'wsp_conversaciones', { academia_id: aca, tutor_id: tutorId, telefono: to,
+          jugador_id: jj ? jj.id : null, sede_id: jj ? jj.sede_id : null, nombre: nombreConv });
         [conv] = await apiUser(`wsp_conversaciones?telefono=eq.${to}&academia_id=eq.${aca}&select=id&limit=1`);
       }
       if (conv) {
