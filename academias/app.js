@@ -3595,7 +3595,7 @@ window.enviarCobranzaMasiva = async () => {
       const sd = sede(x.j.sede_id);
       const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body: {
         accion: 'cobranza', telefono: x.num,
-        variables: [(x.t.nombres || 'padre de familia').split(' ')[0], nom(x.j), 'S/ ' + x.total.toFixed(2),
+        variables: [((x.t.nombres || '').trim().split(/\s+/)[0] || 'padre de familia'), nom(x.j), 'S/ ' + x.total.toFixed(2),
           sd ? sd.nombre_sede : DB.academia.nombre_academia,
           (sd && sd.medios_cobro) || 'consulta los medios de pago con tu sede'],   // {{5}} de la plantilla
       } });

@@ -120,6 +120,12 @@ Deno.serve(async (req) => {
         : { to, type: 'template', template: { name: tpl, language: { code: 'es_PE' },   // la plantilla se aprobó como Spanish (PER)
             components: [{ type: 'body', parameters: variables.map((v: unknown) => ({ type: 'text', text: String(v).slice(0, 120) })) }] } };
       const waId = await wa(payload);
+      // Texto REAL que recibe el cliente (cuerpo de la plantilla cobranza_liguify
+      // con las variables puestas): así la bandeja muestra lo mismo que su WhatsApp
+      const [v1, v2, v3, v4, v5] = variables.map((v: unknown) => String(v));
+      const cuerpoReal = tpl === 'hello_world'
+        ? '[plantilla de prueba hello_world]'
+        : `Hola ${v1} 👋, le recordamos que ${v2} tiene un saldo pendiente de ${v3} en ${v4}. Puede pagar por: ${v5} y enviar su comprobante respondiendo a este mensaje. ¡Gracias!`;
       // Registrar también en la bandeja (crea la conversación si no existe)
       let [conv] = await apiUser(`wsp_conversaciones?telefono=eq.${to}&academia_id=eq.${aca}&select=id&limit=1`);
       if (!conv) {
@@ -130,7 +136,7 @@ Deno.serve(async (req) => {
       }
       if (conv) {
         await dbWrite('POST', 'wsp_mensajes', { conversacion_id: conv.id, academia_id: aca, direccion: 'out',
-          tipo: 'plantilla', cuerpo: `[recordatorio de cobranza] ${variables.join(' · ')}`, wa_id: waId || null,
+          tipo: 'plantilla', cuerpo: cuerpoReal, wa_id: waId || null,
           enviado_por: quien, estado: 'sent' });
         await dbWrite('PATCH', `wsp_conversaciones?id=eq.${conv.id}`,
           { ultimo_mensaje: '🔔 Recordatorio de cobranza', ultimo_mensaje_at: new Date().toISOString() });
