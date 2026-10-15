@@ -4206,7 +4206,9 @@ window.formEditarAlumno = (jid) => {
       <p class="mb-3 text-xs text-slate-500">Categoría <b>${anio(j.fecha_nacimiento)}</b> (inmutable)
         · Estado: ${badge(j.estado_alumno === 'activo' ? 'Activo' : j.estado_alumno === 'prospecto' ? 'Prospecto' : 'Baja', j.estado_alumno === 'activo' ? 'emerald' : j.estado_alumno === 'prospecto' ? 'fuchsia' : 'slate')}
         ${j.estado_alumno === 'baja' ? `· Fecha de baja: <input type="date" value="${j.baja_fecha || ''}" onchange="editarFechaBaja('${jid}', this.value)"
-          class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Corrige el mes real de la baja (cuenta para el cierre mensual)">` : ''}
+          class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Corrige el mes real de la baja (cuenta para el cierre mensual)">
+          ${j.baja_motivo ? `· Motivo: <b class="text-rose-600">${j.baja_motivo}</b>` : ''}
+          ${j.baja_comentario ? `<span class="cursor-help" title="${String(j.baja_comentario).replace(/"/g, '&quot;')}">💬</span>` : ''}` : ''}
         ${j.fecha_registro ? `· Inscrito: <b>${fmtDMY(j.fecha_registro)}</b>` : ''}
         ${j.registrado_por ? `· Registró: <b>${String(j.registrado_por).replace(/</g, '&lt;')}</b>` : ''}
         ${j.estado_alumno === 'prospecto' && j.prueba_fecha ? `· 🎈 Clase de prueba: <input type="date" value="${j.prueba_fecha}"
@@ -4310,15 +4312,22 @@ window.editarFechaBaja = (jid, f) => {
     && (i.baja_fecha || null) === antes).forEach((i) => { i.baja_fecha = f; });
   toast(`Fecha de baja: ${fmtDMY(f)} · recalcula el cierre de ese mes para verla`);
 };
+const MOTIVOS_BAJA = ['DEJO DE ASISTIR', 'PROBLEMA CON ACADEMIA', 'PROBLEMA CON PROFESOR', 'OTRO'];
 window.toggleBajaAlumno = (jid) => {
   const j = jugador(jid);
   if (j.estado_alumno === 'activo') {
-    j.estado_alumno = 'baja';
-    j.baja_fecha = HOY;
-    // La baja libera sus cupos: desactiva sus inscripciones en tracks
-    // (dejan de contar en la rentabilidad y de generar CR mensuales)
-    DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; i.baja_fecha = HOY; });
-    closeModal(); toast('Alumno dado de baja · sus cupos de track quedaron libres');
+    // La baja pide motivo + comentario antes de ejecutarse
+    openModal(`Dar de baja · ${nom(j)}`, `
+      <form onsubmit="confirmarBajaAlumno(event,'${jid}')">
+        <p class="mb-3 text-sm text-slate-500">La baja libera sus cupos de track y deja de generar CR mensuales. Sus cargos y pagos se conservan para la trazabilidad.</p>
+        ${field('Motivo de la baja *', select('bj_motivo', [{ v: '', t: '— Elige un motivo —' }, ...MOTIVOS_BAJA.map((m) => ({ v: m, t: m }))], 'required'))}
+        ${field('Comentarios', `<textarea id="bj_coment" rows="3" placeholder="Detalle opcional: qué pasó, con quién se conversó…" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>`)}
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="formEditarAlumno('${jid}')" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
+          <button type="submit" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">Dar de baja</button>
+        </div>
+      </form>`);
+    return;
   } else {
     j.estado_alumno = 'activo';
     j.baja_fecha = null;
@@ -4339,6 +4348,20 @@ window.toggleBajaAlumno = (jid) => {
     formEditarAlumno(jid); njTab('tracks');   // directo a revisar sus tracks
     return;
   }
+};
+window.confirmarBajaAlumno = (e, jid) => {
+  e.preventDefault();
+  const motivo = val('bj_motivo');
+  if (!motivo) { toast('Elige el motivo de la baja'); return; }
+  const j = jugador(jid);
+  j.estado_alumno = 'baja';
+  j.baja_fecha = HOY;
+  j.baja_motivo = motivo;
+  j.baja_comentario = (val('bj_coment') || '').trim() || null;
+  // La baja libera sus cupos: desactiva sus inscripciones en tracks
+  // (dejan de contar en la rentabilidad y de generar CR mensuales)
+  DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo).forEach((i) => { i.activo = false; i.baja_fecha = HOY; });
+  closeModal(); toast('Alumno dado de baja · sus cupos de track quedaron libres');
   if (TRACK_SEL) renderTrackRows(); else go(SCREEN);
 };
 
