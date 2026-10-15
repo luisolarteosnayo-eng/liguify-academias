@@ -3491,7 +3491,7 @@ window.formCobranzaMasiva = () => {
   const cand = candidatosCobranzaMasiva();
   if (!cand.length) { toast('No hay candidatos: sin deuda, sin teléfono válido o ya recordados esta semana'); return; }
   openModal(`📣 Recordatorios masivos · ${sede(SEDE_ACTUAL).nombre_sede}`, `
-    <p class="mb-2 text-xs text-slate-500">Se enviará la <b>plantilla aprobada de WhatsApp</b> (vía Twilio) a los tutores marcados. Quedan fuera los que recibieron un recordatorio en los últimos 7 días.</p>
+    <p class="mb-2 text-xs text-slate-500">Se enviará la <b>plantilla aprobada de WhatsApp</b> a los tutores marcados. Quedan fuera los que recibieron un recordatorio en los últimos 7 días.</p>
     <div class="mb-2 max-h-72 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
       ${cand.map((x, i) => `<label class="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer">
         <input type="checkbox" class="cmChk h-4 w-4 accent-emerald-600" value="${i}" ${x.vencido ? 'checked' : ''} onchange="cmCount()">

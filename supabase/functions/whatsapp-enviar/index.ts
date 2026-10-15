@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
       const tpl = plantilla || Deno.env.get('WHATSAPP_TPL_COBRANZA') || 'cobranza_liguify';
       const payload = tpl === 'hello_world'
         ? { to, type: 'template', template: { name: 'hello_world', language: { code: 'en_US' } } }   // plantilla de PRUEBAS de Meta
-        : { to, type: 'template', template: { name: tpl, language: { code: 'es' },
+        : { to, type: 'template', template: { name: tpl, language: { code: 'es_PE' },   // la plantilla se aprobó como Spanish (PER)
             components: [{ type: 'body', parameters: variables.map((v: unknown) => ({ type: 'text', text: String(v).slice(0, 120) })) }] } };
       const waId = await wa(payload);
       // Registrar también en la bandeja (crea la conversación si no existe)
