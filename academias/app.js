@@ -3506,7 +3506,7 @@ async function renderWsp(silencioso) {
                 ${m.tipo === 'imagen' || m.tipo === 'documento' ? `
                   <div class="flex flex-col gap-1.5">
                     <button onclick="wspVerMedia('${m.id}','${(m.media_path || '').replace(/'/g, '')}')" class="rounded-lg bg-slate-100 px-3 py-4 text-2xl hover:bg-slate-200">${m.tipo === 'imagen' ? '🖼️' : '📄'} <span class="block text-xs text-slate-500">Ver ${m.tipo}</span></button>
-                    ${conv.jugador_id ? `<button onclick="wspUsarVoucher('${conv.id}','${m.id}')" class="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">💳 Registrar pago con este voucher</button>` : ''}
+                    ${conv.jugador_id && m.direccion === 'in' ? `<button onclick="wspUsarVoucher('${conv.id}','${m.id}')" class="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">💳 Registrar pago con este voucher</button>` : ''}
                   </div>${m.cuerpo ? `<div class="mt-1">${String(m.cuerpo).replace(/</g, '&lt;')}</div>` : ''}`
                 : `<div>${String(m.cuerpo || '').replace(/</g, '&lt;')}</div>`}
                 <div class="mt-0.5 text-right text-[10px] text-slate-400">${m.enviado_por && m.direccion === 'out' ? m.enviado_por + ' · ' : ''}${hhmm(m.created_at)}${m.direccion === 'out' && m.estado ? ' · ' + ({ sent: '✓', delivered: '✓✓', read: '✓✓', failed: '⚠' }[m.estado] || '') : ''}</div>
@@ -3515,8 +3515,17 @@ async function renderWsp(silencioso) {
         </div>
         <div class="border-t border-slate-200 p-3">
           ${ventanaAbierta || !wspOn() ? `
+          ${WSP_IMG ? `<div class="mb-2 flex items-center gap-3 rounded-lg bg-slate-50 p-2 ring-1 ring-slate-200">
+            <img src="${WSP_IMG}" class="h-16 w-16 rounded-lg object-cover ring-1 ring-slate-200">
+            <span class="flex-1 text-xs text-slate-500">Imagen lista para enviar — el texto de abajo irá como pie de foto</span>
+            <button onclick="wspImgQuitar()" class="rounded-lg px-2 py-1 text-xs text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">✕ Quitar</button>
+          </div>` : ''}
           <div class="flex gap-2">
-            <input id="wspTxt" placeholder="Escribe una respuesta…" onkeydown="if(event.key==='Enter'){event.preventDefault(); if(!event.repeat) wspEnviar();}"
+            <label title="Adjuntar imagen" class="flex cursor-pointer items-center rounded-lg px-3 text-lg ring-1 ring-slate-300 hover:bg-slate-50">📎
+              <input type="file" accept="image/*" class="hidden" onchange="wspImgArchivo(this)"></label>
+            <input id="wspTxt" placeholder="Escribe una respuesta… (puedes pegar una imagen con Ctrl+V)"
+              onpaste="wspPaste(event)"
+              onkeydown="if(event.key==='Enter'){event.preventDefault(); if(!event.repeat) wspEnviar();}"
               class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm">
             <button onclick="wspEnviar()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Enviar</button>
           </div>`
@@ -3547,24 +3556,60 @@ window.wspEstadoSet = async (cid, estado) => {
 };
 window.wspFiltrar = (f) => { WSP_FILTRO = f; renderWsp(true); };
 let WSP_ENVIANDO = false;   // candado anti doble envío (Enter repetido / doble clic)
+let WSP_IMG = null;         // dataURL de la imagen pegada/adjuntada, lista para enviar
+// Redimensiona a máx 1600px (JPEG 85%) para no pasar el límite de WhatsApp
+function wspImgData(f) {
+  return new Promise((res, rej) => {
+    if (!f || !/^image\//.test(f.type)) { rej(new Error('El archivo no es una imagen')); return; }
+    const img = new Image();
+    img.onload = () => {
+      const esc2 = Math.min(1, 1600 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const w = Math.max(1, Math.round(img.naturalWidth * esc2)), h = Math.max(1, Math.round(img.naturalHeight * esc2));
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      const x = cv.getContext('2d');
+      x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+      x.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(img.src);
+      res(cv.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src); rej(new Error('No se pudo leer la imagen')); };
+    img.src = URL.createObjectURL(f);
+  });
+}
+async function wspSetImg(f) {
+  try { WSP_IMG = await wspImgData(f); renderWsp(true); }
+  catch (e) { toast('⚠ ' + (e.message || e)); }
+}
+window.wspPaste = (ev) => {
+  const it = [...((ev.clipboardData && ev.clipboardData.items) || [])].find((i) => i.type && i.type.startsWith('image/'));
+  if (!it) return;   // texto pegado: comportamiento normal
+  ev.preventDefault();
+  wspSetImg(it.getAsFile());
+};
+window.wspImgArchivo = (inp) => { const f = inp.files && inp.files[0]; inp.value = ''; if (f) wspSetImg(f); };
+window.wspImgQuitar = () => { WSP_IMG = null; renderWsp(true); };
 window.wspEnviar = async () => {
   if (WSP_ENVIANDO) return;
   const inp = el('wspTxt');
   const txt = ((inp && inp.value) || '').trim();
+  const img = WSP_IMG;
   const conv = WSP_CONVS.find((x) => x.id === WSP_SEL);
-  if (!txt || !conv) return;
+  if ((!txt && !img) || !conv) return;
   if (inp) inp.value = '';   // se limpia al instante: un segundo Enter ya no reenvía
+  WSP_IMG = null;
   if (!wspOn()) {   // DEMO: simula el envío en local
-    DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: 'texto',
-      cuerpo: txt, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
-    conv.ultimo_mensaje = txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
+    DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: img ? 'imagen' : 'texto',
+      cuerpo: txt || null, media_path: img ? 'demo' : null, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
+    conv.ultimo_mensaje = img ? '📷 Imagen' : txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
     if (conv.marcada === 'sin_respuesta') conv.marcada = null;   // responder no borra la clasificación de cobranza
     renderWsp(); return;
   }
   WSP_ENVIANDO = true;
   try {
-    const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar',
-      { body: { accion: 'texto', conversacion_id: conv.id, texto: txt } });
+    const body = img
+      ? { accion: 'imagen', conversacion_id: conv.id, imagen: img, texto: txt }
+      : { accion: 'texto', conversacion_id: conv.id, texto: txt };
+    const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body });
     let msg = null;
     if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
     else if (data && data.error) msg = data.error;
@@ -3573,6 +3618,7 @@ window.wspEnviar = async () => {
   } catch (e) {
     toast('⚠ ' + (e.message || e));
     const inp2 = el('wspTxt'); if (inp2 && !inp2.value) inp2.value = txt;   // no se pierde lo escrito
+    if (img && !WSP_IMG) { WSP_IMG = img; renderWsp(true); }                // ni la imagen
   } finally { WSP_ENVIANDO = false; }
 };
 window.wspVerMedia = async (mid, mediaPath) => {

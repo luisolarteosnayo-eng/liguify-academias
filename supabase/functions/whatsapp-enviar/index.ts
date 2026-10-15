@@ -3,6 +3,8 @@
 // Envía mensajes por la WhatsApp Cloud API (Meta, SIN Twilio) desde Liguify:
 //  · accion 'texto'    → respuesta libre desde la bandeja (requiere ventana de
 //                        24h abierta: el cliente escribió hace menos de 24h)
+//  · accion 'imagen'   → imagen pegada/adjuntada en la bandeja (misma ventana);
+//                        se sube a Meta por /media y una copia queda en Storage
 //  · accion 'cobranza' → plantilla aprobada (recordatorio de deuda) a 1 número
 //
 // DESPLIEGUE: Edge Functions → Deploy new function → nombre: whatsapp-enviar
@@ -93,6 +95,46 @@ Deno.serve(async (req) => {
       return json({ ok: true, wa_id: waId });
     }
 
+    if (body.accion === 'imagen') {
+      // Imagen pegada/adjuntada en la bandeja (dataURL ya redimensionada en el
+      // cliente). Igual que 'texto': requiere la ventana de 24h abierta.
+      const { conversacion_id, imagen, texto } = body;
+      const data = String(imagen || '');
+      if (!conversacion_id || !/^data:image\//.test(data)) return json({ error: 'Faltan conversacion_id o imagen' }, 400);
+      const [c] = await apiUser(`wsp_conversaciones?id=eq.${conversacion_id}&select=id,academia_id,telefono,ultimo_entrante_at,marcada`);
+      if (!c) return json({ error: 'Conversación no encontrada (¿es de tu academia?)' }, 403);
+      const abierta = c.ultimo_entrante_at && (Date.now() - new Date(c.ultimo_entrante_at).getTime()) < 24 * 3600 * 1000;
+      if (!abierta) return json({ error: 'La ventana de 24h está cerrada: el cliente no escribió en el último día.' }, 400);
+      const mime = data.slice(5, data.indexOf(';')) || 'image/jpeg';
+      const bytes = Uint8Array.from(atob(data.split(',')[1] || ''), (ch) => ch.charCodeAt(0));
+      if (!bytes.length) return json({ error: 'La imagen llegó vacía' }, 400);
+      if (bytes.length > 4.5 * 1024 * 1024) return json({ error: 'La imagen supera el límite de WhatsApp (5 MB)' }, 400);
+      // 1) Subir el media a Meta y enviarlo por su id
+      const fd = new FormData();
+      fd.append('messaging_product', 'whatsapp');
+      fd.append('file', new Blob([bytes], { type: mime }), 'imagen.jpg');
+      const up = await fetch(`${GRAPH}/${PHONE_ID}/media`, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` }, body: fd });
+      const ub = await up.json().catch(() => null);
+      if (!up.ok || !ub || !ub.id) return json({ error: 'Meta rechazó la imagen: ' + ((ub && ub.error && ub.error.message) || up.status) }, 502);
+      const cap = String(texto || '').trim();
+      const waId = await wa({ to: c.telefono, type: 'image', image: cap ? { id: ub.id, caption: cap.slice(0, 1024) } : { id: ub.id } });
+      // 2) Copia al bucket privado para que la bandeja pueda mostrarla
+      let mediaPath = null;
+      const ruta = `wsp/${c.id}/out-${Date.now()}.jpg`;
+      const st = await fetch(`${SUPABASE_URL}/storage/v1/object/academias-vouchers/${ruta}`, {
+        method: 'POST',
+        headers: { apikey: SRK, Authorization: `Bearer ${SRK}`, 'Content-Type': mime, 'x-upsert': 'true' },
+        body: bytes,
+      });
+      if (st.ok) mediaPath = `vstore:${ruta}`;
+      await dbWrite('POST', 'wsp_mensajes', { conversacion_id: c.id, academia_id: c.academia_id, direccion: 'out',
+        tipo: 'imagen', cuerpo: cap || null, media_path: mediaPath, wa_id: waId || null, enviado_por: quien, estado: 'sent' });
+      await dbWrite('PATCH', `wsp_conversaciones?id=eq.${c.id}`,
+        { ultimo_mensaje: '📷 Imagen', ultimo_mensaje_at: new Date().toISOString(), no_leidos: 0,
+          marcada: c.marcada === 'sin_respuesta' ? null : (c.marcada || null) });
+      return json({ ok: true, wa_id: waId });
+    }
+
     if (body.accion === 'cobranza') {
       // Plantilla de recordatorio: {tutor} {alumno} {monto} {sede} + teléfono de
       // respuestas de la sede como 5ª variable (y sufijo del botón wa.me)
@@ -148,7 +190,7 @@ Deno.serve(async (req) => {
       return json({ ok: true, wa_id: waId });
     }
 
-    return json({ error: "Acción inválida: usa 'texto' o 'cobranza'" }, 400);
+    return json({ error: "Acción inválida: usa 'texto', 'imagen' o 'cobranza'" }, 400);
   } catch (err) {
     return json({ error: String((err as Error).message || err) }, 500);
   }
