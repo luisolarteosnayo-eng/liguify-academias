@@ -160,17 +160,23 @@ Deno.serve(async (req) => {
         aca = sd.academia_id;
       }
       const tpl = plantilla || Deno.env.get('WHATSAPP_TPL_COBRANZA') || 'cobranza_liguify';
+      // La app manda 6 variables [tutor, alumno, monto, sede, detalle de cargos,
+      // medios]. La plantilla ORIGINAL (cobranza_liguify) tiene 5 (sin detalle):
+      // se descarta la 5ª. La v2 (cobranza_liguify_v2) usa las 6 tal cual.
+      let vars = (variables as unknown[]).map((v) => String(v));
+      if (tpl === 'cobranza_liguify' && vars.length >= 6) vars = [vars[0], vars[1], vars[2], vars[3], vars[5]];
       const payload = tpl === 'hello_world'
         ? { to, type: 'template', template: { name: 'hello_world', language: { code: 'en_US' } } }   // plantilla de PRUEBAS de Meta
-        : { to, type: 'template', template: { name: tpl, language: { code: 'es_PE' },   // la plantilla se aprobó como Spanish (PER)
-            components: [{ type: 'body', parameters: variables.map((v: unknown) => ({ type: 'text', text: String(v).slice(0, 120) })) }] } };
+        : { to, type: 'template', template: { name: tpl, language: { code: 'es_PE' },   // las plantillas se aprobaron como Spanish (PER)
+            components: [{ type: 'body', parameters: vars.map((v) => ({ type: 'text', text: v.slice(0, 120) })) }] } };
       const waId = await wa(payload);
-      // Texto REAL que recibe el cliente (cuerpo de la plantilla cobranza_liguify
-      // con las variables puestas): así la bandeja muestra lo mismo que su WhatsApp
-      const [v1, v2, v3, v4, v5] = variables.map((v: unknown) => String(v));
+      // Texto REAL que recibe el cliente (cuerpo de la plantilla con las
+      // variables puestas): así la bandeja muestra lo mismo que su WhatsApp
       const cuerpoReal = tpl === 'hello_world'
         ? '[plantilla de prueba hello_world]'
-        : `Hola ${v1} 👋, le recordamos que ${v2} tiene un saldo pendiente de ${v3} en ${v4}. Puede pagar por: ${v5} y enviar su comprobante respondiendo a este mensaje. ¡Gracias!`;
+        : vars.length >= 6
+          ? `Hola ${vars[0]} 👋, le recordamos que ${vars[1]} tiene un saldo pendiente de ${vars[2]} en ${vars[3]} por: ${vars[4]}. Puede pagar por: ${vars[5]} y enviar su comprobante respondiendo a este mensaje. ¡Gracias!`
+          : `Hola ${vars[0]} 👋, le recordamos que ${vars[1]} tiene un saldo pendiente de ${vars[2]} en ${vars[3]}. Puede pagar por: ${vars[4]} y enviar su comprobante respondiendo a este mensaje. ¡Gracias!`;
       // Registrar también en la bandeja (crea la conversación si no existe)
       let [conv] = await apiUser(`wsp_conversaciones?telefono=eq.${to}&academia_id=eq.${aca}&select=id&limit=1`);
       if (!conv) {

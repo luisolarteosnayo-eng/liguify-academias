@@ -3692,7 +3692,15 @@ function candidatosCobranzaMasiva() {
     if (!pend.length) return null;
     const t = tutor(j.tutor_id) || {};
     const num = waNumero(t.telefono_celular || j.telefono || '');
-    return { j, t, num, total: pend.reduce((s, c) => s + saldoC(c), 0),
+    // Detalle compacto de los cargos para la plantilla ({{5}} de la v2):
+    // máx 2 conceptos + "y N más", recortado a lo que WhatsApp acepta por variable
+    const detalle = (() => {
+      const ds = pend.map(descCargo);
+      let txt = ds.slice(0, 2).join(' · ');
+      if (ds.length > 2) txt += ` y ${ds.length - 2} más`;
+      return txt.length > 110 ? txt.slice(0, 107) + '…' : txt;
+    })();
+    return { j, t, num, detalle, total: pend.reduce((s, c) => s + saldoC(c), 0),
       vencido: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY),
       reciente: !!(j.ultimo_recordatorio && j.ultimo_recordatorio >= hace7) };
   }).filter((x) => x && x.num && !x.reciente).sort((a, b) => b.total - a.total);
@@ -3732,9 +3740,12 @@ window.enviarCobranzaMasiva = async () => {
       const sd = sede(x.j.sede_id);
       const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body: {
         accion: 'cobranza', telefono: x.num,
+        // 6 variables [tutor, alumno, monto, sede, detalle, medios]: la función
+        // descarta el detalle si la plantilla activa es la de 5 variables
         variables: [((x.t.nombres || '').trim().split(/\s+/)[0] || 'padre de familia'), nom(x.j), 'S/ ' + x.total.toFixed(2),
           sd ? sd.nombre_sede : DB.academia.nombre_academia,
-          (sd && sd.medios_cobro) || 'consulta los medios de pago con tu sede'],   // {{5}} de la plantilla
+          x.detalle || 'mensualidad',
+          (sd && sd.medios_cobro) || 'consulta los medios de pago con tu sede'],
       } });
       let msg = null;
       if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
