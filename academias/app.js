@@ -3504,6 +3504,23 @@ async function renderWsp(silencioso) {
             <div class="truncate text-sm font-semibold">${conv.nombre || '+' + conv.telefono} <span class="text-xs font-normal text-slate-400">· +${conv.telefono}</span></div>
             ${conv.jugador_id && jugador(conv.jugador_id) ? `<div class="text-[11px] text-slate-500">Alumno: <button onclick="formEditarAlumno('${conv.jugador_id}')" class="text-indigo-600 hover:underline">${nom(jugador(conv.jugador_id))}</button></div>` : ''}
           </div>
+          ${(() => {   // sede · saldo pendiente · estado del alumno, a la vista al responder
+            const jj = conv.jugador_id ? jugador(conv.jugador_id) : null;
+            if (!jj) return '';
+            const sd = sede(jj.sede_id);
+            const deuda = DB.cargos.filter((c) => c.jugador_id === jj.id)
+              .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
+            const est = jj.estado_alumno === 'activo' ? badge('Activo', 'emerald')
+              : jj.estado_alumno === 'prospecto' ? badge('Prospecto', 'fuchsia') : badge('Baja', 'slate');
+            return `<div class="hidden min-w-0 text-center sm:block">
+              ${sd ? `<div class="truncate text-xs text-slate-500">📍 ${sd.nombre_sede}</div>` : ''}
+              <div class="flex items-center justify-center gap-2">
+                ${deuda > 0 ? `<span class="whitespace-nowrap text-sm font-bold text-rose-600">Debe ${S(deuda)}</span>`
+                  : '<span class="whitespace-nowrap text-sm font-medium text-emerald-600">Al día ✓</span>'}
+                ${est}
+              </div>
+            </div>`;
+          })()}
           ${(() => { const est = wspEstado(conv); const col = est ? WSP_ESTADOS[est].c : 'slate';
             return `<select onchange="wspEstadoSet('${conv.id}', this.value)" title="Estado de seguimiento de la cobranza"
               class="shrink-0 rounded-lg border px-2 py-1.5 text-xs font-bold border-${col}-300 bg-${col}-50 text-${col}-700">
