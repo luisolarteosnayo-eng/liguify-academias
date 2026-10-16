@@ -673,9 +673,11 @@ const SCREENS = {
     const gastosPeriodo = DB.egresos
       .filter((e) => inDash(e.sede_id) && (e.fecha || '') >= win.inicio && (e.fecha || '') <= win.fin)
       .reduce((s, e) => s + (+e.monto || 0), 0);
-    // Cuentas por cobrar (snapshot): cargos pendientes por tipo, no depende del periodo
+    // Cuentas por cobrar (snapshot): cargos pendientes por tipo, no depende del
+    // periodo. Los alumnos dados de BAJA no cuentan (su deuda sigue en la ficha)
     const porCobrarItems = DB.cargos
-      .filter((c) => c.jugador_id && inDash(jugador(c.jugador_id).sede_id) && (c.monto - (c.pagado_monto || 0)) > 0)
+      .filter((c) => c.jugador_id && inDash(jugador(c.jugador_id).sede_id)
+        && jugador(c.jugador_id).estado_alumno !== 'baja' && (c.monto - (c.pagado_monto || 0)) > 0)
       .map((c) => ({ cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), monto: c.monto - (c.pagado_monto || 0) }));
     const totalPorCobrar = porCobrarItems.reduce((s, d) => s + d.monto, 0);
 
@@ -698,7 +700,7 @@ const SCREENS = {
         ${card('Recaudado', S0(totalIngresos), porAprobar > 0 ? `+ <b class="text-amber-600">${S0(porAprobar)}</b> por aprobar` : 'pagos del periodo')}
         ${card('Gastos', `<span class="text-rose-600">${S0(gastosPeriodo)}</span>`, 'del periodo')}
         ${card('Utilidad', `<span class="${totalIngresos - gastosPeriodo > 0 ? 'text-emerald-600' : totalIngresos - gastosPeriodo < 0 ? 'text-rose-600' : 'text-slate-700'}">${totalIngresos - gastosPeriodo < 0 ? '−' : ''}${S0(Math.abs(totalIngresos - gastosPeriodo))}</span>`, 'recaudado − gastos')}
-        ${card('Por cobrar', S0(totalPorCobrar), 'pendiente total')}
+        ${card('Por cobrar', S0(totalPorCobrar), 'pendiente total · sin bajas')}
         <div class="cursor-pointer hover:opacity-80" onclick="reporteNuevosPruebas('nuevos')" title="Ver el detalle de alumnos nuevos">${card('Alumnos nuevos', nuevos.length, 'en el periodo · ver detalle →')}</div>
       </div>
 
@@ -985,7 +987,10 @@ const SCREENS = {
         .reduce((sm, p) => sm + (p.detalle || []).reduce((s2, d) => s2 + (d.monto > 0 ? d.monto : 0), 0), 0);
       const gastos = DB.egresos.filter((e2) => e2.sede_id === s.id && (e2.fecha || '') >= win.inicio && (e2.fecha || '') <= win.fin)
         .reduce((sm, e2) => sm + (+e2.monto || 0), 0);
-      const porCobrar = DB.cargos.filter((c) => ids.has(c.jugador_id) && (c.monto - (c.pagado_monto || 0)) > 0)
+      // Pendiente de cobro sin alumnos de baja (los ingresos sí cuentan a todos:
+      // el dinero ya recibido no depende del estado actual del alumno)
+      const idsCobrables = new Set(DB.jugadores.filter((j) => j.sede_id === s.id && j.estado_alumno !== 'baja').map((j) => j.id));
+      const porCobrar = DB.cargos.filter((c) => idsCobrables.has(c.jugador_id) && (c.monto - (c.pagado_monto || 0)) > 0)
         .reduce((sm, c) => sm + (c.monto - (c.pagado_monto || 0)), 0);
       const { nuevos, clasesPrueba } = altasYPruebasDash(win, (sid) => sid === s.id);
       const bajas = DB.jugadores.filter((j) => j.sede_id === s.id && j.estado_alumno === 'baja'
@@ -1159,7 +1164,9 @@ const SCREENS = {
     const cargosS = cargosSede();
     const pagosS = pagosSede();
     const saldoC = (c) => c.monto - (c.pagado_monto || 0);
-    const porCobrar = cargosS.filter((c) => saldoC(c) > 0);
+    // La tarjeta Por cobrar no cuenta a los alumnos dados de baja
+    const porCobrar = cargosS.filter((c) => saldoC(c) > 0
+      && (!c.jugador_id || (jugador(c.jugador_id) || {}).estado_alumno !== 'baja'));
 
     el('content').innerHTML = `
       <div class="mb-4 flex flex-wrap justify-end gap-2">
