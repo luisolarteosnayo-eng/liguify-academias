@@ -416,9 +416,13 @@ const glosaTorneo = (t) => {
   const d = new Date((t.fecha_inicio || HOY) + 'T00:00:00');
   return `${t.nombre.toUpperCase()} ${MESES_UP[d.getMonth()]} ${d.getFullYear()}`;
 };
+// Un alumno cuenta solo si su sede existe y está ACTIVA (las sedes inactivas,
+// p. ej. "Prueba", no deben aparecer en KPIs ni reportes)
+const sedeOperativa = (sedeId) => { const s = sede(sedeId); return !!s && s.activo !== false; };
+const jugadorOperativo = (jid) => { const j = jugador(jid); return !!j && sedeOperativa(j.sede_id); };
 function statsTorneo(t) {
   const cats = DB.torneoCategorias.filter((c) => c.torneo_id === t.id);
-  const jugs = DB.torneoJugadores.filter((x) => x.torneo_id === t.id);
+  const jugs = DB.torneoJugadores.filter((x) => x.torneo_id === t.id && jugadorOperativo(x.jugador_id));
   // auto-sanea: si el CNR vinculado fue eliminado, el alumno vuelve a "pendiente"
   jugs.forEach((x) => { if (x.cargo_id && !DB.cargos.find((c) => c.id === x.cargo_id)) x.cargo_id = null; });
   const costoTotal = cats.reduce((s, c) => s + (+c.costo_inscripcion || 0), 0);
@@ -6083,7 +6087,7 @@ window.torneoImprimirDeuda = (tid) => {
   const t = DB.torneos.find((x) => x.id === tid); if (!t) return;
   const saldoC = (c) => c.monto - (c.pagado_monto || 0);
   const parts = DB.torneoJugadores.filter((x) => x.torneo_id === tid).map((x) => {
-    const j = jugador(x.jugador_id); if (!j) return null;
+    const j = jugador(x.jugador_id); if (!j || !sedeOperativa(j.sede_id)) return null;   // sedes inactivas fuera
     const cat = (DB.torneoCategorias.find((cc) => cc.id === x.categoria_id) || {}).nombre || '—';
     const cs = DB.cargos.filter((c) => c.jugador_id === j.id && saldoC(c) > 0)
       .sort((a, b) => ((a.fecha_vencimiento || '') < (b.fecha_vencimiento || '') ? -1 : 1));
@@ -6093,7 +6097,7 @@ window.torneoImprimirDeuda = (tid) => {
       total: cs.reduce((s, c) => s + saldoC(c), 0) };
   }).filter((a) => a && a.total > 0)
     .sort((a, b) => a.cat.localeCompare(b.cat, 'es', { numeric: true }) || nom(a.j).localeCompare(nom(b.j), 'es'));
-  const nTot = DB.torneoJugadores.filter((x) => x.torneo_id === tid).length;
+  const nTot = DB.torneoJugadores.filter((x) => x.torneo_id === tid && jugadorOperativo(x.jugador_id)).length;
   if (!parts.length) { toast('Ningún participante del torneo tiene deuda 🎉'); return; }
   let filas = '', catAct = null, subCat = 0;
   const cierraCat = () => { if (catAct !== null) filas += `<tr class="sub"><td colspan="2">Subtotal categoría ${catAct}</td><td style="text-align:right">${S(subCat)}</td><td></td></tr>`; };
@@ -6144,7 +6148,7 @@ function renderTorneoDetalle() {
   const st = statsTorneo(t);
   const rentCls = st.rentabilidad > 0 ? 'text-emerald-600' : st.rentabilidad < 0 ? 'text-rose-600' : 'text-slate-700';
   const catHTML = (c) => {
-    const jugs = DB.torneoJugadores.filter((x) => x.categoria_id === c.id);
+    const jugs = DB.torneoJugadores.filter((x) => x.categoria_id === c.id && jugadorOperativo(x.jugador_id));
     const pendCat = jugs.filter((x) => !x.cargo_id).length;
     return `
     <div class="rounded-xl bg-white ring-1 ring-slate-200 p-4">
@@ -6331,7 +6335,8 @@ window.quitarJugadorTorneo = (id) => {
 window.generarCNRsTorneo = (tid, catId) => {
   const t = DB.torneos.find((x) => x.id === tid);
   const cat = catId ? DB.torneoCategorias.find((c) => c.id === catId) : null;
-  const pend = DB.torneoJugadores.filter((x) => x.torneo_id === tid && !x.cargo_id && (!catId || x.categoria_id === catId));
+  const pend = DB.torneoJugadores.filter((x) => x.torneo_id === tid && !x.cargo_id
+    && (!catId || x.categoria_id === catId) && jugadorOperativo(x.jugador_id));
   if (!pend.length) { toast('No hay CNRs pendientes de generar'); return; }
   // Genera a los que tienen precio asignado; los de S/ 0 o sin precio quedan
   // Pendientes y se generan en una próxima corrida cuando se les asigne precio
