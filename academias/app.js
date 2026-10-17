@@ -6076,6 +6076,63 @@ window.desvincularTutores = () => {
 // =====================================================================
 // TORNEOS
 // =====================================================================
+// Reporte de cobranza del torneo: participantes CON deuda (toda su deuda CR y
+// CNR, no solo la inscripción), agrupados por categoría del torneo y ordenados
+// por nombre, con subtotales. Abre ventana de impresión → "Guardar como PDF".
+window.torneoImprimirDeuda = (tid) => {
+  const t = DB.torneos.find((x) => x.id === tid); if (!t) return;
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const parts = DB.torneoJugadores.filter((x) => x.torneo_id === tid).map((x) => {
+    const j = jugador(x.jugador_id); if (!j) return null;
+    const cat = (DB.torneoCategorias.find((cc) => cc.id === x.categoria_id) || {}).nombre || '—';
+    const cs = DB.cargos.filter((c) => c.jugador_id === j.id && saldoC(c) > 0)
+      .sort((a, b) => ((a.fecha_vencimiento || '') < (b.fecha_vencimiento || '') ? -1 : 1));
+    const tut = tutor(j.tutor_id) || {};
+    return { j, cat, cs, tel: tut.telefono_celular || '', total: cs.reduce((s, c) => s + saldoC(c), 0) };
+  }).filter((a) => a && a.total > 0)
+    .sort((a, b) => a.cat.localeCompare(b.cat, 'es', { numeric: true }) || nom(a.j).localeCompare(nom(b.j), 'es'));
+  const nTot = DB.torneoJugadores.filter((x) => x.torneo_id === tid).length;
+  if (!parts.length) { toast('Ningún participante del torneo tiene deuda 🎉'); return; }
+  let filas = '', catAct = null, subCat = 0;
+  const cierraCat = () => { if (catAct !== null) filas += `<tr class="sub"><td colspan="2">Subtotal categoría ${catAct}</td><td style="text-align:right">${S(subCat)}</td><td></td></tr>`; };
+  parts.forEach((a) => {
+    if (a.cat !== catAct) { cierraCat(); catAct = a.cat; subCat = 0;
+      filas += `<tr class="cat"><td colspan="4">Categoría ${a.cat}</td></tr>`; }
+    subCat += a.total;
+    filas += `<tr>
+      <td><b>${nom(a.j)}</b></td><td style="text-align:center">${a.tel || '—'}</td>
+      <td style="text-align:right"><b>${S(a.total)}</b></td>
+      <td>${a.cs.map((c) => `${c.tipo} · ${descCargo(c)} · ${S(saldoC(c))}${c.fecha_vencimiento && c.fecha_vencimiento < HOY ? ' <span class="venc">(vencido)</span>' : ''}`).join('<br>')}</td>
+    </tr>`;
+  });
+  cierraCat();
+  const total = parts.reduce((s, a) => s + a.total, 0);
+  const w = window.open('', '_blank');
+  if (!w) { toast('El navegador bloqueó la ventana de impresión'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Deuda · ${t.nombre}</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; color: #171e2e; margin: 24px; }
+      h1 { font-size: 18px; margin: 0 0 2px; } .sub2 { color: #64748b; font-size: 12px; margin-bottom: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th { background: #f1f5f9; text-align: left; padding: 6px 8px; border-bottom: 2px solid #cbd5e1; }
+      td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+      tr.cat td { background: #171e2e; color: #fff; font-weight: bold; }
+      tr.sub td { background: #f8fafc; font-weight: bold; border-bottom: 2px solid #cbd5e1; }
+      .venc { color: #c11d27; font-size: 10px; }
+      tfoot td { font-weight: bold; border-top: 2px solid #94a3b8; font-size: 13px; }
+      @media print { body { margin: 8mm; } }
+    </style></head><body>
+    <h1>Cobranza del torneo — ${t.nombre}</h1>
+    <div class="sub2">${(DB.academia && DB.academia.nombre_academia) || ''} · Generado el ${fmtDMY(HOY)} · ${parts.length} de ${nTot} participante(s) con deuda (incluye toda su deuda CR y CNR)</div>
+    <table>
+      <thead><tr><th>Alumno</th><th style="text-align:center">Cel. tutor</th><th style="text-align:right">Deuda total</th><th>Detalle de deuda</th></tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr><td colspan="2">TOTAL POR COBRAR</td><td style="text-align:right">${S(total)}</td><td></td></tr></tfoot>
+    </table></body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+};
 window.abrirTorneo = (id) => { TORNEO_SEL = id; go('torneos'); };
 window.cerrarTorneo = () => { TORNEO_SEL = null; go('torneos'); };
 
@@ -6136,9 +6193,13 @@ function renderTorneoDetalle() {
         </div>
         <div class="text-xs text-slate-400">${fmtFecha(t.fecha_inicio)}${t.descripcion ? ' · ' + t.descripcion : ''}</div>
       </div>
-      <button onclick="generarCNRsTorneo('${t.id}')" ${st.pendientes ? '' : 'disabled'}
-        class="rounded-lg px-4 py-2.5 text-sm font-medium ${st.pendientes ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">
-        GENERAR CNRs PENDIENTES${st.pendientes ? ` (${st.pendientes})` : ''}</button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="torneoImprimirDeuda('${t.id}')" title="Participantes del torneo con deuda (CR y CNR) para la cobranza"
+          class="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">🖨 Deuda · Imprimir/PDF</button>
+        <button onclick="generarCNRsTorneo('${t.id}')" ${st.pendientes ? '' : 'disabled'}
+          class="rounded-lg px-4 py-2.5 text-sm font-medium ${st.pendientes ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">
+          GENERAR CNRs PENDIENTES${st.pendientes ? ` (${st.pendientes})` : ''}</button>
+      </div>
     </div>
     <div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       ${card('Alumnos', st.jugs.length, `en ${st.cats.length} categoría(s)`)}
