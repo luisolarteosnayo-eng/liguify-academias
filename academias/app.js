@@ -6994,6 +6994,17 @@ async function entrarConectado() {
       } else { d.classList.add('bg-emerald-400'); d.title = 'Sincronizado'; delete d.dataset.enError; }
     });
     AcademiasDB.sync.start(DB);
+    // Pull multiusuario: cada 45s (y al volver a la pestaña) baja los cambios
+    // hechos desde otras laptops y repinta la pantalla actual — sin interrumpir
+    // si el usuario está escribiendo en algún campo
+    AcademiasDB.sync.onPulled(() => {
+      const ae = document.activeElement;
+      if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+      if (SCREEN === 'whatsapp') renderWsp(true);
+      else if (SCREENS[SCREEN]) SCREENS[SCREEN]();
+      wspPollPendientes();
+    });
+    AcademiasDB.sync.startPull();
     el('syncDot').classList.remove('hidden');
     el('btnLogout').classList.remove('hidden');
     el('authScreen').classList.add('hidden');

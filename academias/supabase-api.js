@@ -360,7 +360,36 @@ window.AcademiasDB = (() => {
   const sync = {
     db: null, baseline: {}, timer: null, busy: false, status: 'ok', lastError: null,
     _cb: null, _skipDel: new Set(),
+    pullTimer: null, _pulling: false, _onPulled: null,
     onStatus(cb) { this._cb = cb; },
+    onPulled(cb) { this._onPulled = cb; },
+
+    // ---- Pull: trae los cambios de OTROS usuarios (el tick solo empuja) ----
+    // Seguro por diseño: primero empuja lo local; si quedó algo sin guardar o
+    // el usuario cambió algo mientras bajaban los datos, NO se pisa nada y se
+    // reintenta en el siguiente ciclo.
+    startPull(intervalMs = 45000) {
+      if (this.pullTimer) return;
+      this.pullTimer = setInterval(() => this.pull(), intervalMs);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') this.pull();
+      });
+    },
+    async pull() {
+      if (this._pulling || !this.db) return;
+      this._pulling = true;
+      try {
+        await this.tick();                  // empuja lo pendiente local
+        if (this.status !== 'ok') return;   // con errores de guardado no se toca nada
+        const fresh = await loadAll();
+        // ¿El usuario cambió algo mientras bajaban los datos? → no pisar
+        if (JSON.stringify(this._snapshot()) !== JSON.stringify(this.baseline)) return;
+        Object.assign(this.db, fresh);
+        this.baseline = this._snapshot();
+        if (this._onPulled) this._onPulled();
+      } catch (e) { console.warn('[pull]', e); }
+      finally { this._pulling = false; }
+    },
     _set(status, err) { this.status = status; this.lastError = err || null; if (this._cb) this._cb(status, err); },
 
     start(db) {
