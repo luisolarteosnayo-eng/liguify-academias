@@ -6088,7 +6088,9 @@ window.torneoImprimirDeuda = (tid) => {
     const cs = DB.cargos.filter((c) => c.jugador_id === j.id && saldoC(c) > 0)
       .sort((a, b) => ((a.fecha_vencimiento || '') < (b.fecha_vencimiento || '') ? -1 : 1));
     const tut = tutor(j.tutor_id) || {};
-    return { j, cat, cs, tel: tut.telefono_celular || '', total: cs.reduce((s, c) => s + saldoC(c), 0) };
+    const sd = sede(j.sede_id);
+    return { j, cat, cs, tel: tut.telefono_celular || '', sede: sd ? sd.nombre_sede : '—',
+      total: cs.reduce((s, c) => s + saldoC(c), 0) };
   }).filter((a) => a && a.total > 0)
     .sort((a, b) => a.cat.localeCompare(b.cat, 'es', { numeric: true }) || nom(a.j).localeCompare(nom(b.j), 'es'));
   const nTot = DB.torneoJugadores.filter((x) => x.torneo_id === tid).length;
@@ -6100,7 +6102,7 @@ window.torneoImprimirDeuda = (tid) => {
       filas += `<tr class="cat"><td colspan="4">Categoría ${a.cat}</td></tr>`; }
     subCat += a.total;
     filas += `<tr>
-      <td><b>${nom(a.j)}</b></td><td style="text-align:center">${a.tel || '—'}</td>
+      <td><b>${nom(a.j)}</b><div style="color:#64748b;font-size:10px">${a.sede}${a.j.estado_alumno !== 'activo' ? ' · ' + (a.j.estado_alumno === 'baja' ? 'BAJA' : a.j.estado_alumno.toUpperCase()) : ''}</div></td><td style="text-align:center">${a.tel || '—'}</td>
       <td style="text-align:right"><b>${S(a.total)}</b></td>
       <td>${a.cs.map((c) => `${c.tipo} · ${descCargo(c)} · ${S(saldoC(c))}${c.fecha_vencimiento && c.fecha_vencimiento < HOY ? ' <span class="venc">(vencido)</span>' : ''}`).join('<br>')}</td>
     </tr>`;
