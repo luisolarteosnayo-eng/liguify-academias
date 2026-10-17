@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
     if (body.accion === 'cobranza') {
       // Plantilla de recordatorio: {tutor} {alumno} {monto} {sede} + teléfono de
       // respuestas de la sede como 5ª variable (y sufijo del botón wa.me)
-      const { telefono, variables, plantilla } = body;
+      const { telefono, variables, plantilla, imagen_url } = body;
       const to = String(telefono || '').replace(/\D/g, '');
       if (!to || !Array.isArray(variables)) return json({ error: 'Faltan telefono o variables' }, 400);
       // El usuario debe poder ver a alguien con ese teléfono (RLS = su academia);
@@ -165,10 +165,17 @@ Deno.serve(async (req) => {
       // se descarta la 5ª. La v2 (cobranza_liguify_v2) usa las 6 tal cual.
       let vars = (variables as unknown[]).map((v) => String(v));
       if (tpl === 'cobranza_liguify' && vars.length >= 6) vars = [vars[0], vars[1], vars[2], vars[3], vars[5]];
+      // Plantilla VIP con CABECERA DE IMAGEN: la URL (pública, configurada en la
+      // sede) viaja como componente header en cada envío
+      const comps: unknown[] = [];
+      if (imagen_url && /^https?:\/\//.test(String(imagen_url))) {
+        comps.push({ type: 'header', parameters: [{ type: 'image', image: { link: String(imagen_url) } }] });
+      }
+      comps.push({ type: 'body', parameters: vars.map((v) => ({ type: 'text', text: v.slice(0, 120) })) });
       const payload = tpl === 'hello_world'
         ? { to, type: 'template', template: { name: 'hello_world', language: { code: 'en_US' } } }   // plantilla de PRUEBAS de Meta
         : { to, type: 'template', template: { name: tpl, language: { code: 'es_PE' },   // las plantillas se aprobaron como Spanish (PER)
-            components: [{ type: 'body', parameters: vars.map((v) => ({ type: 'text', text: v.slice(0, 120) })) }] } };
+            components: comps } };
       const waId = await wa(payload);
       // Texto REAL que recibe el cliente (cuerpo de la plantilla con las
       // variables puestas): así la bandeja muestra lo mismo que su WhatsApp

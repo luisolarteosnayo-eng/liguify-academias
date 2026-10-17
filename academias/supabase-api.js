@@ -27,7 +27,7 @@ window.AcademiasDB = (() => {
     sedes: {
       table: 'sedes',
       toRow: (s) => ({ ...pick(s, ['id', 'nombre_sede', 'ciudad', 'pais', 'codigo_postal', 'telefono_coordinador', 'google_maps_url', 'cabecera_url', 'logo_url', 'dias_clase',
-        'ruc_emisor', 'razon_social_emisor', 'direccion_fiscal', 'serie_boleta', 'serie_factura', 'whatsapp_respuestas', 'medios_cobro']),
+        'ruc_emisor', 'razon_social_emisor', 'direccion_fiscal', 'serie_boleta', 'serie_factura', 'whatsapp_respuestas', 'medios_cobro', 'tpl_cobranza', 'tpl_imagen_url']),
         correlativo_boleta: N(s.correlativo_boleta), correlativo_factura: N(s.correlativo_factura), correlativo_recibo: N(s.correlativo_recibo),
         direccion_linea1: s.direccion1 ?? null, direccion_linea2: s.direccion2 ?? null,
         activo: s.activo !== false, academia_id: ACADEMIA_ID }),

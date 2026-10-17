@@ -461,6 +461,7 @@ let CONFIG_TAB = 'perfil';
 let SEDE_EDIT = null;          // id de sede en edición (o null)
 let SEDE_CABECERA = null;      // dataURL de la cabecera de la sede en edición
 let SEDE_LOGO = null;          // dataURL del logo de la sede en edición
+let SEDE_TPLIMG = null;        // dataURL/URL de la cabecera de la plantilla VIP de WhatsApp
 let CNR_EDIT = null;           // id de concepto CNR en edición (o null)
 let MP_EDIT = null;            // id de medio de pago en edición (o null)
 let CICLO_EDIT = null;         // id de ciclo de pago en edición (o null)
@@ -3744,6 +3745,9 @@ window.enviarCobranzaMasiva = async () => {
       const sd = sede(x.j.sede_id);
       const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body: {
         accion: 'cobranza', telefono: x.num,
+        // Sede VIP: plantilla propia con cabecera de imagen (vacío = estándar)
+        plantilla: (sd && sd.tpl_cobranza) || undefined,
+        imagen_url: (sd && sd.tpl_cobranza && sd.tpl_imagen_url) || undefined,
         // 6 variables [tutor, alumno, monto, sede, detalle, medios]: la función
         // descarta el detalle si la plantilla activa es la de 5 variables
         variables: [((x.t.nombres || '').trim().split(/\s+/)[0] || 'padre de familia'), nom(x.j), 'S/ ' + x.total.toFixed(2),
@@ -5321,7 +5325,7 @@ window.obGuardar = (e, tid) => {
 // =====================================================================
 // CONFIGURACIÓN (Módulo I) — pestañas
 // =====================================================================
-window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; STAFF_EDIT = null; GASTOCAT_EDIT = null; SCREENS.config(); };
+window.setConfigTab = (tab) => { CONFIG_TAB = tab; SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; SEDE_TPLIMG = null; CNR_EDIT = null; MP_EDIT = null; CICLO_EDIT = null; PROMO_EDIT = null; STAFF_EDIT = null; GASTOCAT_EDIT = null; SCREENS.config(); };
 
 const stub = (txt) => `<div class="rounded-xl border-2 border-dashed border-slate-200 p-10 text-center text-slate-400">${txt}<br><span class="text-xs">Próximamente</span></div>`;
 
@@ -5404,6 +5408,19 @@ const CONFIG_TABS = {
           </div>
           ${field('WhatsApp de respuestas (cobranzas)', input('sd_wsp', `value="${g('whatsapp_respuestas')}" placeholder="+51 9XX XXX XXX · adonde se dirige a los tutores que responden los recordatorios"`))}
           ${field('Medios de cobro (van en el mensaje de WhatsApp)', input('sd_medios', `value="${g('medios_cobro')}" placeholder="Yape 999 888 777 · BCP 191-1234567-0-12 (VOM SPORT) — en una sola línea"`))}
+          <div class="mb-3 rounded-lg ring-1 ring-slate-200 p-3">
+            <div class="mb-2 text-xs font-medium text-slate-500">💎 Plantilla VIP de cobranza (opcional · marketing)</div>
+            ${field('Nombre de la plantilla aprobada en Meta', input('sd_tpl', `value="${g('tpl_cobranza')}" placeholder="vacío = estándar · ej: cobranza_vip (cabecera de imagen + mismas 6 variables)"`))}
+            <div class="flex items-center gap-3">
+              ${SEDE_TPLIMG ? `<img src="${SEDE_TPLIMG}" class="h-14 w-28 rounded ring-1 ring-slate-200 object-cover">` : '<div class="flex h-14 w-28 items-center justify-center rounded border-2 border-dashed border-slate-300 text-xs text-slate-400">sin imagen</div>'}
+              <label class="cursor-pointer text-sm font-medium text-indigo-600 hover:underline">
+                ${SEDE_TPLIMG ? 'Cambiar imagen de cabecera' : 'Subir imagen de cabecera'}
+                <input type="file" accept="image/*" class="hidden" onchange="sdTplImgFile(this)">
+              </label>
+              ${SEDE_TPLIMG ? '<button type="button" onclick="SEDE_TPLIMG = null; SCREENS.config()" class="text-xs text-rose-500 hover:underline">Quitar</button>' : ''}
+            </div>
+            <p class="mt-1.5 text-[11px] text-slate-400">La imagen viaja en la cabecera de CADA recordatorio (formato recomendado 1125×600, JPG). Requiere que la plantilla exista en Meta con cabecera de imagen; sin plantilla propia, esta sede usa la estándar sin imagen.</p>
+          </div>
           <div class="pt-2 pb-1 text-sm font-semibold text-slate-600">🧾 Facturación electrónica (SUNAT)</div>
           <p class="text-xs text-slate-400 mb-2">El RUC emisor es por sede (sedes de la misma empresa pueden compartirlo), pero cada sede lleva su propia serie y correlativo.</p>
           <div class="grid grid-cols-2 gap-3">
@@ -5961,6 +5978,13 @@ window.cambiarLogoSede = (inp) => {
   r.onload = () => { SEDE_LOGO = r.result; SCREENS.config(); };
   r.readAsDataURL(f);
 };
+window.sdTplImgFile = (inp) => {
+  const f = inp.files && inp.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { SEDE_TPLIMG = r.result; SCREENS.config(); };
+  r.readAsDataURL(f);
+};
 window.guardarSedeInline = async (e) => {
   e.preventDefault();
   // Logo y cabecera nuevos al Storage público; si falla, quedan embebidos
@@ -5968,6 +5992,7 @@ window.guardarSedeInline = async (e) => {
     const sid = SEDE_EDIT || 'nueva';
     if (esDataURL(SEDE_LOGO)) { try { SEDE_LOGO = await subirMediaPublica(SEDE_LOGO, `${AcademiasDB.academiaId}/logos/sede-${sid}-logo-${Date.now()}.jpg`); } catch (ex) { console.warn('[logo sede]', ex); } }
     if (esDataURL(SEDE_CABECERA)) { try { SEDE_CABECERA = await subirMediaPublica(SEDE_CABECERA, `${AcademiasDB.academiaId}/logos/sede-${sid}-cab-${Date.now()}.jpg`); } catch (ex) { console.warn('[cabecera sede]', ex); } }
+    if (esDataURL(SEDE_TPLIMG)) { try { SEDE_TPLIMG = await subirMediaPublica(SEDE_TPLIMG, `${AcademiasDB.academiaId}/logos/sede-${sid}-tplwsp-${Date.now()}.jpg`); } catch (ex) { console.warn('[tpl sede]', ex); } }
   }
   const data = {
     nombre_sede: val('sd_nombre'), direccion1: val('sd_dir1'), direccion2: val('sd_dir2'),
@@ -5975,6 +6000,8 @@ window.guardarSedeInline = async (e) => {
     telefono_coordinador: val('sd_tel'), google_maps_url: val('sd_maps'), cabecera_url: SEDE_CABECERA, logo_url: SEDE_LOGO,
     whatsapp_respuestas: val('sd_wsp').trim() || null,
     medios_cobro: val('sd_medios').trim().replace(/\s*\n\s*/g, ' · ') || null,   // una sola línea (requisito de Meta)
+    tpl_cobranza: val('sd_tpl').trim() || null,
+    tpl_imagen_url: (SEDE_TPLIMG && !esDataURL(SEDE_TPLIMG)) ? SEDE_TPLIMG : null,   // Meta necesita URL pública, no dataURL
     ruc_emisor: val('sd_ruc').trim() || null, razon_social_emisor: val('sd_rz').trim() || null,
     direccion_fiscal: val('sd_dirf').trim() || null,
     serie_boleta: val('sd_sb').trim().toUpperCase() || null, serie_factura: val('sd_sf').trim().toUpperCase() || null,
@@ -5987,6 +6014,7 @@ window.guardarSedeInline = async (e) => {
   }
   SEDE_CABECERA = null;
   SEDE_LOGO = null;
+  SEDE_TPLIMG = null;
   renderSedeSelect(); SCREENS.config();
 };
 window.toggleSedeActiva = (id) => {
@@ -5998,8 +6026,8 @@ window.toggleSedeActiva = (id) => {
   toast(s.activo ? `Sede ${s.nombre_sede} activada` : `Sede ${s.nombre_sede} inactivada · sus datos salen de dashboards y reportes`);
   SCREENS.config();
 };
-window.editarSede = (id) => { SEDE_EDIT = id; SEDE_CABECERA = (sede(id) && sede(id).cabecera_url) || null; SEDE_LOGO = (sede(id) && sede(id).logo_url) || null; SCREENS.config(); };
-window.cancelSedeEdit = () => { SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; SCREENS.config(); };
+window.editarSede = (id) => { SEDE_EDIT = id; SEDE_CABECERA = (sede(id) && sede(id).cabecera_url) || null; SEDE_LOGO = (sede(id) && sede(id).logo_url) || null; SEDE_TPLIMG = (sede(id) && sede(id).tpl_imagen_url) || null; SCREENS.config(); };
+window.cancelSedeEdit = () => { SEDE_EDIT = null; SEDE_CABECERA = null; SEDE_LOGO = null; SEDE_TPLIMG = null; SCREENS.config(); };
 window.eliminarSede = (id) => {
   const usados = DB.tracks.filter((t) => t.sede_id === id).length;
   if (usados) { toast(`No se puede eliminar: la sede tiene ${usados} track(s)`); return; }
