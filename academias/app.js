@@ -5154,7 +5154,7 @@ window.formRegistroExpress = () => {
         [sede(SEDE_ACTUAL), ...sedesActivas().filter((s) => s.id !== SEDE_ACTUAL)]
           .map((s) => ({ v: s.id, t: s.nombre_sede })), 'onchange="onFnac()"'))}
       <div id="tracksBox" class="mb-3"></div>
-      ${submitBar('Registrar y generar deuda')}
+      ${submitBar('Siguiente: generar cobros →')}
     </form>`);
 };
 window.onFnac = () => {
@@ -5189,13 +5189,150 @@ window.guardarRegistro = (e) => {
     fecha_nacimiento: val('f_fnac'), estado_alumno: 'activo', fecha_registro: HOY,
     registrado_por: usuarioActual(), atributos: null };
   DB.jugadores.push(j);
-  // Inscripciones = definición de los CR (los cargos se generan aparte)
+  // Inscripciones = definición de los CR (los cargos se generan en el Paso 2)
   tracksSel.forEach((tid) => {
     DB.inscripciones.push({ id: uid('i'), jugador_id: j.id, track_id: tid, costo_mensual_personalizado: null, activo: true, fecha_inscripcion: HOY, ultima_fecha_corte: null });
   });
-  closeModal();
-  toast(`${nom(j)} registrado · ${tracksSel.length} track(s) asignado(s)`);
-  go('alumnos');
+  toast(`${nom(j)} registrado · ahora genera sus cobros`);
+  pasoCobros(j.id);   // Paso 2 del wizard: generar los CR (o promo) de inmediato
+};
+
+// ---------- Paso 2 del registro: generar los cobros del alumno ----------
+// Cada track marcado sale con su primer CR precalculado (periodo, ciclo,
+// vencimiento, monto editable) o con una promoción (secuencia de CRs). El
+// operador ve el total y confirma: ningún alumno queda "sin CR generado".
+let WIZ_CFG = {};   // config por inscripción: { promo, inicio, cicloId, monto, ancla }
+const esDeSedeX = (x, sid) => { const ids = scopeSedes(x); return !ids.length || ids.includes(sid); };
+window.pasoCobros = (jid) => {
+  const j = jugador(jid);
+  const insc = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo
+    && !DB.cargos.some((c) => c.inscripcion_id === i.id && c.tipo === 'CR'));
+  if (!insc.length) { closeModal(); go('alumnos'); return; }
+  const ciclos = DB.ciclosPago.filter((c) => c.activo && esDeSedeX(c, j.sede_id));
+  const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0] || null;
+  WIZ_CFG = {};
+  insc.forEach((i) => {
+    const t = track(i.track_id);
+    WIZ_CFG[i.id] = { promo: '', inicio: i.fecha_inscripcion || HOY, cicloId: cicloDef ? cicloDef.id : '',
+      monto: i.costo_mensual_personalizado ?? t.mensualidad_sugerida, ancla: HOY };
+  });
+  renderPasoCobros(jid);
+};
+window.wizSet = (iid, campo, valor) => {
+  if (!WIZ_CFG[iid]) return;
+  WIZ_CFG[iid][campo] = campo === 'monto' ? (parseFloat(valor) || 0) : valor;
+  renderPasoCobros(WIZ_JID);
+};
+let WIZ_JID = null;
+function wizPlan(jid) {
+  // Materializa la configuración en la lista de CRs a crear (sin tocar la BD)
+  const j = jugador(jid);
+  const plan = [];
+  Object.entries(WIZ_CFG).forEach(([iid, cfg]) => {
+    const i = DB.inscripciones.find((x) => x.id === iid); if (!i) return;
+    const t = track(i.track_id);
+    const promo = cfg.promo ? DB.promociones.find((p) => p.id === cfg.promo) : null;
+    const ciclo = DB.ciclosPago.find((c) => c.id === cfg.cicloId) || null;
+    const diaVenc = ciclo && ciclo.dia_venc ? ciclo.dia_venc : null;
+    if (promo) {
+      periodosPromo(cfg.ancla, promo).forEach((p) => plan.push({ i, t, promo, inicio: p.inicio, fin: p.fin,
+        gratis: !!p.gratis, monto: p.gratis ? 0 : cfg.monto, venc: diaVenc ? fechaVencimiento(p.inicio, diaVenc) : null, ciclo }));
+    } else {
+      const fin = finCR(cfg.inicio);
+      plan.push({ i, t, promo: null, inicio: cfg.inicio, fin, gratis: false, monto: cfg.monto,
+        venc: diaVenc ? fechaVencimiento(cfg.inicio, diaVenc) : null, ciclo });
+    }
+  });
+  return plan;
+}
+function renderPasoCobros(jid) {
+  WIZ_JID = jid;
+  const j = jugador(jid);
+  const promos = DB.promociones.filter((p) => p.activo && esDeSedeX(p, j.sede_id));
+  const ciclos = DB.ciclosPago.filter((c) => c.activo && esDeSedeX(c, j.sede_id));
+  const cards = Object.entries(WIZ_CFG).map(([iid, cfg]) => {
+    const i = DB.inscripciones.find((x) => x.id === iid);
+    const t = track(i.track_id);
+    const promo = cfg.promo ? DB.promociones.find((p) => p.id === cfg.promo) : null;
+    const detalle = promo
+      ? `<div class="mt-2 flex items-center gap-2">
+           <label class="text-xs text-slate-500 shrink-0">Fecha de matrícula (anclaje)</label>
+           <input type="date" value="${cfg.ancla}" onchange="wizSet('${iid}','ancla',this.value)" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+         </div>
+         <div class="mt-2 rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 bg-white">
+           ${periodosPromo(cfg.ancla, promo).map((p, k) => `<div class="flex justify-between px-3 py-1.5 text-xs">
+             <span>${k + 1}. Del ${fmtDMY(p.inicio)} al ${fmtDMY(p.fin)}</span>
+             <span class="font-medium ${p.gratis ? 'text-emerald-600' : ''}">${p.gratis ? 'Gratis' : S(cfg.monto)}</span></div>`).join('')}
+         </div>`
+      : `<div class="mt-2 flex flex-wrap items-center gap-2">
+           <label class="text-xs text-slate-500">Inicio</label>
+           <input type="date" value="${cfg.inicio}" onchange="wizSet('${iid}','inicio',this.value)" class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+           ${ciclos.length ? `<select onchange="wizSet('${iid}','cicloId',this.value)" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+             ${ciclos.map((c) => `<option value="${c.id}" ${c.id === cfg.cicloId ? 'selected' : ''}>${nombreCiclo(c)}${c.dia_venc ? ` · vence ${c.dia_venc}` : ''}</option>`).join('')}</select>` : ''}
+         </div>
+         <div class="mt-1 text-xs text-slate-500">→ Primer periodo: <b>Del ${fmtDMY(cfg.inicio)} al ${fmtDMY(finCR(cfg.inicio))}</b></div>`;
+    return `
+    <div class="rounded-xl ring-1 ring-slate-200 bg-slate-50 p-3 mb-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div><b>🎯 ${t.nombre_track}</b> <span class="text-xs text-slate-400">${t.dias_horario || ''}</span></div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs text-slate-400">S/</span>
+          <input type="number" step="0.01" min="0" value="${cfg.monto}" onchange="wizSet('${iid}','monto',this.value)"
+            class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right font-medium bg-white">
+        </div>
+      </div>
+      ${promos.length ? `<div class="mt-2 flex items-center gap-2">
+        <label class="text-xs text-slate-500 shrink-0">🎁 Promoción</label>
+        <select onchange="wizSet('${iid}','promo',this.value)" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+          <option value="">Sin promoción · solo el primer CR</option>
+          ${promos.map((p) => `<option value="${p.id}" ${p.id === cfg.promo ? 'selected' : ''}>${p.nombre} · ${p.meses_pagados} pagados + ${p.meses_total - p.meses_pagados} gratis</option>`).join('')}
+        </select>
+      </div>` : ''}
+      ${detalle}
+    </div>`;
+  }).join('');
+  const total = wizPlan(jid).reduce((s, x) => s + (x.gratis ? 0 : x.monto), 0);
+  openModal(`Generar cobros · ${nom(j)}`, `
+    <p class="mb-3 text-xs text-slate-500"><b>Paso 2 de 2.</b> Revisa el primer cobro de cada track (o aplica una promoción). Puedes ajustar el monto si tiene precio especial; quedará como su mensualidad.</p>
+    ${cards}
+    <div class="flex items-center justify-between gap-2 border-t border-slate-200 pt-3">
+      <button type="button" onclick="wizOmitir('${jid}')" class="text-xs text-slate-400 hover:text-rose-600 hover:underline">Omitir por ahora (quedará SIN cobros)</button>
+      <button type="button" onclick="wizGenerar('${jid}')" class="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700">Generar deuda: ${S(total)}</button>
+    </div>`);
+}
+window.wizOmitir = (jid) => {
+  if (!confirm('El alumno quedará registrado pero SIN ningún cobro generado (aparecerá en "Sin CR" para regularizar). ¿Omitir?')) return;
+  closeModal(); go('alumnos');
+  toast('⚠ Alumno sin cobros: genera sus CR desde su ficha → Tracks');
+};
+window.wizGenerar = (jid) => {
+  const j = jugador(jid);
+  const plan = wizPlan(jid);
+  if (!plan.length) { closeModal(); go('alumnos'); return; }
+  // Precio editado en el wizard → queda como mensualidad del track (beca/convenio)
+  Object.entries(WIZ_CFG).forEach(([iid, cfg]) => {
+    const i = DB.inscripciones.find((x) => x.id === iid); if (!i) return;
+    const t = track(i.track_id);
+    i.costo_mensual_personalizado = (cfg.monto === t.mensualidad_sugerida) ? null : cfg.monto;
+  });
+  const porInsc = {};
+  plan.forEach((x) => {
+    const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: x.i.id, tipo: 'CR',
+      origen: x.promo ? 'promo' : 'manual', concepto: x.t.nombre_track,
+      descripcion: `Del ${fmtDMY(x.inicio)} al ${fmtDMY(x.fin)}`,
+      ciclo_inicio: x.inicio, ciclo_fin: x.fin, ciclo_dia: x.ciclo ? x.ciclo.dia : null,
+      periodo: x.inicio.slice(0, 7), fecha_vencimiento: x.venc,
+      ...(x.promo ? { promo: x.promo.nombre, gratis: !!x.gratis } : {}),
+      monto: x.monto, pagado_monto: 0, estado: x.monto > 0 ? 'por_pagar' : 'pagado' };
+    DB.cargos.push(cargo);
+    porInsc[x.i.id] = porInsc[x.i.id] && porInsc[x.i.id] > x.fin ? porInsc[x.i.id] : x.fin;
+    x.i.ciclo_dia = x.ciclo ? x.ciclo.dia : x.i.ciclo_dia;
+  });
+  Object.entries(porInsc).forEach(([iid, fin]) => { const i = DB.inscripciones.find((x) => x.id === iid); if (i) i.ultima_fecha_corte = fin; });
+  liquidarCargosGratis(jid);
+  const total = plan.reduce((s, x) => s + (x.gratis ? 0 : x.monto), 0);
+  closeModal(); go('alumnos');
+  toast(`✓ ${plan.length} CR generado(s) · deuda ${S(total)} — listo para cobrar`);
 };
 
 // ---------- Registrar pago desde Tesorería: elegir alumno y abrir el flujo ----------
