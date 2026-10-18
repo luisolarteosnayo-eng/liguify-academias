@@ -3155,6 +3155,7 @@ window.formPagoAlumno = (jid, voucherPreset) => {
       </div>
       ${field('Fecha de pago', input('pg_fecha', `type="date" required value="${HOY}" max="${HOY}"`) +
         '<p class="-mt-2 mb-3 text-[11px] text-slate-400">Cámbiala solo para <b>regularizar</b> un pago de días anteriores; la fecha de registro en el sistema se guarda aparte.</p>')}
+      ${field('Comentarios', `<textarea id="pg_coment" rows="2" placeholder="Observación opcional (ej. pagó mitad en efectivo y mitad por Yape, voucher impreso…)" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>`)}
       <div id="pgVoucherBox">${voucherPreset
         ? `<div class="mb-3 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-3 py-2 text-xs text-emerald-700">✓ Voucher adjuntado desde WhatsApp · <button type="button" onclick="zoomImg(PAGO_VOUCHER,'Voucher de WhatsApp')" class="underline">ver</button></div>`
         : field('Voucher del pago', input('pg_voucher', 'type="file" accept="image/*" onchange="pgVoucherFile(this)"'))}</div>
@@ -3314,6 +3315,7 @@ window.guardarPagoAlumno = async (e, jid) => {
   // Datos ya leídos del formulario: desde aquí el proceso es CRÍTICO y bloqueante
   const fechaPago = val('pg_fecha') || HOY;
   const numOp = val('pg_op');
+  const comentario = (val('pg_coment') || '').trim() || null;
   openModal('Registrando pago', `
     <div class="text-center py-6">
       <div class="inline-block h-10 w-10 animate-spin rounded-full border-4 border-emerald-200 border-t-emerald-600"></div>
@@ -3334,6 +3336,7 @@ window.guardarPagoAlumno = async (e, jid) => {
     fecha: fechaPago,                              // fecha de PAGO (editable para regularizaciones)
     created_at: new Date().toISOString(),          // fecha de REGISTRO en el sistema (la BD guarda la suya al insertar)
     registrado_por: usuarioActual(),               // quién registró el pago (visible al aprobar)
+    comentario,                                    // observación libre (visible al aprobar y en el historial)
     medio: medio ? medio.nombre : '', num_operacion: numOp, voucher_url: voucherFinal,
     total, detalle, estado: 'pendiente' });   // Pendiente Aprobación (Tesorería la aprueba)
   // Guardar YA en el servidor (pago + cargos juntos) y confirmar recién después
@@ -3957,6 +3960,7 @@ window.gestionarPago = (id) => {
         </div>` : ''}
         <p class="text-sm mb-1"><b>${j ? nom(j) : ''}</b> · Total <b id="apTotal">${S(p.total ?? p.monto ?? 0)}</b></p>
         <p class="text-xs text-slate-400 mb-3">Registrado por <b>${String(p.registrado_por || '—').replace(/</g, '&lt;')}</b> · ${regDMY(p) || fmtDMY(p.fecha)}</p>
+        ${p.comentario ? `<div class="mb-3 rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-xs text-amber-800">💬 <b>Comentario del registro:</b> ${String(p.comentario).replace(/</g, '&lt;')}</div>` : ''}
         <div class="text-xs font-medium text-slate-500 mb-1">Cargos pagados <span class="font-normal text-slate-400">· corrige el monto si no coincide con el voucher</span></div>
         <div class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3">
           ${(p.detalle || []).map((d, k) => `<div class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
@@ -4089,6 +4093,7 @@ function pagosDocsHTML(jid) {
           <div class="text-xs text-slate-500">${p.medio || ''}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}</div>
           <div class="text-[11px] text-slate-400">Fecha de pago: ${fmtDMY(p.fecha)}${regDMY(p) ? ` · Registrado en sistema: ${regDMY(p)}${regDMY(p) !== fmtDMY(p.fecha) ? ' <span class="text-amber-600">(regularización)</span>' : ''}` : ''}</div>
           ${rech ? `<div class="text-[11px] text-rose-600 mt-0.5">✕ Rechazado${p.fecha_rechazo ? ' el ' + fmtDMY(p.fecha_rechazo) : ''} · los cargos volvieron a pendientes de pago</div>` : ''}
+          ${p.comentario ? `<div class="mt-0.5 text-[11px] text-amber-700">💬 ${String(p.comentario).replace(/</g, '&lt;')}</div>` : ''}
         </div>
         <div class="text-right shrink-0">
           <div class="text-lg font-bold ${rech ? 'text-slate-400 line-through' : 'text-emerald-600'}">${S(p.total ?? p.monto ?? 0)}</div>
