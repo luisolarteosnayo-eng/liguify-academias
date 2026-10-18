@@ -2447,8 +2447,11 @@ function fichaTracksHTML(jid) {
       <div class="flex items-center justify-between">
         <div>
           <b>${t.nombre_track}</b> <span class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</span>
-          <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)'}${
-            DB.cargos.some((c) => c.inscripcion_id === i.id && c.tipo === 'CR') ? '' : ` <button type="button" onclick="formFijarCorte('${i.id}','${jid}')" class="text-indigo-600 hover:underline" title="Migración: registra hasta qué fecha ya está pagado, sin generar CR">✏️ Fijar corte</button>`}</div>
+          <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${ROL === 'admin'
+            ? `<input type="date" value="${i.ultima_fecha_corte || ''}" onchange="editarCorteAdmin('${i.id}','${jid}',this.value)"
+                class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Solo Administrador: el próximo CR se genera desde el día siguiente a esta fecha">`
+            : (i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)')}${
+            ROL !== 'admin' && !DB.cargos.some((c) => c.inscripcion_id === i.id && c.tipo === 'CR') ? ` <button type="button" onclick="formFijarCorte('${i.id}','${jid}')" class="text-indigo-600 hover:underline" title="Migración: registra hasta qué fecha ya está pagado, sin generar CR">✏️ Fijar corte</button>` : ''}</div>
         </div>
         <div class="flex items-center gap-2">
           <span class="text-xs text-slate-400">S/</span>
@@ -2558,6 +2561,18 @@ function fijarCortePanelHTML(i, jid) {
     </div>`;
 }
 window.formFijarCorte = (iid, jid) => { FICHA_CORTE_INSC = iid; FICHA_CR_INSC = null; renderFichaTracks(jid); };
+// Solo Administrador: corrige la última fecha de corte de un track aunque ya
+// tenga CRs. No toca los CR existentes; solo mueve desde dónde arranca el próximo.
+window.editarCorteAdmin = (iid, jid, f) => {
+  const i = DB.inscripciones.find((x) => x.id === iid); if (!i) return;
+  if (!f || f === i.ultima_fecha_corte) { renderFichaTracks(jid); return; }
+  if (!confirm(`¿Cambiar la última fecha de corte a ${fmtDMY(f)}?\n\nEl próximo CR de este track se generará desde el ${fmtDMY(isoAddDays(f, 1))}. Los CR ya creados NO se modifican.`)) {
+    renderFichaTracks(jid); return;
+  }
+  i.ultima_fecha_corte = f;
+  toast('Fecha de corte actualizada · el próximo CR arranca el ' + fmtDMY(isoAddDays(f, 1)));
+  renderFichaTracks(jid);
+};
 window.fijarCorteInsc = (iid, jid) => {
   const i = DB.inscripciones.find((x) => x.id === iid); if (!i) return;
   const f = val('fc_fecha');
