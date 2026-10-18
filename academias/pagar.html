@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pago en línea · Liguify</title>
+<!-- Página PÚBLICA del link de pago: el padre llega aquí desde WhatsApp con
+     ?t=<token>. No requiere sesión: toda la seguridad vive en la Edge Function
+     pasarela-pagar (el token es secreto y la llave sk jamás llega al navegador). -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="../shared/supabase-config.js"></script>
+<script src="https://checkout.culqi.com/js/v4"></script>
+</head>
+<body class="min-h-screen bg-slate-100 font-sans text-slate-800">
+<div class="mx-auto max-w-md px-4 py-8">
+  <div id="box" class="rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+    <div class="py-10 text-center text-sm text-slate-400">
+      <div class="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600"></div>
+      Cargando tu pago…
+    </div>
+  </div>
+  <p class="mt-4 text-center text-[11px] text-slate-400">Pago procesado por Culqi · Liguify no almacena los datos de tu tarjeta</p>
+</div>
+<script>
+const FN = window.SUPABASE_CONFIG.url + '/functions/v1/pasarela-pagar';
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+let INFO = null;
+const S = (n) => 'S/ ' + (+n).toFixed(2);
+const box = () => document.getElementById('box');
+
+async function api(payload) {
+  try {
+    const r = await fetch(FN, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: window.SUPABASE_CONFIG.anonKey,
+        Authorization: 'Bearer ' + window.SUPABASE_CONFIG.anonKey },
+      body: JSON.stringify({ token: TOKEN, ...payload }) });
+    return await r.json().catch(() => ({ error: 'Servicio de pagos no disponible (' + r.status + ')' }));
+  } catch (e) { return { error: 'Sin conexión con el servicio de pagos' }; }
+}
+function pantallaError(msg) {
+  box().innerHTML = `<div class="py-8 text-center">
+    <div class="text-4xl mb-2">⚠️</div>
+    <p class="text-sm text-slate-600">${msg}</p>
+    <p class="mt-2 text-xs text-slate-400">Si crees que es un error, escríbele a tu academia.</p></div>`;
+}
+function pantallaPagado(ref) {
+  box().innerHTML = `<div class="py-8 text-center">
+    <div class="text-5xl mb-3">✅</div>
+    <h2 class="text-lg font-bold text-emerald-600">¡Pago confirmado!</h2>
+    <p class="mt-1 text-sm text-slate-600">${INFO ? 'El pago de <b>' + INFO.alumno + '</b> quedó registrado y aprobado.' : 'Tu pago quedó registrado y aprobado.'}</p>
+    ${ref ? `<p class="mt-2 text-xs text-slate-400">Referencia: ${ref}</p>` : ''}
+    <p class="mt-3 text-xs text-slate-500">La academia ya puede verlo en su sistema. ¡Gracias! 🙌</p></div>`;
+}
+function pintar() {
+  box().innerHTML = `
+    <div class="mb-4 text-center">
+      ${INFO.logo ? `<img src="${INFO.logo}" class="mx-auto mb-2 h-14 w-14 rounded-full object-contain ring-1 ring-slate-200">` : ''}
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">${INFO.academia}</div>
+      <h1 class="text-xl font-bold">Pago de ${INFO.alumno}</h1>
+    </div>
+    <div class="mb-3 divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">
+      ${INFO.detalle.map((d) => `<div class="flex items-center justify-between px-3 py-2 text-sm">
+        <span class="min-w-0 pr-2">${d.concepto}</span><span class="shrink-0 font-medium">${S(d.monto)}</span></div>`).join('')}
+    </div>
+    <div class="mb-4 flex items-center justify-between px-1">
+      <span class="text-sm text-slate-500">Total a pagar</span>
+      <span class="text-2xl font-bold">${S(INFO.monto)}</span>
+    </div>
+    <button onclick="abrirCulqi()" class="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white hover:bg-indigo-700">
+      💳 Pagar ${S(INFO.monto)}</button>
+    <p class="mt-2 text-center text-[11px] text-slate-400">Tarjeta de crédito/débito o Yape</p>
+    <div id="msg" class="mt-2 text-center text-xs text-rose-600"></div>`;
+}
+window.abrirCulqi = () => {
+  try {
+    Culqi.publicKey = INFO.pk;
+    Culqi.settings({ title: INFO.academia.slice(0, 40) || 'Liguify',
+      currency: 'PEN', amount: Math.round(INFO.monto * 100) });
+    Culqi.options({ lang: 'auto', installments: false,
+      paymentMethods: { tarjeta: true, yape: true, billetera: false, bancaMovil: false, agente: false, cuotealo: false } });
+    Culqi.open();
+  } catch (e) { document.getElementById('msg').textContent = 'No se pudo abrir el formulario de pago: ' + (e.message || e); }
+};
+// Callback estándar de Culqi Checkout: se invoca con el token generado
+window.culqi = async function () {
+  if (Culqi.token) {
+    Culqi.close();
+    box().innerHTML = `<div class="py-10 text-center text-sm text-slate-500">
+      <div class="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-emerald-200 border-t-emerald-600"></div>
+      Procesando tu pago…<br><span class="text-xs text-slate-400">No cierres esta página.</span></div>`;
+    const out = await api({ accion: 'cobrar', culqi_token: Culqi.token.id, email: (Culqi.token.email || '') });
+    if (out && out.ok) pantallaPagado(out.referencia);
+    else { pintar(); document.getElementById('msg').textContent = (out && out.error) || 'No se pudo procesar el pago.'; }
+  } else if (Culqi.error) {
+    const m = document.getElementById('msg');
+    if (m) m.textContent = Culqi.error.user_message || Culqi.error.merchant_message || 'Pago cancelado';
+  }
+};
+(async () => {
+  if (!TOKEN) { pantallaError('Este link de pago está incompleto.'); return; }
+  const info = await api({ accion: 'info' });
+  if (info && info.estado === 'pagado') { INFO = info; pantallaPagado(info.charge_id); return; }
+  if (!info || info.error || info.estado !== 'pendiente') {
+    pantallaError((info && info.error) || 'Este link de pago ya no está vigente (la deuda cambió o fue pagada por otro medio).'); return;
+  }
+  if (!info.pk) { pantallaError('La academia aún no tiene pagos en línea activos.'); return; }
+  INFO = info;
+  pintar();
+})();
+</script>
+</body>
+</html>

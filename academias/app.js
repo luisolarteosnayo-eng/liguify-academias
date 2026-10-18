@@ -1332,6 +1332,7 @@ const SCREENS = {
             detalleHTML(a),
             `<div class="flex flex-col gap-1 text-xs">
               ${tel ? `<button onclick="waCobro('${j.id}')" class="rounded-lg bg-emerald-600 px-2.5 py-1 font-medium text-white hover:bg-emerald-700">💬 Cobro</button>` : '<span class="text-slate-400">sin tel.</span>'}
+              <button onclick="formLinkPago('${j.id}')" class="rounded-lg bg-indigo-600 px-2.5 py-1 font-medium text-white hover:bg-indigo-700" title="Link de pago online (tarjeta/Yape): el pago entra aprobado automáticamente">💳 Link</button>
               <button onclick="formDocumentoCuenta('${j.id}')" class="text-indigo-600 hover:underline">📄 Estado</button>
             </div>`,
           ];
@@ -5335,6 +5336,91 @@ window.wizGenerar = (jid) => {
   toast(`✓ ${plan.length} CR generado(s) · deuda ${S(total)} — listo para cobrar`);
 };
 
+// ---------- Pasarela de pagos (Fase 1 · Culqi): link de pago por alumno ----------
+// El link cobra el monto EXACTO de los cargos marcados (sin pagos parciales).
+// El padre paga con tarjeta/Yape en pagar.html y el pago nace APROBADO.
+window.formLinkPago = (jid) => {
+  const j = jugador(jid);
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const pend = DB.cargos.filter((c) => c.jugador_id === jid && saldoC(c) > 0);
+  if (!pend.length) { toast('El alumno no tiene deuda pendiente'); return; }
+  openModal(`💳 Link de pago · ${nom(j)}`, `
+    <p class="mb-2 text-xs text-slate-500">Marca los cargos que cubrirá el link. El padre paga el <b>total exacto</b> (sin pagos parciales) con tarjeta o Yape, y el pago queda <b>aprobado automáticamente</b>. La comisión la asume la academia.</p>
+    <div class="mb-3 max-h-60 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
+      ${pend.map((c) => `<label class="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm">
+        <input type="checkbox" class="lpChk h-4 w-4 accent-indigo-600" value="${c.id}" data-m="${saldoC(c)}" checked onchange="lpTotal()">
+        ${badge(c.tipo, c.tipo === 'CNR' ? 'fuchsia' : 'indigo')}
+        <span class="min-w-0 flex-1">${descCargo(c)}</span>
+        <b class="shrink-0">${S(saldoC(c))}</b></label>`).join('')}
+    </div>
+    <div class="mb-3 flex items-center justify-between px-1">
+      <span class="text-sm text-slate-500">Total del link</span><b id="lpTot" class="text-lg">—</b></div>
+    <div id="lpOut"></div>
+    <div class="flex justify-end gap-2">
+      <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cerrar</button>
+      <button type="button" id="lpBtn" onclick="generarLinkPago('${jid}')" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Generar link</button>
+    </div>`);
+  lpTotal();
+};
+window.lpTotal = () => {
+  const t = [...document.querySelectorAll('.lpChk:checked')].reduce((s, c) => s + (+c.dataset.m || 0), 0);
+  if (el('lpTot')) el('lpTot').textContent = S(t);
+};
+window.generarLinkPago = async (jid) => {
+  const ids = [...document.querySelectorAll('.lpChk:checked')].map((c) => c.value);
+  if (!ids.length) { toast('Marca al menos un cargo'); return; }
+  if (!(window.AcademiasDB && AcademiasDB.on)) { toast('Disponible solo en modo conectado'); return; }
+  el('lpBtn').disabled = true; el('lpBtn').textContent = 'Generando…';
+  try {
+    const { data, error } = await AcademiasDB.sb.functions.invoke('pasarela',
+      { body: { accion: 'link', jugador_id: jid, cargo_ids: ids, origen: location.origin } });
+    let msg = null;
+    if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
+    else if (data && data.error) msg = data.error;
+    if (msg) throw new Error(msg);
+    const j = jugador(jid); const t = tutor(j.tutor_id) || {};
+    const num = waNumero(t.telefono_celular || '');
+    const texto = encodeURIComponent(`Hola 👋 Le enviamos el link para pagar ${S(data.monto)} de ${nom(j)} con tarjeta o Yape:\n${data.url}\nEl pago se confirma al instante. ¡Gracias! 🙌`);
+    el('lpOut').innerHTML = `
+      <div class="mb-3 rounded-lg bg-emerald-50 p-3 text-xs ring-1 ring-emerald-200">
+        <div class="mb-1 font-medium text-emerald-700">✓ Link generado · ${S(data.monto)}</div>
+        <input readonly value="${data.url}" onclick="this.select()" class="mb-2 w-full rounded border border-emerald-200 bg-white px-2 py-1.5 text-[11px]">
+        <div class="flex flex-wrap gap-2">
+          <button type="button" onclick="navigator.clipboard.writeText('${data.url}').then(() => toast('Link copiado'))" class="rounded-lg bg-white px-3 py-1.5 font-medium ring-1 ring-slate-300 hover:bg-slate-50">📋 Copiar</button>
+          ${num ? `<a href="https://wa.me/${num}?text=${texto}" target="_blank" class="rounded-lg bg-emerald-600 px-3 py-1.5 font-medium text-white hover:bg-emerald-700">💬 Enviar por WhatsApp</a>` : '<span class="self-center text-slate-400">tutor sin teléfono</span>'}
+        </div>
+      </div>`;
+  } catch (e) { toast('⚠ ' + (e.message || e)); }
+  el('lpBtn').disabled = false; el('lpBtn').textContent = 'Generar link';
+};
+// Configuración de la pasarela (Config → Empresa · solo admin)
+window.cargarPasarelaEstado = async () => {
+  if (!el('pasEstado')) return;
+  if (!(window.AcademiasDB && AcademiasDB.on)) { el('pasEstado').textContent = '· disponible solo en modo conectado'; return; }
+  try {
+    const { data, error } = await AcademiasDB.sb.functions.invoke('pasarela', { body: { accion: 'estado' } });
+    if (error || (data && data.error)) throw new Error((data && data.error) || (error && error.message));
+    if (el('pas_pk')) el('pas_pk').value = data.pk || '';
+    if (el('pas_activo')) el('pas_activo').checked = !!data.activo;
+    el('pasEstado').innerHTML = data.configurada
+      ? `· configurada ✓ (sk ····${data.sk_fin})${data.activo ? ' · <b class="text-emerald-600">ACTIVA</b>' : ' · inactiva'}`
+      : '· sin configurar';
+  } catch (e) { el('pasEstado').textContent = '· ⚠ ' + (e.message || e); }
+};
+window.guardarPasarela = async () => {
+  if (!(window.AcademiasDB && AcademiasDB.on)) { toast('Disponible solo en modo conectado'); return; }
+  try {
+    const { data, error } = await AcademiasDB.sb.functions.invoke('pasarela',
+      { body: { accion: 'config', pk: val('pas_pk'), sk: val('pas_sk'), activo: el('pas_activo').checked } });
+    let msg = null;
+    if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
+    else if (data && data.error) msg = data.error;
+    if (msg) throw new Error(msg);
+    if (el('pas_sk')) el('pas_sk').value = '';
+    toast('Pasarela guardada'); cargarPasarelaEstado();
+  } catch (e) { toast('⚠ ' + (e.message || e)); }
+};
+
 // ---------- Registrar pago desde Tesorería: elegir alumno y abrir el flujo ----------
 window.formPago = () => {
   const als = alumnosSede().filter((j) => DB.cargos.some((c) => c.jugador_id === j.id && (c.monto - (c.pagado_monto || 0)) > 0));
@@ -5547,10 +5633,24 @@ const CONFIG_TABS = {
           ${field('Twitter / X', input('p_twitter', `value="${v(a.twitter)}" placeholder="https://x.com/..."`))}
         </div>
         ${field('Google Maps URL', input('p_maps', `value="${v(a.google_maps_url)}" placeholder="https://maps.google.com/..."`))}
+        ${ROL === 'admin' ? `
+        <div class="mt-2 rounded-lg ring-1 ring-slate-200 p-3">
+          <div class="text-sm font-semibold text-slate-600">💳 Pasarela de pagos (Culqi) <span id="pasEstado" class="text-xs font-normal text-slate-400">· consultando…</span></div>
+          <p class="mb-2 mt-1 text-xs text-slate-400">La cuenta Culqi es de TU empresa: el dinero va directo a tu banco y la academia asume la comisión. La llave secreta se guarda solo en el servidor (nunca vuelve al navegador). Los pagos por link entran <b>aprobados automáticamente</b>.</p>
+          <div class="grid gap-2">
+            <input id="pas_pk" placeholder="Llave pública (pk_test_… / pk_live_…)" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <input id="pas_sk" type="password" placeholder="Llave secreta (sk_…) — déjala vacía para conservar la guardada" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          </div>
+          <div class="mt-2 flex items-center justify-between">
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="pas_activo" class="h-4 w-4 accent-emerald-600"> Pagos en línea <b>activos</b></label>
+            <button type="button" onclick="guardarPasarela()" class="rounded-lg bg-ink-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90">Guardar pasarela</button>
+          </div>
+        </div>` : ''}
         <div class="flex justify-end pt-2">
           <button type="submit" class="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar cambios</button>
         </div>
       </form>`;
+    cargarPasarelaEstado();
   },
 
   sedes() {
