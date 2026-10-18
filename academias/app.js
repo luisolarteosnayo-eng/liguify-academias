@@ -2290,7 +2290,7 @@ window.formAgregarAlumno = (tid) => {
 
       ${njFormBody(null)}
       ${submitBar('Crear jugador')}
-    </form>`);
+    </form>`, 'xl');   // modal ancho para ver todo el formulario con comodidad
 };
 
 // Cuerpo reutilizable del formulario de jugador (nuevo o edición). j=null => nuevo.
@@ -2616,10 +2616,15 @@ window.agregarInscripcion = (jid) => {
     if (obs) insc.observaciones = obs;
     if (!insc.ultima_fecha_corte) insc.fecha_inscripcion = inicio;
   } else {
-    DB.inscripciones.push({ id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: inicio, ultima_fecha_corte: null, observaciones: obs });
+    insc = { id: uid('i'), jugador_id: jid, track_id: tid, costo_mensual_personalizado: costo, activo: true, fecha_inscripcion: inicio, ultima_fecha_corte: null, observaciones: obs };
+    DB.inscripciones.push(insc);
   }
   FICHA_ADD_TRACK = false;   // al agregar, el panel se vuelve a plegar
-  toast(`Agregado a ${t.nombre_track} (genera su CR desde Estado de cuenta)`); renderFichaTracks(jid); renderCuenta(jid);
+  // Flujo guiado: el track recién agregado abre DE INMEDIATO su panel de CR
+  // (con atajo a promociones) para que ningún alumno quede sin CR generado
+  FICHA_CR_INSC = insc.id;
+  toast(`Agregado a ${t.nombre_track} · ahora genera su CR o aplica una promoción`);
+  renderFichaTracks(jid); renderCuenta(jid);
 };
 
 // Un cargo de S/ 0 no se cobra: el de beca queda Pagado de inmediato, y el mes
@@ -2753,6 +2758,9 @@ function crFormPanelHTML(i, jid) {
       <button type="button" onclick="cancelarFormCR('${jid}')" class="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
       <button type="button" onclick="agregarCR('${jid}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Agregar</button>
     </div>
+    ${promocionesSede().length ? `<div class="border-t border-indigo-100 pt-1.5 text-xs">
+      <button type="button" onclick="formPromo('${jid}','${i.id}')" class="text-indigo-600 hover:underline">🎁 O aplicar una promoción activa (genera la secuencia de CRs: 3×2, 4×3…)</button>
+    </div>` : ''}
   </div>`;
 }
 window.mostrarFormCR = (iid, jid) => { FICHA_CR_INSC = iid; renderFichaTracks(jid); };
@@ -2920,7 +2928,7 @@ window.agregarCR = (jid) => {
 };
 
 // ---------- Aplicar promoción (genera la secuencia de CR) ----------
-window.formPromo = (jid) => {
+window.formPromo = (jid, inscSel) => {
   const insc = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
   const promos = promocionesSede();
   if (!insc.length || !promos.length) { toast('Faltan tracks o promociones activas'); return; }
@@ -2936,6 +2944,7 @@ window.formPromo = (jid) => {
       <div id="promoPreview" class="rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100 mb-3"></div>
       ${submitBar('Generar promoción')}
     </form>`);
+  if (inscSel && el('promo_track')) el('promo_track').value = inscSel;   // track recién agregado preseleccionado
   promoPreview();
 };
 window.promoPreview = () => {
@@ -4294,7 +4303,7 @@ window.formEditarAlumno = (jid) => {
           <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar</button>
         </div>
       </div>
-    </form>`);
+    </form>`, 'xl');   // modal ancho: la ficha concentra toda la información del alumno
   // Cabecera enriquecida de la ficha: nombre grande, sede debajo y logo de la
   // sede a la derecha (openModal la restaura al abrir cualquier otro modal)
   const sd = sede(j.sede_id);
