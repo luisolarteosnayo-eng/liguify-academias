@@ -4108,7 +4108,8 @@ function pagosDocsHTML(jid) {
         <div class="text-right shrink-0">
           <div class="text-lg font-bold ${rech ? 'text-slate-400 line-through' : 'text-emerald-600'}">${S(p.total ?? p.monto ?? 0)}</div>
           ${p.voucher_url ? `<button type="button" onclick="verComprobante('${p.id}')" class="mt-1 text-xs text-indigo-600 hover:underline">🖼️ Ver voucher</button>` : ''}
-          ${p.doc_tipo ? `<button type="button" onclick="verComprobantePago('${p.id}')" class="mt-1 block w-full text-right text-xs text-indigo-600 hover:underline">${p.doc_tipo === 'recibo' ? '🧾 Recibo' : p.doc_tipo === 'factura' ? '📄 Factura' : '📄 Boleta'} ${p.doc_serie || ''}-${p.doc_numero || ''}</button>` : ''}
+          ${p.doc_tipo ? `<button type="button" onclick="verComprobantePago('${p.id}')" class="mt-1 block w-full text-right text-xs text-indigo-600 hover:underline">${p.doc_tipo === 'recibo' ? '🧾 Recibo' : p.doc_tipo === 'factura' ? '📄 Factura' : '📄 Boleta'} ${p.doc_serie || ''}-${p.doc_numero || ''}</button>`
+            : rech ? '' : `<button type="button" onclick="verComprobantePago('${p.id}')" title="Vista previa del recibo (aún sin emitir)" class="mt-1 block w-full text-right text-xs text-slate-500 hover:text-indigo-600 hover:underline">🧾 Comprobante</button>`}
         </div>
       </div>
       <div class="mt-2 border-t border-slate-100 pt-2 space-y-1 ${rech ? 'opacity-60' : ''}">
@@ -6853,21 +6854,26 @@ function numEnLetras(n) {
 // simple se genera en pantalla (descargable/compartible como imagen).
 window.verComprobantePago = (pid) => {
   const p = DB.pagos.find((x) => x.id === pid);
-  if (!p || !p.doc_tipo) { toast('Este pago aún no tiene comprobante emitido'); return; }
-  if (p.doc_tipo !== 'recibo') {
+  if (!p) return;
+  if (p.estado === 'rechazado') { toast('Un pago rechazado no tiene comprobante'); return; }
+  if (p.doc_tipo && p.doc_tipo !== 'recibo') {
     if (p.doc_pdf_url) { window.open(p.doc_pdf_url, '_blank'); return; }
     toast(p.sunat_error ? '⚠ ' + p.sunat_error : 'El comprobante no tiene PDF disponible'); return;
   }
+  // Sin doc emitido: VISTA PREVIA del recibo (mismo modelo, sin número)
+  const preview = !p.doc_tipo;
   const j = jugador(p.jugador_id);
   const t = DB.tutores.find((x) => x.id === p.tutor_id);
   const sd = j ? sede(j.sede_id) : sede(p.sede_id);
   const a = DB.academia;
-  const nro = `${p.doc_serie || 'R'}-${String(p.doc_numero || '').padStart(6, '0')}`;
+  const nro = preview ? 'VISTA PREVIA' : `${p.doc_serie || 'R'}-${String(p.doc_numero || '').padStart(6, '0')}`;
   const det = (p.detalle && p.detalle.length) ? p.detalle : [{ concepto: 'Pago de servicios', monto: p.total ?? 0 }];
-  const arch = `recibo_${nro}`;
+  const arch = preview ? 'recibo_vista_previa' : `recibo_${nro}`;
   const logo = (sd && sd.logo_url) || a.logo_url || null;
   const dato = (lbl, v) => `<tr><td class="pr-2 py-0.5 align-top text-[11px] font-bold text-slate-500 whitespace-nowrap">${lbl}</td><td class="py-0.5 text-[12px] text-slate-800">: ${v}</td></tr>`;
-  openModal('Recibo simple', `
+  openModal(preview ? 'Recibo · vista previa' : 'Recibo simple', `
+    ${preview ? `<div class="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 ring-1 ring-amber-200">
+      👁 <b>Vista previa</b> — este recibo aún no está emitido ni numerado${p.estado === 'pendiente' ? ' y el pago sigue <b>pendiente de aprobación</b>' : ''}. Se numera al emitirlo en Tesorería → 🧾 Emitir comprobantes.</div>` : ''}
     <div id="docCuenta" class="bg-white p-4" style="font-family: Arial, Helvetica, sans-serif">
       <div class="border border-slate-300 rounded-lg overflow-hidden">
         <!-- Cabecera: logo + sede a la izquierda · caja del número a la derecha -->
@@ -6880,9 +6886,9 @@ window.verComprobantePago = (pid) => {
               ${sd && sd.direccion1 ? `<div class="text-[11px] text-slate-400">${sd.direccion1}${sd.ciudad ? ' - ' + sd.ciudad : ''}</div>` : ''}
             </div>
           </div>
-          <div class="shrink-0 rounded-lg border-2 border-slate-700 px-4 py-2.5 text-center">
+          <div class="shrink-0 rounded-lg border-2 ${preview ? 'border-amber-500' : 'border-slate-700'} px-4 py-2.5 text-center">
             <div class="text-[11px] font-bold tracking-wide text-slate-500">RECIBO INTERNO</div>
-            <div class="text-xl font-black text-slate-900">${nro}</div>
+            ${preview ? '<div class="text-sm font-black text-amber-600">VISTA PREVIA</div>' : `<div class="text-xl font-black text-slate-900">${nro}</div>`}
           </div>
         </div>
         <!-- Cliente y fechas -->
