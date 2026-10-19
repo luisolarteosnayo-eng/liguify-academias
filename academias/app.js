@@ -3572,7 +3572,10 @@ async function renderWsp(silencioso) {
           ${msgs.map((m) => `
             <div class="flex ${m.direccion === 'out' ? 'justify-end' : 'justify-start'}">
               <div class="max-w-[80%] rounded-xl px-3 py-2 text-sm shadow-sm ${m.direccion === 'out' ? 'bg-emerald-100' : 'bg-white ring-1 ring-slate-200'}">
-                ${m.tipo === 'imagen' || m.tipo === 'documento' ? `
+                ${m.tipo === 'audio' ? (WSP_AUDS[m.id]
+                  ? `<audio controls data-mid="${m.id}" src="${WSP_AUDS[m.id]}" class="max-w-[230px]"></audio>`
+                  : `<button onclick="wspAudio('${m.id}','${(m.media_path || '').replace(/'/g, '')}')" class="rounded-lg bg-slate-100 px-3 py-2 text-sm hover:bg-slate-200">🎧 Reproducir audio</button>`)
+                : m.tipo === 'imagen' || m.tipo === 'documento' ? `
                   <div class="flex flex-col gap-1.5">
                     <button onclick="wspVerMedia('${m.id}','${(m.media_path || '').replace(/'/g, '')}')" class="rounded-lg bg-slate-100 px-3 py-4 text-2xl hover:bg-slate-200">${m.tipo === 'imagen' ? '🖼️' : '📄'} <span class="block text-xs text-slate-500">Ver ${m.tipo}</span></button>
                     ${conv.jugador_id && m.direccion === 'in' ? `<button onclick="wspUsarVoucher('${conv.id}','${m.id}')" class="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">💳 Registrar pago con este voucher</button>` : ''}
@@ -3589,9 +3592,14 @@ async function renderWsp(silencioso) {
             <span class="flex-1 text-xs text-slate-500">Imagen lista para enviar — el texto de abajo irá como pie de foto</span>
             <button onclick="wspImgQuitar()" class="rounded-lg px-2 py-1 text-xs text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">✕ Quitar</button>
           </div>` : ''}
+          ${WSP_AUD ? `<div class="mb-2 flex items-center gap-3 rounded-lg bg-slate-50 p-2 ring-1 ring-slate-200">
+            <span class="text-2xl">🎵</span>
+            <span class="flex-1 truncate text-xs text-slate-500">Audio listo para enviar: <b>${WSP_AUD.nombre}</b>${'' /* sin pie de foto: WhatsApp no lo admite en audios */}</span>
+            <button onclick="wspImgQuitar()" class="rounded-lg px-2 py-1 text-xs text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">✕ Quitar</button>
+          </div>` : ''}
           <div class="flex gap-2">
-            <label title="Adjuntar imagen" class="flex cursor-pointer items-center rounded-lg px-3 text-lg ring-1 ring-slate-300 hover:bg-slate-50">📎
-              <input type="file" accept="image/*" class="hidden" onchange="wspImgArchivo(this)"></label>
+            <label title="Adjuntar imagen o audio (mp3, m4a, ogg)" class="flex cursor-pointer items-center rounded-lg px-3 text-lg ring-1 ring-slate-300 hover:bg-slate-50">📎
+              <input type="file" accept="image/*,audio/*" class="hidden" onchange="wspImgArchivo(this)"></label>
             <input id="wspTxt" placeholder="Escribe una respuesta… (puedes pegar una imagen con Ctrl+V)"
               onpaste="wspPaste(event)"
               onkeydown="if(event.key==='Enter'){event.preventDefault(); if(!event.repeat) wspEnviar();}"
@@ -3626,6 +3634,18 @@ window.wspEstadoSet = async (cid, estado) => {
 window.wspFiltrar = (f) => { WSP_FILTRO = f; renderWsp(true); };
 let WSP_ENVIANDO = false;   // candado anti doble envío (Enter repetido / doble clic)
 let WSP_IMG = null;         // dataURL de la imagen pegada/adjuntada, lista para enviar
+let WSP_AUD = null;         // { data: dataURL, nombre } del audio adjuntado
+const WSP_AUDS = {};        // cache de URLs firmadas de audios ya cargados (sobrevive al autorefresh)
+// Reproducir un audio recibido: pide la URL firmada una sola vez y pinta el player
+window.wspAudio = async (mid, mediaPath) => {
+  if (!mediaPath) { toast('Este mensaje no tiene archivo'); return; }
+  if (mediaPath === 'demo') { toast('Audio de demostración (sin archivo real)'); return; }
+  try {
+    WSP_AUDS[mid] = await urlVoucher(mediaPath);
+    await renderWsp(true);
+    setTimeout(() => { const a = document.querySelector(`audio[data-mid="${mid}"]`); if (a) a.play().catch(() => { /* autoplay bloqueado */ }); }, 150);
+  } catch (e) { toast('⚠ No se pudo cargar el audio: ' + (e.message || e)); }
+};
 // Redimensiona a máx 1600px (JPEG 85%) para no pasar el límite de WhatsApp
 function wspImgData(f) {
   return new Promise((res, rej) => {
@@ -3646,7 +3666,7 @@ function wspImgData(f) {
   });
 }
 async function wspSetImg(f) {
-  try { WSP_IMG = await wspImgData(f); renderWsp(true); }
+  try { WSP_IMG = await wspImgData(f); WSP_AUD = null; renderWsp(true); }
   catch (e) { toast('⚠ ' + (e.message || e)); }
 }
 window.wspPaste = (ev) => {
@@ -3655,39 +3675,65 @@ window.wspPaste = (ev) => {
   ev.preventDefault();
   wspSetImg(it.getAsFile());
 };
-window.wspImgArchivo = (inp) => { const f = inp.files && inp.files[0]; inp.value = ''; if (f) wspSetImg(f); };
-window.wspImgQuitar = () => { WSP_IMG = null; renderWsp(true); };
+window.wspImgArchivo = (inp) => {
+  const f = inp.files && inp.files[0]; inp.value = '';
+  if (!f) return;
+  if (/^audio\//.test(f.type)) { wspSetAud(f); return; }   // el clip acepta imagen O audio
+  wspSetImg(f);
+};
+window.wspImgQuitar = () => { WSP_IMG = null; WSP_AUD = null; renderWsp(true); };
+// Audio adjunto: WhatsApp acepta mp3/m4a/aac/ogg (el webm del grabador del navegador NO)
+function wspSetAud(f) {
+  if (f.size > 15 * 1024 * 1024) { toast('El audio supera el límite de WhatsApp (16 MB)'); return; }
+  const permitidos = ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/amr', 'audio/x-m4a'];
+  if (!permitidos.includes(f.type)) { toast(`WhatsApp no acepta ${f.type || 'ese formato'}. Usa mp3, m4a, aac u ogg.`); return; }
+  const r = new FileReader();
+  r.onload = () => { WSP_AUD = { data: r.result, nombre: f.name }; WSP_IMG = null; renderWsp(true); };
+  r.readAsDataURL(f);
+}
 window.wspEnviar = async () => {
   if (WSP_ENVIANDO) return;
   const inp = el('wspTxt');
   const txt = ((inp && inp.value) || '').trim();
   const img = WSP_IMG;
+  const aud = WSP_AUD;
   const conv = WSP_CONVS.find((x) => x.id === WSP_SEL);
-  if ((!txt && !img) || !conv) return;
+  if ((!txt && !img && !aud) || !conv) return;
   if (inp) inp.value = '';   // se limpia al instante: un segundo Enter ya no reenvía
-  WSP_IMG = null;
+  WSP_IMG = null; WSP_AUD = null;
   if (!wspOn()) {   // DEMO: simula el envío en local
-    DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: img ? 'imagen' : 'texto',
-      cuerpo: txt || null, media_path: img ? 'demo' : null, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
-    conv.ultimo_mensaje = img ? '📷 Imagen' : txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
+    DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: aud ? 'audio' : img ? 'imagen' : 'texto',
+      cuerpo: aud ? null : (txt || null), media_path: (img || aud) ? 'demo' : null, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
+    if (aud && txt) DB.wspDemo.msgs.push({ id: uid('wm'), conversacion_id: conv.id, direccion: 'out', tipo: 'texto',
+      cuerpo: txt, created_at: new Date().toISOString(), enviado_por: usuarioActual(), estado: 'sent' });
+    conv.ultimo_mensaje = aud ? '🎵 Audio' : img ? '📷 Imagen' : txt.slice(0, 120); conv.ultimo_mensaje_at = new Date().toISOString();
     if (conv.marcada === 'sin_respuesta') conv.marcada = null;   // responder no borra la clasificación de cobranza
     renderWsp(); return;
   }
   WSP_ENVIANDO = true;
   try {
-    const body = img
-      ? { accion: 'imagen', conversacion_id: conv.id, imagen: img, texto: txt }
-      : { accion: 'texto', conversacion_id: conv.id, texto: txt };
-    const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body });
-    let msg = null;
-    if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
-    else if (data && data.error) msg = data.error;
-    if (msg) throw new Error(msg);
+    const invocar = async (body) => {
+      const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body });
+      let msg = null;
+      if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
+      else if (data && data.error) msg = data.error;
+      if (msg) throw new Error(msg);
+    };
+    if (aud) {
+      await invocar({ accion: 'audio', conversacion_id: conv.id, audio: aud.data });
+      // WhatsApp no admite pie de foto en audios: el texto va como mensaje aparte
+      if (txt) await invocar({ accion: 'texto', conversacion_id: conv.id, texto: txt });
+    } else if (img) {
+      await invocar({ accion: 'imagen', conversacion_id: conv.id, imagen: img, texto: txt });
+    } else {
+      await invocar({ accion: 'texto', conversacion_id: conv.id, texto: txt });
+    }
     await renderWsp();
   } catch (e) {
     toast('⚠ ' + (e.message || e));
     const inp2 = el('wspTxt'); if (inp2 && !inp2.value) inp2.value = txt;   // no se pierde lo escrito
     if (img && !WSP_IMG) { WSP_IMG = img; renderWsp(true); }                // ni la imagen
+    if (aud && !WSP_AUD) { WSP_AUD = aud; renderWsp(true); }                // ni el audio
   } finally { WSP_ENVIANDO = false; }
 };
 window.wspVerMedia = async (mid, mediaPath) => {

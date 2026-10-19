@@ -135,6 +135,44 @@ Deno.serve(async (req) => {
       return json({ ok: true, wa_id: waId });
     }
 
+    if (body.accion === 'audio') {
+      // Archivo de audio adjuntado en la bandeja (dataURL). WhatsApp acepta
+      // mp3 / m4a / aac / ogg(opus) / amr — NO webm (grabador del navegador).
+      const { conversacion_id, audio } = body;
+      const data = String(audio || '');
+      if (!conversacion_id || !/^data:audio\//.test(data)) return json({ error: 'Faltan conversacion_id o audio' }, 400);
+      const mime = data.slice(5, data.indexOf(';')) || 'audio/mpeg';
+      const permitidos = ['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/amr', 'audio/mp3'];
+      if (!permitidos.includes(mime)) return json({ error: `WhatsApp no acepta el formato ${mime}. Usa mp3, m4a, aac u ogg.` }, 400);
+      const [c] = await apiUser(`wsp_conversaciones?id=eq.${conversacion_id}&select=id,academia_id,telefono,ultimo_entrante_at,marcada`);
+      if (!c) return json({ error: 'Conversación no encontrada (¿es de tu academia?)' }, 403);
+      const abierta = c.ultimo_entrante_at && (Date.now() - new Date(c.ultimo_entrante_at).getTime()) < 24 * 3600 * 1000;
+      if (!abierta) return json({ error: 'La ventana de 24h está cerrada: el cliente no escribió en el último día.' }, 400);
+      const bytes = Uint8Array.from(atob(data.split(',')[1] || ''), (ch) => ch.charCodeAt(0));
+      if (!bytes.length) return json({ error: 'El audio llegó vacío' }, 400);
+      if (bytes.length > 15 * 1024 * 1024) return json({ error: 'El audio supera el límite de WhatsApp (16 MB)' }, 400);
+      const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : mime.includes('aac') ? 'aac' : mime.includes('amr') ? 'amr' : 'mp3';
+      const fd = new FormData();
+      fd.append('messaging_product', 'whatsapp');
+      fd.append('file', new Blob([bytes], { type: mime === 'audio/mp3' ? 'audio/mpeg' : mime }), `audio.${ext}`);
+      const up = await fetch(`${GRAPH}/${PHONE_ID}/media`, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` }, body: fd });
+      const ub = await up.json().catch(() => null);
+      if (!up.ok || !ub || !ub.id) return json({ error: 'Meta rechazó el audio: ' + ((ub && ub.error && ub.error.message) || up.status) }, 502);
+      const waId = await wa({ to: c.telefono, type: 'audio', audio: { id: ub.id } });
+      let mediaPath = null;
+      const ruta = `wsp/${c.id}/out-${Date.now()}.${ext}`;
+      const st = await fetch(`${SUPABASE_URL}/storage/v1/object/academias-vouchers/${ruta}`, {
+        method: 'POST', headers: { apikey: SRK, Authorization: `Bearer ${SRK}`, 'Content-Type': mime, 'x-upsert': 'true' }, body: bytes,
+      });
+      if (st.ok) mediaPath = `vstore:${ruta}`;
+      await dbWrite('POST', 'wsp_mensajes', { conversacion_id: c.id, academia_id: c.academia_id, direccion: 'out',
+        tipo: 'audio', cuerpo: null, media_path: mediaPath, wa_id: waId || null, enviado_por: quien, estado: 'sent' });
+      await dbWrite('PATCH', `wsp_conversaciones?id=eq.${c.id}`,
+        { ultimo_mensaje: '🎵 Audio', ultimo_mensaje_at: new Date().toISOString(), no_leidos: 0,
+          marcada: c.marcada === 'sin_respuesta' ? null : (c.marcada || null) });
+      return json({ ok: true, wa_id: waId });
+    }
+
     if (body.accion === 'cobranza') {
       // Plantilla de recordatorio: {tutor} {alumno} {monto} {sede} + teléfono de
       // respuestas de la sede como 5ª variable (y sufijo del botón wa.me)
