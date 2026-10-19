@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
             const esPrimeroEn20h = !conv.ultimo_entrante_at || (Date.now() - new Date(conv.ultimo_entrante_at).getTime()) > 20 * 3600 * 1000;
             const mediaPath = (m.type === 'image' || m.type === 'document') ? await guardarMedia(m, 'vouchers', conv.id) : null;
             await dbT('POST', `wsp_mensajes?on_conflict=wa_id`, { conversacion_id: conv.id, org_id: orgId, direccion: 'in', tipo, cuerpo: cuerpoBase, media_path: mediaPath, wa_id: m.id }, 'return=minimal,resolution=ignore-duplicates');
-            await dbT('PATCH', `wsp_conversaciones?id=eq.${conv.id}`, { ultimo_mensaje: resumen, ultimo_mensaje_at: ahora, ultimo_entrante_at: ahora, no_leidos: (+conv.no_leidos || 0) + 1, nombre: conv.nombre || nombrePerfil }, 'return=minimal');
+            await dbT('PATCH', `wsp_conversaciones?id=eq.${conv.id}`, { ultimo_mensaje: resumen, ultimo_mensaje_at: ahora, ultimo_entrante_at: ahora, no_leidos: (+conv.no_leidos || 0) + 1, nombre: conv.nombre || nombrePerfil, marcada: 'sin_respuesta' }, 'return=minimal');
             if (esPrimeroEn20h && TOKEN && PHONE_ID) {
               const org = (await dbT('GET', `organizaciones?select=nombre,whatsapp_respuestas&id=eq.${orgId}&limit=1`) || [])[0];
               if (org && org.whatsapp_respuestas) {
