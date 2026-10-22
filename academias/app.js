@@ -1756,14 +1756,20 @@ function donaPorCategoria(items, emptyMsg) {
   const cats = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
   if (!cats.length) return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-6 text-center text-sm text-slate-400">${emptyMsg}</div>`;
   const total = cats.reduce((s, c) => s + totals[c], 0);
-  const palette = ['#d9232e', '#171e2e', '#f59e0b', '#10b981', '#0ea5e9', '#8b93a7'];
+  // Color FIJO por rubro (el mismo en todas las donas: Ingresos y Por cobrar);
+  // los rubros no catalogados toman un color estable derivado de su nombre
+  const CAT_COLOR = { 'Mensualidades': '#d9232e', 'Inscripción a torneo': '#171e2e', 'Inscripción torneo': '#171e2e', 'Clase de prueba': '#f59e0b',
+    'Clase individual': '#10b981', 'Uniforme': '#0ea5e9', 'Matrícula': '#8b5cf6', 'Otros': '#8b93a7' };
+  const palette = ['#d9232e', '#171e2e', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ec4899', '#8b93a7'];
+  const colorDe = (c) => CAT_COLOR[c]
+    || palette[[...String(c)].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) >>> 0, 0) % palette.length];
   const cx = 90, cy = 90, r = 82, rInner = 50;
   const rad = (a) => ((a - 90) * Math.PI) / 180;
   let acc = 0;
   const slices = cats.map((c, i) => {
     const start = (acc / total) * 360; acc += totals[c];
     const end = (acc / total) * 360;
-    const color = palette[i % palette.length];
+    const color = colorDe(c);
     if (cats.length === 1) return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"><title>${c}: ${S0(totals[c])}</title></circle>`;
     const x1 = (cx + r * Math.cos(rad(start))).toFixed(2), y1 = (cy + r * Math.sin(rad(start))).toFixed(2);
     const x2 = (cx + r * Math.cos(rad(end))).toFixed(2), y2 = (cy + r * Math.sin(rad(end))).toFixed(2);
@@ -1776,7 +1782,7 @@ function donaPorCategoria(items, emptyMsg) {
   const legend = cats.map((c, i) => {
     const pctTot = Math.round((totals[c] / total) * 100);
     return `<div class="flex items-center justify-between gap-2 text-xs py-1">
-      <span class="flex items-center gap-1.5 min-w-0"><span class="inline-block h-3 w-3 rounded-sm shrink-0" style="background:${palette[i % palette.length]}"></span><span class="truncate text-slate-600">${c}</span></span>
+      <span class="flex items-center gap-1.5 min-w-0"><span class="inline-block h-3 w-3 rounded-sm shrink-0" style="background:${colorDe(c)}"></span><span class="truncate text-slate-600">${c}</span></span>
       <span class="font-medium shrink-0">${S0(totals[c])} · ${pctTot}%</span>
     </div>`;
   }).join('');
