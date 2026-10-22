@@ -6657,17 +6657,28 @@ window.eliminarCatTorneo = (cid) => {
 let TJ_SEL = new Set();   // jugadores marcados en el modal (sobrevive a los re-render del filtro)
 window.formAgregarJugTorneo = (catId) => {
   const c = DB.torneoCategorias.find((x) => x.id === catId);
-  const tks = tracksSede();
   TJ_SEL = new Set();
   openModal(`Agregar jugadores · Categoría ${c.nombre}`, `
     <form onsubmit="guardarJugadoresTorneo(event,'${catId}')">
-      ${field('Buscar por nombre', input('tj_q', `placeholder="Escribe un nombre… (busca en toda la sede)" oninput="tjListaJugadores('${catId}')" autofocus`))}
-      ${field('Track (filtro adicional)', select('tj_track', [{ v: '', t: '🌐 Todos los tracks de la sede' }, ...tks.map((tk) => ({ v: tk.id, t: tk.nombre_track }))], `onchange="tjListaJugadores('${catId}')"`))}
+      ${field('Buscar por nombre', input('tj_q', `placeholder="Escribe un nombre… (busca en todas las sedes)" oninput="tjListaJugadores('${catId}')" autofocus`))}
+      <div class="grid grid-cols-2 gap-3">
+        ${field('Sede', select('tj_sede', [{ v: '', t: '🌐 Todas las sedes' }, ...sedesActivas().map((s) => ({ v: s.id, t: s.nombre_sede }))], `onchange="tjTracksDeSede(); tjListaJugadores('${catId}')"`))}
+        ${field('Track (filtro adicional)', `<select id="tj_track" onchange="tjListaJugadores('${catId}')" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm bg-white"></select>`)}
+      </div>
       <div id="tj_lista" class="mb-3 max-h-64 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100"></div>
       <div id="tj_selinfo" class="mb-2 text-xs text-indigo-600 empty:hidden"></div>
       ${submitBar('Agregar seleccionados')}
     </form>`);
+  tjTracksDeSede();
   tjListaJugadores(catId);
+};
+// Opciones de track según la sede elegida ("Todas" lista los tracks de todas
+// las sedes activas, con la sede como sufijo para distinguirlos)
+window.tjTracksDeSede = () => {
+  const sid = val('tj_sede');
+  const tks = DB.tracks.filter((t) => t.activo !== false && sedeOperativa(t.sede_id) && (!sid || t.sede_id === sid));
+  el('tj_track').innerHTML = `<option value="">🌐 Todos los tracks</option>` + tks.map((t) =>
+    `<option value="${t.id}">${t.nombre_track}${sid ? '' : ` · ${sede(t.sede_id) ? sede(t.sede_id).nombre_sede : ''}`}</option>`).join('');
 };
 window.tjMarcar = (jid, on) => {
   if (on) TJ_SEL.add(jid); else TJ_SEL.delete(jid);
@@ -6677,17 +6688,19 @@ window.tjListaJugadores = (catId) => {
   const q = (val('tj_q') || '').trim().toLowerCase();
   const tid = val('tj_track');
   const yaIds = new Set(DB.torneoJugadores.filter((x) => x.categoria_id === catId).map((x) => x.jugador_id));
-  // Primero el NOMBRE (busca en toda la sede); el track es filtro adicional opcional
+  // Primero el NOMBRE (busca en TODAS las sedes activas); sede y track son
+  // filtros adicionales opcionales
+  const sid = val('tj_sede');
   const enTrack = tid ? new Set(DB.inscripciones.filter((i) => i.track_id === tid && i.activo).map((i) => i.jugador_id)) : null;
-  let jugs = alumnosSede().filter((j) => j.estado_alumno !== 'baja' && !yaIds.has(j.id)
-    && (!enTrack || enTrack.has(j.id)));
+  let jugs = DB.jugadores.filter((j) => j.estado_alumno !== 'baja' && sedeOperativa(j.sede_id) && !yaIds.has(j.id)
+    && (!sid || j.sede_id === sid) && (!enTrack || enTrack.has(j.id)));
   if (q) jugs = jugs.filter((j) => nom(j).toLowerCase().includes(q));
   jugs = jugs.sort((a, b) => nom(a).localeCompare(nom(b), 'es')).slice(0, 60);
   el('tj_lista').innerHTML = jugs.length
     ? jugs.map((j) => `<label class="flex items-center gap-2.5 px-3 py-2.5 text-sm cursor-pointer hover:bg-slate-50">
         <input type="checkbox" class="tjChk h-4 w-4 accent-indigo-600" value="${j.id}" ${TJ_SEL.has(j.id) ? 'checked' : ''}
           onchange="tjMarcar('${j.id}', this.checked)">
-        <span>${nom(j)} <span class="text-xs text-slate-400">· Cat. ${anio(j.fecha_nacimiento)}</span></span>
+        <span>${nom(j)} <span class="text-xs text-slate-400">· Cat. ${anio(j.fecha_nacimiento)}${val('tj_sede') ? '' : ` · 📍 ${sede(j.sede_id) ? sede(j.sede_id).nombre_sede : ''}`}</span></span>
       </label>`).join('')
     : `<p class="p-3 text-sm text-slate-400">${q ? `Sin coincidencias para "${q}"${tid ? ' en ese track' : ''}.` : 'No hay jugadores disponibles (o ya están en la categoría).'}</p>`;
   tjMarcar(null, false);   // refresca el contador (null nunca está en el set)
