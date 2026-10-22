@@ -2449,8 +2449,8 @@ function fichaTracksHTML(jid) {
         <div>
           <b>${t.nombre_track}</b> <span class="text-xs text-slate-400">${t.dias_horario || ''} · ${sede(t.sede_id).nombre_sede}</span>
           <div class="text-xs text-slate-400">Inicio: ${i.fecha_inscripcion ? fmtDMY(i.fecha_inscripcion) : '—'} · Últ. corte: ${ROL === 'admin'
-            ? `<input type="date" value="${i.ultima_fecha_corte || ''}" onchange="editarCorteAdmin('${i.id}','${jid}',this.value)"
-                class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Solo Administrador: el próximo CR se genera desde el día siguiente a esta fecha">`
+            ? `<input type="date" value="${i.ultima_fecha_corte || ''}" onblur="editarCorteAdmin('${i.id}','${jid}',this.value)"
+                class="rounded border border-slate-300 px-1.5 py-0.5 text-xs bg-white" title="Solo Administrador: termina de digitar la fecha y sal del campo para aplicarla (el próximo CR se genera desde el día siguiente)">`
             : (i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '— (sin CR generado)')}${
             ROL !== 'admin' && !DB.cargos.some((c) => c.inscripcion_id === i.id && c.tipo === 'CR') ? ` <button type="button" onclick="formFijarCorte('${i.id}','${jid}')" class="text-indigo-600 hover:underline" title="Migración: registra hasta qué fecha ya está pagado, sin generar CR">✏️ Fijar corte</button>` : ''}</div>
         </div>
