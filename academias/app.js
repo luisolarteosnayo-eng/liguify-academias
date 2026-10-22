@@ -2744,16 +2744,20 @@ function crFormPanelHTML(i, jid) {
     <div class="text-xs font-medium text-indigo-700">Agregar CR · ${t.nombre_track} · ${S(monto)}</div>
     <input type="hidden" id="cr_track" value="${i.id}">
     <input type="hidden" id="cr_monto" value="${monto}">
-    <input type="hidden" id="cr_fin" value="${fin}">
     <div class="flex items-center gap-2">
-      <label class="text-xs text-slate-500 shrink-0">Inicio</label>
-      <input id="cr_inicio" type="date" value="${inicio}" onchange="crAutoDatos()"
-        class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
-      <select id="cr_ciclo" onchange="crAutoDatos()" title="Define el día de vencimiento" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
+      <select id="cr_ciclo" onchange="crAutoDatos()" title="Precalcula las fechas; luego puedes ajustarlas a mano" class="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
         ${ciclos.map((c) => `<option value="${c.id}" ${c === cicloDef ? 'selected' : ''}>${nombreCiclo(c)}${c.dia_venc ? ` · vence ${c.dia_venc}` : ''}</option>`).join('')}
       </select>
     </div>
-    <div class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${venc ? ` · vence ${fmtDMY(venc)}` : ''}</b></div>
+    <div class="flex flex-wrap items-end gap-2">
+      <label class="text-xs text-slate-500">Inicio<br><input id="cr_inicio" type="date" value="${inicio}" onchange="crAutoDatos()"
+        class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"></label>
+      <label class="text-xs text-slate-500">Fin <span class="text-slate-400">(= corte del track)</span><br><input id="cr_fin" type="date" value="${fin}" onchange="crTexto()"
+        class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"></label>
+      <label class="text-xs text-slate-500">Vence<br><input id="cr_venc" type="date" value="${venc || ''}" onchange="crTexto()"
+        class="rounded border border-slate-300 px-2 py-1.5 text-sm bg-white"></label>
+    </div>
+    <div class="text-xs text-slate-500">→ <b id="cr_ciclotxt">Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${venc ? ` · vence ${fmtDMY(venc)}` : ''}</b> <span class="text-slate-400">· cambiar Inicio o ciclo recalcula Fin y Vence</span></div>
     <div class="flex gap-2">
       <input id="cr_desc" placeholder="Descripción (opc.)" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm">
       <button type="button" onclick="cancelarFormCR('${jid}')" class="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
@@ -2890,6 +2894,8 @@ window.guardarEdicionCR = (cid, jid) => {
 };
 // CR manual: al cambiar track resetea la fecha de inicio sugerida; al cambiar
 // fecha o ciclo recalcula el periodo (corte = inicio + 1 mes − 1 día).
+// Cambiar Inicio o ciclo RECALCULA Fin y Vence como sugerencia; editar Fin o
+// Vence a mano solo refresca el resumen (el valor manual se respeta al Agregar)
 window.crAutoDatos = (resetInicio) => {
   const i = DB.inscripciones.find((x) => x.id === el('cr_track').value);
   if (!i) return;
@@ -2897,10 +2903,13 @@ window.crAutoDatos = (resetInicio) => {
   el('cr_monto').value = (i.costo_mensual_personalizado ?? t.mensualidad_sugerida);
   if (resetInicio || !el('cr_inicio').value) el('cr_inicio').value = inicioCR(i);
   const inicio = el('cr_inicio').value;
-  const fin = finCR(inicio);
   const ciclo = DB.ciclosPago.find((c) => c.id === el('cr_ciclo').value);
-  const venc = ciclo && ciclo.dia_venc ? fechaVencimiento(inicio, ciclo.dia_venc) : null;
-  el('cr_fin').value = fin;
+  el('cr_fin').value = finCR(inicio);
+  el('cr_venc').value = (ciclo && ciclo.dia_venc) ? fechaVencimiento(inicio, ciclo.dia_venc) : '';
+  crTexto();
+};
+window.crTexto = () => {
+  const inicio = el('cr_inicio').value, fin = el('cr_fin').value, venc = el('cr_venc').value;
   el('cr_ciclotxt').textContent = `Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${venc ? ` · vence ${fmtDMY(venc)}` : ''}`;
 };
 window.agregarCR = (jid) => {
@@ -2909,11 +2918,12 @@ window.agregarCR = (jid) => {
   const t = track(i.track_id);
   const ciclo = DB.ciclosPago.find((c) => c.id === el('cr_ciclo').value);
   const inicio = el('cr_inicio').value, fin = el('cr_fin').value;
-  if (!inicio || !fin) { toast('No se pudo calcular el ciclo'); return; }
+  if (!inicio || !fin) { toast('Completa las fechas de inicio y fin'); return; }
+  if (fin < inicio) { toast('La fecha fin no puede ser anterior al inicio'); return; }
   const monto = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;   // fijo, no editable
   const nota = el('cr_desc').value.trim();
   const j = jugador(jid);
-  const venc = ciclo && ciclo.dia_venc ? fechaVencimiento(inicio, ciclo.dia_venc) : null;
+  const venc = el('cr_venc').value || null;   // editable; vacío = sin vencimiento
   const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: i.id, tipo: 'CR', origen: 'manual',
     concepto: t.nombre_track, descripcion: `Del ${fmtDMY(inicio)} al ${fmtDMY(fin)}${nota ? ' · ' + nota : ''}`,
     ciclo_inicio: inicio, ciclo_fin: fin, ciclo_dia: ciclo ? ciclo.dia : null, fecha_vencimiento: venc,
