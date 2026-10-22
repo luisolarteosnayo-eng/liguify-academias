@@ -3471,6 +3471,18 @@ const wspEstado = (c) => c.marcada
   || ((c.ultimo_entrante_at && (!c.ultimo_mensaje_at || c.ultimo_entrante_at >= c.ultimo_mensaje_at)) ? 'sin_respuesta' : null);
 const wspPendiente = (c) => wspEstado(c) === 'sin_respuesta';
 let WSP_FILTRO = '';   // '' = todas | clave de WSP_ESTADOS
+let WSP_Q = '';        // búsqueda: alumno, contacto o teléfono
+let WSP_SEDE = '';     // '' = todas las sedes
+const wspMatch = (c) => {
+  const jj = c.jugador_id ? jugador(c.jugador_id) : null;
+  // Sede: la de la conversación o, si es antigua y no la grabó, la del alumno
+  if (WSP_SEDE && (c.sede_id || (jj && jj.sede_id)) !== WSP_SEDE) return false;
+  if (!WSP_Q) return true;
+  const q = WSP_Q.toLowerCase();
+  return (c.nombre || '').toLowerCase().includes(q)
+    || String(c.telefono || '').includes(q.replace(/\D/g, '') || '§')
+    || (jj && nom(jj).toLowerCase().includes(q));
+};
 function wspPintarBadge() {
   const b = el('navWspBadge'); if (!b) return;
   if (WSP_PEND_N > 0) { b.textContent = WSP_PEND_N; b.classList.remove('hidden'); }
@@ -3547,6 +3559,8 @@ async function renderWsp(silencioso) {
   const keepHilo = pHilo ? { top: pHilo.scrollTop, abajo: pHilo.scrollHeight - pHilo.scrollTop - pHilo.clientHeight < 60 } : null;
   const keepLista = pLista ? pLista.scrollTop : null;
   const draft = pTxt ? { v: pTxt.value, focus: document.activeElement === pTxt } : null;
+  const qFoco = (document.activeElement && document.activeElement.id === 'wspQ')
+    ? (document.activeElement.selectionStart ?? WSP_Q.length) : null;
   const conv = WSP_CONVS.find((x) => x.id === WSP_SEL) || null;
   const msgs = conv ? await wspCargarMsgs(conv.id) : [];
   const hhmm = (iso) => iso ? new Date(iso).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -3557,16 +3571,25 @@ async function renderWsp(silencioso) {
         <div class="sticky top-0 z-10 border-b border-slate-200 bg-white">
           <div class="px-3 pt-2 text-xs font-semibold ${WSP_PEND_N ? 'text-rose-600' : 'text-emerald-600'}">
             ${WSP_PEND_N ? `🔔 ${WSP_PEND_N} sin respuesta` : '✅ Todo atendido'}</div>
+          <div class="flex gap-1.5 px-2 pt-1.5">
+            <input id="wspQ" value="${WSP_Q.replace(/"/g, '&quot;')}" placeholder="🔎 Alumno, contacto o teléfono…"
+              oninput="WSP_Q = this.value; renderWsp(true)"
+              class="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs">
+            <select onchange="WSP_SEDE = this.value; renderWsp(true)" class="max-w-[45%] rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-xs">
+              <option value="">🌐 Todas las sedes</option>
+              ${sedesActivas().map((s) => `<option value="${s.id}" ${WSP_SEDE === s.id ? 'selected' : ''}>${s.nombre_sede}</option>`).join('')}
+            </select>
+          </div>
           <div class="flex flex-wrap gap-1 px-2 py-1.5">
             <button onclick="wspFiltrar('')" class="rounded-full px-2 py-0.5 text-[10px] font-medium ${!WSP_FILTRO ? 'bg-ink-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">Todas</button>
             ${Object.entries(WSP_ESTADOS).map(([k, e]) => {
-              const n = WSP_CONVS.filter((c) => wspEstado(c) === k).length;
+              const n = WSP_CONVS.filter((c) => wspMatch(c) && wspEstado(c) === k).length;
               return `<button onclick="wspFiltrar('${k}')" class="rounded-full px-2 py-0.5 text-[10px] font-medium ${WSP_FILTRO === k ? `bg-${e.c}-600 text-white` : `bg-${e.c}-50 text-${e.c}-600 hover:bg-${e.c}-100`}">${e.t}${n ? ` · ${n}` : ''}</button>`;
             }).join('')}
           </div>
         </div>
         ${WSP_CONVS.length ? [...WSP_CONVS].sort((a, b) => wspPendiente(b) - wspPendiente(a))
-          .filter((c) => !WSP_FILTRO || wspEstado(c) === WSP_FILTRO).map((c) => {
+          .filter((c) => wspMatch(c) && (!WSP_FILTRO || wspEstado(c) === WSP_FILTRO)).map((c) => {
           const jj = c.jugador_id ? jugador(c.jugador_id) : null;
           const est = wspEstado(c), pend = est === 'sin_respuesta', E = est && WSP_ESTADOS[est];
           return `<button onclick="wspAbrir('${c.id}')" class="block w-full border-b border-slate-100 border-l-4 px-3 py-2.5 text-left hover:bg-slate-50 ${pend ? 'border-l-rose-400 bg-rose-50/40' : 'border-l-transparent'} ${WSP_SEL === c.id ? '!bg-indigo-50' : ''}">
@@ -3663,6 +3686,8 @@ async function renderWsp(silencioso) {
     txt.value = draft.v;
     if (draft.focus) { txt.focus(); try { txt.setSelectionRange(txt.value.length, txt.value.length); } catch (e) { /* ok */ } }
   } else if (txt && draft && draft.focus) txt.focus();
+  const qi = el('wspQ');
+  if (qi && qFoco !== null) { qi.focus(); try { qi.setSelectionRange(qFoco, qFoco); } catch (e) { /* ok */ } }
 }
 // Estado manual de seguimiento (PAGÓ / PAGARÁ EN CANCHA / PENDIENTE DE PAGO /
 // SIN RESPUESTA). El webhook lo regresa a SIN RESPUESTA cada vez que el
