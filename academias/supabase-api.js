@@ -441,24 +441,31 @@ window.AcademiasDB = (() => {
         try { wrote = (await fn()) || wrote; }
         catch (e) { console.error('[sync]', e); if (!firstErr) firstErr = e; }
       };
-      for (const key of Object.keys(T)) await paso(() => this._syncTable(key));
+      // FASE 1 — upserts de TODAS las tablas: los PATCH que sueltan referencias
+      // (p.ej. torneo_jugadores.cargo_id→null) viajan ANTES que cualquier delete
+      for (const key of Object.keys(T)) await paso(() => this._syncUpserts(key));
       await paso(() => this._syncAcademia());
       await paso(() => this._syncTrackStaff());
       await paso(() => this._syncAsistencias());
+      // FASE 2 — deletes en orden INVERSO de declaración (hijos antes que padres)
+      for (const key of Object.keys(T).reverse()) await paso(() => this._syncDeletes(key));
       if (firstErr) this._set('error', firstErr);
       else if (wrote || this.status !== 'ok') this._set('ok');
       this.busy = false;
     },
 
-    async _syncTable(key) {
+    _delTries: {},   // reintentos de borrado por id (un FK transitorio no debe dejar filas zombi)
+    _syncUpserts(key) { return this._syncTable(key, 'up'); },
+    _syncDeletes(key) { return this._syncTable(key, 'del'); },
+    async _syncTable(key, fase) {
       const { table, toRow } = T[key];
       const base = this.baseline[key] || {};
       const rows = this.db[key] || [];
       const current = {};
       rows.forEach((r) => { if (r && r.id) current[r.id] = toRow(r); });
 
-      const upserts = Object.keys(current).filter((id) => base[id] !== JSON.stringify(current[id]));
-      const deletes = Object.keys(base).filter((id) => !current[id] && !this._skipDel.has(id));
+      const upserts = (fase === 'del') ? [] : Object.keys(current).filter((id) => base[id] !== JSON.stringify(current[id]));
+      const deletes = (fase === 'up') ? [] : Object.keys(base).filter((id) => !current[id] && !this._skipDel.has(id));
       if (!upserts.length && !deletes.length) return false;
       this._set('saving');
 
@@ -482,8 +489,16 @@ window.AcademiasDB = (() => {
       }
       if (deletes.length) {
         const { error } = await sb.from(table).delete().in('id', deletes);
-        if (error) { deletes.forEach((id) => this._skipDel.add(id)); throw error; }
-        deletes.forEach((id) => { delete this.baseline[key][id]; });
+        if (error) {
+          // Reintentar en próximos ticks; solo tras 5 intentos fallidos se deja de
+          // insistir (y queda el error visible), nunca silenciosamente al primer golpe
+          deletes.forEach((id) => {
+            this._delTries[id] = (this._delTries[id] || 0) + 1;
+            if (this._delTries[id] >= 5) { this._skipDel.add(id); console.error('[sync] delete abandonado tras 5 intentos', table, id); }
+          });
+          throw error;
+        }
+        deletes.forEach((id) => { delete this.baseline[key][id]; delete this._delTries[id]; });
       }
       return true;
     },
