@@ -1000,11 +1000,20 @@ const SCREENS = {
       const { nuevos, clasesPrueba } = altasYPruebasDash(win, (sid) => sid === s.id);
       const bajas = DB.jugadores.filter((j) => j.sede_id === s.id && j.estado_alumno === 'baja'
         && (j.baja_fecha || '') >= win.inicio && (j.baja_fecha || '') <= win.fin && tuvoTrack(j.id)).length;
+      // Cobranza DEL PERIODO: de los cargos facturados este mes (CR por su ciclo,
+      // CNR por su vencimiento), cuánto ya se cobró y cuánto sigue pendiente
+      // (el pendiente excluye alumnos de baja, como el resto de KPIs)
+      const enPeriodo = (c) => { const f = c.ciclo_inicio || (c.periodo ? c.periodo + '-01' : (c.fecha_vencimiento || '')); return f >= win.inicio && f <= win.fin; };
+      const cargosP = DB.cargos.filter((c) => ids.has(c.jugador_id) && enPeriodo(c));
+      const cobradoP = cargosP.reduce((sm, c) => sm + Math.min(+c.pagado_monto || 0, +c.monto || 0), 0);
+      const pendP = cargosP.filter((c) => idsCobrables.has(c.jugador_id))
+        .reduce((sm, c) => sm + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
       return { s, ingresos, gastos, utilidad: ingresos - gastos, porCobrar,
-        nuevos: nuevos.length, pruebas: clasesPrueba.length, bajas };
+        cobradoP, pendP, nuevos: nuevos.length, pruebas: clasesPrueba.length, bajas };
     });
-    const tot = porSede.reduce((a, x) => { ['ingresos', 'gastos', 'porCobrar', 'nuevos', 'pruebas', 'bajas'].forEach((k) => { a[k] += x[k]; }); return a; },
-      { ingresos: 0, gastos: 0, porCobrar: 0, nuevos: 0, pruebas: 0, bajas: 0 });
+    const tot = porSede.reduce((a, x) => { ['ingresos', 'gastos', 'porCobrar', 'cobradoP', 'pendP', 'nuevos', 'pruebas', 'bajas'].forEach((k) => { a[k] += x[k]; }); return a; },
+      { ingresos: 0, gastos: 0, porCobrar: 0, cobradoP: 0, pendP: 0, nuevos: 0, pruebas: 0, bajas: 0 });
+    const pctCob = (x) => { const base = x.cobradoP + x.pendP; return base ? Math.round(x.cobradoP * 100 / base) : null; };
     const maxBar = Math.max(...porSede.map((x) => Math.max(x.ingresos, x.gastos)), 1);
     const fmtU2 = (u) => `<span class="${u > 0 ? 'text-emerald-600' : u < 0 ? 'text-rose-600' : 'text-slate-700'}">${u < 0 ? '−' : ''}${S0(Math.abs(u))}</span>`;
     const barra = (label, v, color) => `
@@ -1028,7 +1037,9 @@ const SCREENS = {
         ${card('Utilidad operativa', fmtU2(tot.ingresos - tot.gastos), 'ingresos − gastos')}
         ${card('Pendiente de cobro', S0(tot.porCobrar), 'saldo total por cobrar')}
       </div>
-      <div class="grid gap-3 grid-cols-3 mb-6">
+      <div class="grid gap-3 grid-cols-2 md:grid-cols-4 mb-6">
+        ${card('💰 Cobranza del periodo', pctCob(tot) === null ? '—' : `<span class="${pctCob(tot) >= 80 ? 'text-emerald-600' : pctCob(tot) >= 50 ? 'text-amber-600' : 'text-rose-600'}">${pctCob(tot)}%</span>`,
+          `cobrado ${S0(tot.cobradoP)} · pendiente <b class="text-rose-600">${S0(tot.pendP)}</b>`)}
         ${card('🎈 Clases de prueba', tot.pruebas, 'en el periodo')}
         ${card('🧒 Alumnos nuevos', `<span class="text-emerald-600">+${tot.nuevos}</span>`, 'altas del periodo')}
         ${card('Bajas', `<span class="${tot.bajas ? 'text-rose-600' : ''}">−${tot.bajas}</span>`, 'del periodo')}
@@ -1040,13 +1051,25 @@ const SCREENS = {
             <div class="text-sm font-medium text-slate-700">${x.s.nombre_sede} <span class="text-xs font-normal text-slate-400">· Utilidad ${fmtU2(x.utilidad)} · Por cobrar ${S0(x.porCobrar)}</span></div>
             ${barra('Ingresos', x.ingresos, '#d9232e')}
             ${barra('Gastos', x.gastos, '#171e2e')}
+            ${(() => { const p = pctCob(x); if (p === null) return '';
+              return `<div class="mt-1.5 flex items-center gap-2 text-xs">
+                <span class="w-16 shrink-0 text-slate-400">Cobranza</span>
+                <div class="h-4 flex-1 overflow-hidden rounded bg-rose-100" title="Cobrado ${S0(x.cobradoP)} · Pendiente ${S0(x.pendP)} (facturado del periodo)">
+                  <div class="h-4 rounded-l bg-emerald-500" style="width:${Math.max(2, p)}%"></div></div>
+                <span class="w-44 shrink-0 text-right"><b class="${p >= 80 ? 'text-emerald-600' : p >= 50 ? 'text-amber-600' : 'text-rose-600'}">${p}%</b>
+                  · ${S0(x.cobradoP)} <span class="text-slate-400">de</span> ${S0(x.cobradoP + x.pendP)}</span>
+              </div>`; })()}
           </div>`).join('') || '<p class="py-3 text-sm text-slate-400">Sin sedes activas.</p>'}
       </div>
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Detalle por sede</h3>
-      ${table(['Sede', 'Ingresos', 'Gastos', 'Utilidad operativa', 'Pendiente de cobro', '🎈 Clases de prueba', '🧒 Nuevos', 'Bajas'], [
-        ...porSede.map((x) => [`<b>${x.s.nombre_sede}</b>`, S0(x.ingresos), S0(x.gastos), fmtU2(x.utilidad), S0(x.porCobrar),
+      ${table(['Sede', 'Ingresos', 'Gastos', 'Utilidad operativa', 'Cobrado (periodo)', 'Pendiente (periodo)', '% Cobranza', 'Pendiente total', '🎈 Pruebas', '🧒 Nuevos', 'Bajas'], [
+        ...porSede.map((x) => [`<b>${x.s.nombre_sede}</b>`, S0(x.ingresos), S0(x.gastos), fmtU2(x.utilidad),
+          `<span class="text-emerald-600 font-medium">${S0(x.cobradoP)}</span>`, x.pendP ? `<span class="text-rose-600 font-medium">${S0(x.pendP)}</span>` : S0(0),
+          pctCob(x) === null ? '—' : `<b>${pctCob(x)}%</b>`, S0(x.porCobrar),
           String(x.pruebas), `<span class="text-emerald-600 font-medium">+${x.nuevos}</span>`, x.bajas ? `<span class="text-rose-600 font-medium">−${x.bajas}</span>` : '0']),
-        [`<b class="text-slate-500">Total general</b>`, `<b>${S0(tot.ingresos)}</b>`, `<b>${S0(tot.gastos)}</b>`, fmtU2(tot.ingresos - tot.gastos), `<b>${S0(tot.porCobrar)}</b>`,
+        [`<b class="text-slate-500">Total general</b>`, `<b>${S0(tot.ingresos)}</b>`, `<b>${S0(tot.gastos)}</b>`, fmtU2(tot.ingresos - tot.gastos),
+          `<b class="text-emerald-600">${S0(tot.cobradoP)}</b>`, `<b class="text-rose-600">${S0(tot.pendP)}</b>`,
+          pctCob(tot) === null ? '—' : `<b>${pctCob(tot)}%</b>`, `<b>${S0(tot.porCobrar)}</b>`,
           `<b>${tot.pruebas}</b>`, `<b class="text-emerald-600">+${tot.nuevos}</b>`, `<b class="${tot.bajas ? 'text-rose-600' : ''}">−${tot.bajas}</b>`],
       ])}`;
   },
