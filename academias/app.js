@@ -3033,7 +3033,11 @@ window.guardarPromoAlumno = (e, jid) => {
   const periodos = periodosPromo(ancla, promo);
   i.ultima_fecha_corte = periodos[periodos.length - 1].fin;
   liquidarCargosGratis(jid);   // promo 100% beca: sus meses gratis quedan pagados ya
-  closeModal(); toast(`Promoción ${promo.nombre} aplicada · ${periodos.length} CR generados`); renderCuenta(jid);
+  toast(`Promoción ${promo.nombre} aplicada · ${periodos.length} CR generados`);
+  // Volver a la FICHA del alumno (el modal de promo la había reemplazado):
+  // pestaña Cuenta, donde se ven los CR recién generados
+  formEditarAlumno(jid);
+  njTab('cuenta');
 };
 // ---------- Generar CR por ciclo (masivo) + log de procesos ----------
 // Elegibles: inscripciones activas del ciclo cuyo último corte sea IGUAL O ANTERIOR
