@@ -912,6 +912,7 @@ const SCREENS = {
         <p class="text-sm text-slate-500">Inventario de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> · stock = ingresos − salidas</p>
         <div class="flex gap-2">
           ${sedesActivas().length > 1 ? `<button onclick="formTrasladoInv()" class="rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50" title="Mueve stock de esta sede a otra (salida aquí + ingreso allá, trazable)">⇄ Traslado entre sedes</button>` : ''}
+          <button onclick="formSalidaInv()" class="rounded-lg px-4 py-2.5 text-sm font-medium text-rose-600 ring-1 ring-rose-300 hover:bg-rose-50" title="Descuenta stock a mano: merma, regalo, corrección de inventario">− Salida / ajuste</button>
           <button onclick="formPedidoInv()" class="rounded-lg ring-1 ring-indigo-300 text-indigo-600 px-4 py-2.5 text-sm font-medium hover:bg-indigo-50">+ Pedido</button>
           <button onclick="formIngresoInv()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Ingreso directo</button>
         </div>
@@ -930,11 +931,15 @@ const SCREENS = {
         : '<p class="text-sm text-slate-400">Sin pedidos pendientes.</p>'}
 
       <h3 class="mt-6 mb-2 text-sm font-semibold text-slate-600">Reporte de movimientos (últimos ${kardex.length})</h3>
-      ${kardex.length ? table(['Fecha', 'Tipo', 'Concepto', 'Talla', 'Cant.', 'Detalle'],
+      ${kardex.length ? table(['Fecha', 'Tipo', 'Concepto', 'Talla', 'Cant.', 'Detalle', ''],
         kardex.map((m) => [fmtDMY(m.fecha),
           m.tipo === 'salida' ? badge('Salida', 'rose') : badge('Ingreso', 'emerald'),
           cnNom(m.concepto_cnr_id), m.talla || '—', m.cantidad,
-          `${m.motivo || ''}${m.jugador_id && jugador(m.jugador_id) ? ' · ' + nom(jugador(m.jugador_id)) : ''}`]))
+          `${m.motivo || ''}${m.jugador_id && jugador(m.jugador_id) ? ' · ' + nom(jugador(m.jugador_id)) : ''}`,
+          // Anulable: solo movimientos manuales (no ventas con cargo, no pedidos,
+          // no traslados — esos se corrigen con un traslado inverso) y solo admin
+          (ROL === 'admin' && !m.cargo_id && !m.pedido_id && !String(m.motivo || '').startsWith('⇄') && !String(m.motivo || '').startsWith('Anulación'))
+            ? `<button onclick="anularMovInv('${m.id}')" class="text-xs text-rose-500 hover:underline" title="Genera el movimiento contrario (no borra el historial)">Anular</button>` : '']))
         : '<p class="text-sm text-slate-400">Sin movimientos.</p>'}`;
   },
 
@@ -7160,6 +7165,49 @@ window.guardarTrasladoInv = (e) => {
   DB.invMovimientos.push({ id: uid('im'), sede_id: destinoId, concepto_cnr_id: cnId, talla,
     tipo: 'ingreso', cantidad: cant, motivo: `⇄ Traslado desde ${origen}${extra ? ' · ' + extra : ''}`, fecha: HOY });
   closeModal(); toast(`✓ ${cant} unidad(es) trasladadas a ${destino}`); go('almacen');
+};
+// Salida/ajuste manual: descuenta stock con motivo (merma, corrección, regalo)
+window.formSalidaInv = () => {
+  const conceptos = conceptosCNRSede().filter((c) => c.maneja_stock)
+    .filter((c) => DB.invMovimientos.some((m) => m.sede_id === SEDE_ACTUAL && m.concepto_cnr_id === c.id));
+  if (!conceptos.length) { toast('Esta sede no tiene stock'); return; }
+  openModal(`− Salida / ajuste · ${sede(SEDE_ACTUAL).nombre_sede}`, `
+    <form onsubmit="guardarSalidaInv(event)">
+      <p class="mb-3 text-xs text-slate-500">Descuenta unidades del almacén con su motivo (merma, corrección de inventario, obsequio…). Queda en el kardex.</p>
+      ${field('Concepto', select('tr_concepto', conceptos.map((c) => ({ v: c.id, t: c.nombre })), 'onchange="trTallas()"'))}
+      ${field('Talla', `<select id="tr_talla" onchange="trMax()" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm bg-white"></select>`)}
+      ${field('Cantidad', input('tr_cant', 'type="number" min="1" step="1" required'))}
+      <p id="tr_stock" class="-mt-2 mb-3 text-[11px] text-slate-400"></p>
+      ${field('Motivo *', input('tr_motivo', 'required placeholder="Ej. corrección de inventario / merma / obsequio"'))}
+      ${submitBar('Registrar salida')}
+    </form>`);
+  trTallas();
+  el('tr_cant').value = 1;
+};
+window.guardarSalidaInv = (e) => {
+  e.preventDefault();
+  const cnId = val('tr_concepto'), talla = val('tr_talla') || null;
+  const cant = num('tr_cant');
+  const stock = stockInvDe(SEDE_ACTUAL, cnId, talla);
+  if (!cant || cant < 1) { toast('Cantidad inválida'); return; }
+  if (cant > stock) { toast(`Solo hay ${stock} en stock de esa talla`); return; }
+  DB.invMovimientos.push({ id: uid('im'), sede_id: SEDE_ACTUAL, concepto_cnr_id: cnId, talla,
+    tipo: 'salida', cantidad: cant, motivo: val('tr_motivo').trim(), fecha: HOY });
+  closeModal(); toast('Salida registrada ✓'); go('almacen');
+};
+// Anular un movimiento manual: genera el contrario (historial intacto, estilo
+// append-only del resto del sistema)
+window.anularMovInv = (mid) => {
+  const m = DB.invMovimientos.find((x) => x.id === mid);
+  if (!m) return;
+  const contrario = m.tipo === 'ingreso' ? 'salida' : 'ingreso';
+  if (contrario === 'salida' && stockInvDe(m.sede_id, m.concepto_cnr_id, m.talla || null) < m.cantidad) {
+    toast('No hay stock suficiente para anular este ingreso (ya se usó)'); return;
+  }
+  if (!confirm(`¿Anular este ${m.tipo} de ${m.cantidad} unidad(es)${m.talla ? ' talla ' + m.talla : ''}?\n\nSe genera el movimiento contrario; el historial no se borra.`)) return;
+  DB.invMovimientos.push({ id: uid('im'), sede_id: m.sede_id, concepto_cnr_id: m.concepto_cnr_id, talla: m.talla || null,
+    tipo: contrario, cantidad: m.cantidad, motivo: `Anulación de ${m.tipo} del ${fmtDMY(m.fecha)}${m.motivo ? ' (' + m.motivo + ')' : ''}`, fecha: HOY });
+  toast('Movimiento anulado · stock corregido ✓'); go('almacen');
 };
 window.formPedidoInv = () => {
   if (!conceptosCNRSede().some((c) => c.maneja_stock)) { toast('No hay conceptos inventariables'); return; }
