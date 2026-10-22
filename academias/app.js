@@ -4230,8 +4230,30 @@ function regDMY(p) {
   const d = new Date(p.created_at);
   return isNaN(d) ? '' : fmtDMY(isoDate(d));
 }
+// Los meses GRATIS de una promoción se muestran DENTRO del documento de pago
+// que liquidó sus meses pagados (y en su comprobante), no como tarjeta aparte.
+// Regla: el gratis se adjudica al ÚLTIMO pago no rechazado que tocó esa promo.
+function gratisLiquidadosEnPago(p) {
+  if (!p || p.estado === 'rechazado') return [];
+  const keyDe = (cid) => { const c = DB.cargos.find((x) => x.id === cid); return c && c.promo && c.inscripcion_id ? c.inscripcion_id + '|' + c.promo : null; };
+  const keys = new Set((p.detalle || []).map((d) => keyDe(d.cargo_id)).filter(Boolean));
+  if (!keys.size) return [];
+  return DB.cargos.filter((g) => g.jugador_id === p.jugador_id && g.gratis && g.promo && g.inscripcion_id
+    && keys.has(g.inscripcion_id + '|' + g.promo)
+    && (() => {
+      const k = g.inscripcion_id + '|' + g.promo;
+      const cand = DB.pagos.filter((q) => q.estado !== 'rechazado' && q.jugador_id === p.jugador_id
+        && (q.detalle || []).some((d) => keyDe(d.cargo_id) === k))
+        .sort((a, b) => ((a.fecha || '') + (a.created_at || '')).localeCompare((b.fecha || '') + (b.created_at || '')));
+      return cand.length && cand[cand.length - 1].id === p.id;
+    })());
+}
 function pagosDocsHTML(jid) {
+  // Gratis ya adjudicados a un pago: no se repiten como tarjeta independiente
+  const adjudicados = new Set();
+  DB.pagos.filter((p) => p.jugador_id === jid).forEach((p) => gratisLiquidadosEnPago(p).forEach((g) => adjudicados.add(g.id)));
   const docs = DB.pagos.filter((p) => p.jugador_id === jid).map((p) => {
+    const gratisDe = gratisLiquidadosEnPago(p);
     // Un pago rechazado no cuenta: sus cargos ya volvieron a pendientes y el
     // documento queda solo como constancia (atenuado, monto tachado).
     const rech = p.estado === 'rechazado';
@@ -4259,12 +4281,15 @@ function pagosDocsHTML(jid) {
         ${(p.detalle || []).map((d) => `<div class="flex justify-between text-sm">
           <span>${badge(d.tipo, d.tipo === 'CNR' ? 'fuchsia' : 'indigo')} ${d.concepto}</span>
           <span class="${rech ? 'line-through text-slate-400' : ''}">${S(d.monto)}</span></div>`).join('') || '<div class="text-xs text-slate-400">Sin detalle de cargos</div>'}
+        ${gratisDe.map((g) => `<div class="flex justify-between text-sm">
+          <span>${badge('CR', 'indigo')} ${g.concepto} ${g.descripcion || ''} <span class="rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-700">🎁 PROMO ${g.promo}</span></span>
+          <span class="font-medium text-emerald-600">Gratis</span></div>`).join('')}
       </div>
     </div>` };
   });
   // CR de S/ 0 liquidados sin documento (beca / mes gratis de promo): figuran en el
   // historial para poder verificar la continuidad de las fechas de corte del alumno
-  DB.cargos.filter((c) => c.jugador_id === jid && !(c.monto > 0) && c.estado === 'pagado')
+  DB.cargos.filter((c) => c.jugador_id === jid && !(c.monto > 0) && c.estado === 'pagado' && !adjudicados.has(c.id))
     .forEach((c) => docs.push({ f: c.ciclo_inicio || (c.periodo ? c.periodo + '-01' : ''), html: `
     <div class="rounded-xl ring-1 ring-emerald-200 bg-emerald-50/50 p-4 mb-3">
       <div class="flex items-start justify-between">
@@ -7025,7 +7050,10 @@ window.verComprobantePago = (pid) => {
   const sd = j ? sede(j.sede_id) : sede(p.sede_id);
   const a = DB.academia;
   const nro = preview ? 'VISTA PREVIA' : `${p.doc_serie || 'R'}-${String(p.doc_numero || '').padStart(6, '0')}`;
-  const det = (p.detalle && p.detalle.length) ? p.detalle : [{ concepto: 'Pago de servicios', monto: p.total ?? 0 }];
+  const det = (p.detalle && p.detalle.length) ? [...p.detalle] : [{ concepto: 'Pago de servicios', monto: p.total ?? 0 }];
+  // Meses GRATIS de la promoción liquidada con este pago: figuran en el
+  // comprobante con importe 0.00 (el total no cambia)
+  gratisLiquidadosEnPago(p).forEach((g) => det.push({ concepto: `${g.concepto} ${g.descripcion || ''} · GRATIS (Promo ${g.promo})`.trim(), monto: 0 }));
   const arch = preview ? 'recibo_vista_previa' : `recibo_${nro}`;
   const logo = (sd && sd.logo_url) || a.logo_url || null;
   const dato = (lbl, v) => `<tr><td class="pr-2 py-0.5 align-top text-[11px] font-bold text-slate-500 whitespace-nowrap">${lbl}</td><td class="py-0.5 text-[12px] text-slate-800">: ${v}</td></tr>`;
