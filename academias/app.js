@@ -4076,7 +4076,8 @@ window.gestionarPago = (id) => {
           ${field('Fecha de pago', input('ap_fecha', `type="date" value="${p.fecha || HOY}"`))}
           ${field('N° de operación', input('ap_op', `value="${String(p.num_operacion || '').replace(/"/g, '&quot;')}" placeholder="—"`))}
         </div>
-        <p class="text-[11px] text-slate-400 mb-2">Las correcciones se guardan al aprobar. Al rechazar, los cargos vuelven a pendientes.</p>
+        ${field('Observación de Tesorería', `<textarea id="ap_obs" rows="2" placeholder="Opcional al aprobar · OBLIGATORIA al rechazar (ej. voucher ilegible, monto no coincide, operación no encontrada)" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>`)}
+        <p class="text-[11px] text-slate-400 mb-2">Las correcciones se guardan al aprobar. Al rechazar, los cargos vuelven a pendientes y el motivo queda visible en el historial del alumno.</p>
         <div class="mt-1 flex items-center justify-between gap-2">
           <button type="button" onclick="rechazarPagoDoc('${id}')" class="rounded-lg px-4 py-2.5 text-sm font-medium text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">Rechazar</button>
           <button type="button" onclick="aprobarPagoDoc('${id}')" class="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">Aprobar</button>
@@ -4124,12 +4125,19 @@ window.aprobarPagoDoc = (id) => {
   const f = val('ap_fecha'); if (f) p.fecha = f;
   if (el('ap_op')) p.num_operacion = val('ap_op').trim();
   if (p.jugador_id) liquidarCargosGratis(p.jugador_id);
+  // Observación del tesorero: se suma al comentario del pago (visible en historial)
+  const obsA = (el('ap_obs') && val('ap_obs').trim()) || '';
+  if (obsA) p.comentario = [p.comentario, `Tesorería: ${obsA}`].filter(Boolean).join(' · ');
   p.estado = 'aprobado'; p.fecha_aprobacion = HOY;
   closeModal(); toast('Pago aprobado'); go('aprobar');
   syncAhora();   // persistir de inmediato (operación de dinero)
 };
 window.rechazarPagoDoc = (id) => {
   const p = DB.pagos.find((x) => x.id === id); if (!p || p.estado !== 'pendiente') return; // sin reversión: solo pendientes
+  // El motivo del rechazo es OBLIGATORIO: queda en el pago y en el historial
+  const motivo = (el('ap_obs') && val('ap_obs').trim()) || '';
+  if (!motivo) { toast('⚠ Escribe el motivo del rechazo en "Observación de Tesorería"'); el('ap_obs') && el('ap_obs').focus(); return; }
+  p.motivo_rechazo = motivo;
   p.medio = val('ap_medio') || p.medio;
   p.estado = 'rechazado'; p.fecha_rechazo = HOY;
   revertirCargosPago(p);   // los CR/CNR vuelven a Pendiente de Pago
@@ -4193,7 +4201,8 @@ function pagosDocsHTML(jid) {
             ${rech ? badge('Rechazado', 'rose') : pend ? badge('Pendiente de aprobación', 'amber') : ''}</div>
           <div class="text-xs text-slate-500">${p.medio || ''}${p.num_operacion ? ` · Op. ${p.num_operacion}` : ''}</div>
           <div class="text-[11px] text-slate-400">Fecha de pago: ${fmtDMY(p.fecha)}${regDMY(p) ? ` · Registrado en sistema: ${regDMY(p)}${regDMY(p) !== fmtDMY(p.fecha) ? ' <span class="text-amber-600">(regularización)</span>' : ''}` : ''}</div>
-          ${rech ? `<div class="text-[11px] text-rose-600 mt-0.5">✕ Rechazado${p.fecha_rechazo ? ' el ' + fmtDMY(p.fecha_rechazo) : ''} · los cargos volvieron a pendientes de pago</div>` : ''}
+          ${rech ? `<div class="text-[11px] text-rose-600 mt-0.5">✕ Rechazado${p.fecha_rechazo ? ' el ' + fmtDMY(p.fecha_rechazo) : ''} · los cargos volvieron a pendientes de pago</div>
+            ${p.motivo_rechazo ? `<div class="mt-1 rounded-lg bg-rose-50 px-2 py-1 text-[11px] text-rose-700 ring-1 ring-rose-200">Motivo del rechazo: <b>${String(p.motivo_rechazo).replace(/</g, '&lt;')}</b></div>` : ''}` : ''}
           ${p.comentario ? `<div class="mt-0.5 text-[11px] text-amber-700">💬 ${String(p.comentario).replace(/</g, '&lt;')}</div>` : ''}
         </div>
         <div class="text-right shrink-0">
