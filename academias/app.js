@@ -911,6 +911,7 @@ const SCREENS = {
       <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-sm text-slate-500">Inventario de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> · stock = ingresos − salidas</p>
         <div class="flex gap-2">
+          ${sedesActivas().length > 1 ? `<button onclick="formTrasladoInv()" class="rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50" title="Mueve stock de esta sede a otra (salida aquí + ingreso allá, trazable)">⇄ Traslado entre sedes</button>` : ''}
           <button onclick="formPedidoInv()" class="rounded-lg ring-1 ring-indigo-300 text-indigo-600 px-4 py-2.5 text-sm font-medium hover:bg-indigo-50">+ Pedido</button>
           <button onclick="formIngresoInv()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">+ Ingreso directo</button>
         </div>
@@ -7102,6 +7103,63 @@ window.guardarIngresoInv = (e) => {
     talla: val('inv_talla').trim().toUpperCase() || null, tipo: 'ingreso', cantidad: cant,
     motivo: val('inv_motivo'), fecha: val('inv_fecha') || HOY });
   closeModal(); toast('Ingreso registrado ✓'); go('almacen');
+};
+// ---------- Traslado de stock entre sedes ----------
+// Un traslado = SALIDA en la sede origen + INGRESO en la destino, en el mismo
+// acto y con motivo cruzado ("Traslado a/desde X") para la trazabilidad.
+const stockInvDe = (sedeId, cnId, talla) => DB.invMovimientos
+  .filter((m) => m.sede_id === sedeId && m.concepto_cnr_id === cnId && (m.talla || '') === (talla || ''))
+  .reduce((s, m) => s + (m.tipo === 'ingreso' ? (+m.cantidad || 0) : -(+m.cantidad || 0)), 0);
+const tallasConStockOrigen = (cnId) => {
+  const acc = {};
+  DB.invMovimientos.filter((m) => m.sede_id === SEDE_ACTUAL && m.concepto_cnr_id === cnId)
+    .forEach((m) => { const k = m.talla || ''; acc[k] = (acc[k] || 0) + (m.tipo === 'ingreso' ? +m.cantidad : -(+m.cantidad)); });
+  return Object.entries(acc).filter(([, v]) => v > 0);
+};
+window.formTrasladoInv = () => {
+  const conceptos = conceptosCNRSede().filter((c) => c.maneja_stock)
+    .filter((c) => DB.invMovimientos.some((m) => m.sede_id === SEDE_ACTUAL && m.concepto_cnr_id === c.id));
+  if (!conceptos.length) { toast('Esta sede no tiene stock para trasladar'); return; }
+  const destinos = sedesActivas().filter((s) => s.id !== SEDE_ACTUAL);
+  openModal(`⇄ Traslado desde ${sede(SEDE_ACTUAL).nombre_sede}`, `
+    <form onsubmit="guardarTrasladoInv(event)">
+      <p class="mb-3 text-xs text-slate-500">Descuenta del almacén de <b>${sede(SEDE_ACTUAL).nombre_sede}</b> y suma al de la sede destino, en un solo acto (ambos kardex quedan con el motivo cruzado).</p>
+      ${field('Sede destino', select('tr_destino', destinos.map((s) => ({ v: s.id, t: s.nombre_sede }))))}
+      ${field('Concepto', select('tr_concepto', conceptos.map((c) => ({ v: c.id, t: c.nombre })), 'onchange="trTallas()"'))}
+      ${field('Talla', `<select id="tr_talla" onchange="trMax()" class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm bg-white"></select>`)}
+      ${field('Cantidad', input('tr_cant', 'type="number" min="1" step="1" required'))}
+      <p id="tr_stock" class="-mt-2 mb-3 text-[11px] text-slate-400"></p>
+      ${field('Motivo (opcional)', input('tr_motivo', 'placeholder="Ej. reposición para la campaña de matrícula"'))}
+      ${submitBar('Trasladar')}
+    </form>`);
+  trTallas();
+};
+window.trTallas = () => {
+  const tallas = tallasConStockOrigen(val('tr_concepto'));
+  el('tr_talla').innerHTML = tallas.map(([t, st]) => `<option value="${t}">${t || 'Única'} · stock ${st}</option>`).join('');
+  trMax();
+};
+window.trMax = () => {
+  const st = stockInvDe(SEDE_ACTUAL, val('tr_concepto'), val('tr_talla'));
+  el('tr_cant').max = st;
+  if (!val('tr_cant') || num('tr_cant') > st) el('tr_cant').value = st;
+  el('tr_stock').textContent = `Stock disponible en origen: ${st}`;
+};
+window.guardarTrasladoInv = (e) => {
+  e.preventDefault();
+  const cnId = val('tr_concepto'), talla = val('tr_talla') || null, destinoId = val('tr_destino');
+  const cant = num('tr_cant');
+  const stock = stockInvDe(SEDE_ACTUAL, cnId, talla);
+  if (!destinoId || destinoId === SEDE_ACTUAL) { toast('Elige una sede destino distinta'); return; }
+  if (!cant || cant < 1) { toast('Cantidad inválida'); return; }
+  if (cant > stock) { toast(`Solo hay ${stock} en stock de esa talla`); return; }
+  const extra = val('tr_motivo').trim();
+  const origen = sede(SEDE_ACTUAL).nombre_sede, destino = sede(destinoId).nombre_sede;
+  DB.invMovimientos.push({ id: uid('im'), sede_id: SEDE_ACTUAL, concepto_cnr_id: cnId, talla,
+    tipo: 'salida', cantidad: cant, motivo: `⇄ Traslado a ${destino}${extra ? ' · ' + extra : ''}`, fecha: HOY });
+  DB.invMovimientos.push({ id: uid('im'), sede_id: destinoId, concepto_cnr_id: cnId, talla,
+    tipo: 'ingreso', cantidad: cant, motivo: `⇄ Traslado desde ${origen}${extra ? ' · ' + extra : ''}`, fecha: HOY });
+  closeModal(); toast(`✓ ${cant} unidad(es) trasladadas a ${destino}`); go('almacen');
 };
 window.formPedidoInv = () => {
   if (!conceptosCNRSede().some((c) => c.maneja_stock)) { toast('No hay conceptos inventariables'); return; }
