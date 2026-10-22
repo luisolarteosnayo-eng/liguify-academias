@@ -2955,6 +2955,8 @@ window.agregarCR = (jid) => {
   const inicio = el('cr_inicio').value, fin = el('cr_fin').value;
   if (!inicio || !fin) { toast('Completa las fechas de inicio y fin'); return; }
   if (fin < inicio) { toast('La fecha fin no puede ser anterior al inicio'); return; }
+  const choque = crSolapado(i.id, inicio, fin);
+  if (choque && !confirm(`⚠ Ya existe un CR que se superpone con ese periodo:\n"${descCargo(choque)}"\n\n¿Crear igual el CR del ${fmtDMY(inicio)} al ${fmtDMY(fin)}? (cobrarías dos veces el mismo rango)`)) return;
   const monto = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;   // fijo, no editable
   const nota = el('cr_desc').value.trim();
   const j = jugador(jid);
@@ -3002,19 +3004,31 @@ window.promoPreview = () => {
   const precio = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
   const periodos = periodosPromo(ancla, promo);
   const sig = isoAddDays(periodos[periodos.length - 1].fin, 1);
-  el('promoPreview').innerHTML = periodos.map((p, idx) => `
-    <div class="flex items-center justify-between px-3 py-2 text-sm">
-      <span>${idx + 1}. Del ${fmtDMY(p.inicio)} al ${fmtDMY(p.fin)}</span>
+  el('promoPreview').innerHTML = periodos.map((p, idx) => {
+    const choque = crSolapado(i.id, p.inicio, p.fin);
+    return `
+    <div class="flex items-center justify-between px-3 py-2 text-sm ${choque ? 'bg-rose-50' : ''}">
+      <span>${idx + 1}. Del ${fmtDMY(p.inicio)} al ${fmtDMY(p.fin)}${choque ? ' <span class="text-[10px] font-bold text-rose-600">⚠ YA CUBIERTO POR UN CR</span>' : ''}</span>
       <span class="font-medium ${p.gratis ? 'text-emerald-600' : ''}">${p.gratis ? 'Gratis' : S(precio)}</span>
-    </div>`).join('') +
+    </div>`; }).join('') +
     `<div class="px-3 py-2 text-xs text-slate-500 bg-slate-50">Tras la promo, el siguiente CR sigue el ciclo general desde ${fmtDMY(sig)}.</div>`;
 };
+// ¿Algún CR del track ya cubre (total o parcialmente) el rango dado?
+const crSolapado = (inscId, inicio, fin) => DB.cargos.find((c) => c.tipo === 'CR' && c.inscripcion_id === inscId
+  && c.ciclo_inicio && c.ciclo_fin && c.ciclo_inicio <= fin && c.ciclo_fin >= inicio);
 window.guardarPromoAlumno = (e, jid) => {
   e.preventDefault();
   const i = DB.inscripciones.find((x) => x.id === el('promo_track').value);
   const promo = DB.promociones.find((p) => p.id === el('promo_id').value);
   const ancla = val('promo_ancla');
   if (!i || !promo || !ancla) return;
+  // CANDADO: una promoción no puede pisar periodos que ya tienen CR (evita
+  // aplicar dos veces la misma promo o superponerla a mensualidades existentes)
+  const choque = periodosPromo(ancla, promo).map((p) => crSolapado(i.id, p.inicio, p.fin)).find(Boolean);
+  if (choque) {
+    toast(`⚠ Ya existe un CR que cubre ese periodo: "${descCargo(choque)}". Ancla la promoción después del ${fmtDMY(i.ultima_fecha_corte || choque.ciclo_fin)}, o elimina primero el CR duplicado.`);
+    return;
+  }
   const t = track(i.track_id);
   const precio = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
   const j = jugador(jid);
