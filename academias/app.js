@@ -3498,15 +3498,24 @@ const wspPendiente = (c) => wspEstado(c) === 'sin_respuesta';
 let WSP_FILTRO = '';   // '' = todas | clave de WSP_ESTADOS
 let WSP_Q = '';        // búsqueda: alumno, contacto o teléfono
 let WSP_SEDE = '';     // '' = todas las sedes
-// Hermanos de la conversación: todos los hijos del tutor (la conversación es
-// del PADRE, no de un hijo); si no hay tutor vinculado, el jugador suelto
+// Hermanos de la conversación: la conversación es del PADRE y cada alumno tiene
+// su propio registro de tutor (1:1), así que los hermanos se agrupan por el
+// TELÉFONO del tutor (mismo celular = misma familia), no por tutor_id
 const wspHermanos = (c) => {
-  if (c.tutor_id) {
-    const hs = DB.jugadores.filter((j) => j.tutor_id === c.tutor_id);
-    if (hs.length) return hs.sort((a, b) => (a.estado_alumno === 'baja') - (b.estado_alumno === 'baja'));
+  const last9 = String(c.telefono || '').replace(/\D/g, '').slice(-9);
+  const ids = new Set();
+  const hs = [];
+  const agregar = (j) => { if (j && !ids.has(j.id)) { ids.add(j.id); hs.push(j); } };
+  if (last9.length === 9) {
+    DB.jugadores.forEach((j) => {
+      const t = tutor(j.tutor_id);
+      const tel = String((t && t.telefono_celular) || '').replace(/\D/g, '');
+      if (tel.length >= 9 && tel.slice(-9) === last9) agregar(j);
+    });
   }
-  const j = c.jugador_id ? jugador(c.jugador_id) : null;
-  return j ? [j] : [];
+  if (c.tutor_id) DB.jugadores.forEach((j) => { if (j.tutor_id === c.tutor_id) agregar(j); });
+  agregar(c.jugador_id ? jugador(c.jugador_id) : null);
+  return hs.sort((a, b) => (a.estado_alumno === 'baja') - (b.estado_alumno === 'baja'));
 };
 const wspDeudaDe = (jj) => DB.cargos.filter((c) => c.jugador_id === jj.id)
   .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
