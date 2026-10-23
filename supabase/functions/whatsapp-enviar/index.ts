@@ -219,7 +219,10 @@ Deno.serve(async (req) => {
       // variables puestas): así la bandeja muestra lo mismo que su WhatsApp
       const cuerpoReal = tpl === 'hello_world'
         ? '[plantilla de prueba hello_world]'
-        : vars.length >= 6
+        : tpl === 'cobranza_liguify_v3'
+          // v3: cuerpo TABULADO (los saltos van en la plantilla; las variables siguen en una línea)
+          ? `Hola ${vars[0]} 👋, le recordamos que ${vars[1]} tiene un saldo pendiente de ${vars[2]} en ${vars[3]} por:\n\n${vars[4]}\n\nPuede pagar por: ${vars[5]} y enviar su comprobante respondiendo a este mensaje. ¡Gracias!`
+          : vars.length >= 6
           ? `Hola ${vars[0]} 👋, le recordamos que ${vars[1]} tiene un saldo pendiente de ${vars[2]} en ${vars[3]} por: ${vars[4]}. Puede pagar por: ${vars[5]} y enviar su comprobante respondiendo a este mensaje. ¡Gracias!`
           : `Hola ${vars[0]} 👋, le recordamos que ${vars[1]} tiene un saldo pendiente de ${vars[2]} en ${vars[3]}. Puede pagar por: ${vars[4]} y enviar su comprobante respondiendo a este mensaje. ¡Gracias!`;
       // Registrar también en la bandeja (crea la conversación si no existe)
