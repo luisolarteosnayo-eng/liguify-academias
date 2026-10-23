@@ -3498,6 +3498,18 @@ const wspPendiente = (c) => wspEstado(c) === 'sin_respuesta';
 let WSP_FILTRO = '';   // '' = todas | clave de WSP_ESTADOS
 let WSP_Q = '';        // búsqueda: alumno, contacto o teléfono
 let WSP_SEDE = '';     // '' = todas las sedes
+// Hermanos de la conversación: todos los hijos del tutor (la conversación es
+// del PADRE, no de un hijo); si no hay tutor vinculado, el jugador suelto
+const wspHermanos = (c) => {
+  if (c.tutor_id) {
+    const hs = DB.jugadores.filter((j) => j.tutor_id === c.tutor_id);
+    if (hs.length) return hs.sort((a, b) => (a.estado_alumno === 'baja') - (b.estado_alumno === 'baja'));
+  }
+  const j = c.jugador_id ? jugador(c.jugador_id) : null;
+  return j ? [j] : [];
+};
+const wspDeudaDe = (jj) => DB.cargos.filter((c) => c.jugador_id === jj.id)
+  .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
 const wspMatch = (c) => {
   const jj = c.jugador_id ? jugador(c.jugador_id) : null;
   // Sede: la de la conversación o, si es antigua y no la grabó, la del alumno
@@ -3633,24 +3645,28 @@ async function renderWsp(silencioso) {
       <div class="md:col-span-2 flex flex-col rounded-xl bg-white ring-1 ring-slate-200 overflow-hidden">
         ${!conv ? '<div class="flex flex-1 items-center justify-center text-sm text-slate-400">Elige una conversación</div>' : `
         <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
-          <div class="min-w-0">
-            <div class="truncate text-sm font-semibold">${conv.nombre || '+' + conv.telefono} <span class="text-xs font-normal text-slate-400">· +${conv.telefono}</span></div>
-            ${conv.jugador_id && jugador(conv.jugador_id) ? `<div class="text-[11px] text-slate-500">Alumno: <button onclick="formEditarAlumno('${conv.jugador_id}')" class="text-indigo-600 hover:underline">${nom(jugador(conv.jugador_id))}</button></div>` : ''}
-          </div>
-          ${(() => {   // sede · saldo pendiente · estado del alumno, a la vista al responder
-            const jj = conv.jugador_id ? jugador(conv.jugador_id) : null;
-            if (!jj) return '';
-            const sd = sede(jj.sede_id);
-            const deuda = DB.cargos.filter((c) => c.jugador_id === jj.id)
-              .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
-            const est = jj.estado_alumno === 'activo' ? badge('Activo', 'emerald')
-              : jj.estado_alumno === 'prospecto' ? badge('Prospecto', 'fuchsia') : badge('Baja', 'slate');
+          ${(() => {   // La conversación es del TUTOR: se listan TODOS sus hijos
+            const hs = wspHermanos(conv);
+            const links = hs.map((jj) => `<button onclick="formEditarAlumno('${jj.id}')" class="text-indigo-600 hover:underline">${nom(jj)}</button>`).join(', ');
+            return `<div class="min-w-0">
+              <div class="truncate text-sm font-semibold">${conv.nombre || '+' + conv.telefono} <span class="text-xs font-normal text-slate-400">· +${conv.telefono}</span></div>
+              ${hs.length ? `<div class="truncate text-[11px] text-slate-500">Alumno${hs.length > 1 ? 's' : ''}: ${links}</div>` : ''}
+            </div>`;
+          })()}
+          ${(() => {   // sede · saldo y estado de CADA hermano, a la vista al responder
+            const hs = wspHermanos(conv);
+            if (!hs.length) return '';
+            const sd = sede(hs[0].sede_id);
             return `<div class="hidden min-w-0 text-center sm:block">
               ${sd ? `<div class="truncate text-xs text-slate-500">📍 ${sd.nombre_sede}</div>` : ''}
-              <div class="flex items-center justify-center gap-2">
-                ${deuda > 0 ? `<span class="whitespace-nowrap text-sm font-bold text-rose-600">Debe ${S(deuda)}</span>`
-                  : '<span class="whitespace-nowrap text-sm font-medium text-emerald-600">Al día ✓</span>'}
-                ${est}
+              <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5">
+                ${hs.map((jj) => { const d = wspDeudaDe(jj);
+                  const est = jj.estado_alumno === 'activo' ? badge('Activo', 'emerald')
+                    : jj.estado_alumno === 'prospecto' ? badge('Prospecto', 'fuchsia') : badge('Baja', 'slate');
+                  return `<span class="flex items-center gap-1 text-xs">
+                    <b class="max-w-[110px] truncate">${jj.nombre}</b> ${est}
+                    ${d > 0 ? `<b class="whitespace-nowrap text-rose-600">Debe ${S(d)}</b>` : '<span class="whitespace-nowrap text-emerald-600">Al día ✓</span>'}
+                  </span>`; }).join('')}
               </div>
             </div>`;
           })()}
@@ -3860,6 +3876,22 @@ window.wspUsarVoucher = async (cid, mid) => {
       const blob = await (await fetch(u)).blob();
       dataURL = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
     } catch (e) { toast('⚠ No se pudo descargar el voucher: ' + (e.message || e)); return; }
+  }
+  // El pago va al HERMANO con deuda (la conversación es del padre): si hay uno
+  // solo, directo; si hay varios, se elige; si ninguno debe, al vinculado
+  const deudores = wspHermanos(conv).filter((jj) => jj.estado_alumno !== 'baja' && wspDeudaDe(jj) > 0);
+  if (deudores.length === 1) { formPagoAlumno(deudores[0].id, dataURL); return; }
+  if (deudores.length > 1) {
+    openModal('¿A qué alumno corresponde el pago?', `
+      <p class="mb-2 text-xs text-slate-500">Este tutor tiene varios hijos con deuda. Elige a quién aplicar el voucher:</p>
+      <div class="space-y-1">
+        ${deudores.map((jj) => `<button type="button" onclick='formPagoAlumno("${jj.id}", WSP_VOUCHER_TMP)'
+          class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm ring-1 ring-slate-200 hover:bg-slate-50">
+          <span>${nom(jj)} <span class="text-xs text-slate-400">· Cat. ${anio(jj.fecha_nacimiento)}</span></span>
+          <b class="text-rose-600">${S(wspDeudaDe(jj))}</b></button>`).join('')}
+      </div>`);
+    window.WSP_VOUCHER_TMP = dataURL;
+    return;
   }
   formPagoAlumno(conv.jugador_id, dataURL);
 };
