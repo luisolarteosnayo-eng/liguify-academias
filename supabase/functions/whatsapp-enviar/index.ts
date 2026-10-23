@@ -184,7 +184,8 @@ Deno.serve(async (req) => {
       // El celular puede estar en el TUTOR o en la ficha del ALUMNO (datos migrados).
       const last9 = to.slice(-9);
       let aca = null, tutorId = null, nombreConv = null, jj = null;
-      const tuts = await apiUser(`tutores?select=id,academia_id,nombres&telefono_norm=like.*${last9}&limit=1`);
+      // El tutor puede tener DOS celulares (papá y mamá): cualquiera valida
+      const tuts = await apiUser(`tutores?select=id,academia_id,nombres&or=(telefono_norm.like.*${last9},telefono2_norm.like.*${last9})&limit=1`);
       if (tuts.length) {
         aca = tuts[0].academia_id; tutorId = tuts[0].id; nombreConv = tuts[0].nombres || null;
         [jj] = await apiUser(`jugadores?select=id,sede_id&tutor_id=eq.${tutorId}&limit=1`);

@@ -2425,8 +2425,9 @@ function njFormBody(j, tracksJid) {
           </div>
           <div class="grid grid-cols-2 gap-3">
             ${field('Teléfono del tutor', input('tut_tel', `value="${esc(t.telefono_celular)}" placeholder="999 888 777"`))}
-            ${field('Email del tutor', input('tut_email', `type="email" value="${esc(t.email_tutor)}" placeholder="correo@mail.com"`))}
+            ${field('Celular 2 (papá/mamá)', input('tut_tel2', `value="${esc(t.telefono_celular2)}" placeholder="opcional · los recordatorios van a ambos"`))}
           </div>
+          ${field('Email del tutor', input('tut_email', `type="email" value="${esc(t.email_tutor)}" placeholder="correo@mail.com"`))}
           <div class="grid grid-cols-2 gap-3">
             ${field('RUC (solo si pide factura)', input('tut_ruc', `value="${esc(t.ruc)}" placeholder="20XXXXXXXXX"`))}
             ${field('Razón social', input('tut_razon', `value="${esc(t.razon_social)}" placeholder="Empresa S.A.C."`))}
@@ -3519,8 +3520,9 @@ const wspHermanos = (c) => {
   if (last9.length === 9) {
     DB.jugadores.forEach((j) => {
       const t = tutor(j.tutor_id);
-      const tel = String((t && t.telefono_celular) || '').replace(/\D/g, '');
-      if (tel.length >= 9 && tel.slice(-9) === last9) agregar(j);
+      const tels = [t && t.telefono_celular, t && t.telefono_celular2]
+        .map((x) => String(x || '').replace(/\D/g, ''));
+      if (tels.some((tel) => tel.length >= 9 && tel.slice(-9) === last9)) agregar(j);
     });
   }
   if (c.tutor_id) DB.jugadores.forEach((j) => { if (j.tutor_id === c.tutor_id) agregar(j); });
@@ -3927,6 +3929,8 @@ function candidatosCobranzaMasiva() {
     if (!pend.length) return null;
     const t = tutor(j.tutor_id) || {};
     const num = waNumero(t.telefono_celular || j.telefono || '');
+    // Papá Y mamá: el recordatorio va a AMBOS celulares del tutor (si hay dos)
+    const nums = [...new Set([num, waNumero(t.telefono_celular2 || '')].filter(Boolean))];
     // Detalle compacto de los cargos para la plantilla ({{5}} de la v2):
     // máx 2 conceptos + "y N más", recortado a lo que WhatsApp acepta por variable
     const detalle = (() => {
@@ -3935,10 +3939,10 @@ function candidatosCobranzaMasiva() {
       if (ds.length > 2) txt += ` y ${ds.length - 2} más`;
       return txt.length > 110 ? txt.slice(0, 107) + '…' : txt;
     })();
-    return { j, t, num, detalle, total: pend.reduce((s, c) => s + saldoC(c), 0),
+    return { j, t, num, nums, detalle, total: pend.reduce((s, c) => s + saldoC(c), 0),
       vencido: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY),
       reciente: !!(j.ultimo_recordatorio && j.ultimo_recordatorio >= hace7) };
-  }).filter((x) => x && x.num && !x.reciente).sort((a, b) => b.total - a.total);
+  }).filter((x) => x && x.nums.length && !x.reciente).sort((a, b) => b.total - a.total);
 }
 window.formCobranzaMasiva = () => {
   const cand = candidatosCobranzaMasiva();
@@ -3952,7 +3956,7 @@ window.formCobranzaMasiva = () => {
     <div class="mb-2 max-h-72 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
       ${cand.map((x, i) => `<label class="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer">
         <input type="checkbox" class="cmChk h-4 w-4 accent-emerald-600" value="${i}" ${x.vencido ? 'checked' : ''} onchange="cmCount()">
-        <span class="flex-1 min-w-0 truncate">${nom(x.j)} <span class="text-xs text-slate-400">· ${x.t.nombres || 'tutor s/nombre'} · +${x.num}</span></span>
+        <span class="flex-1 min-w-0 truncate">${nom(x.j)} <span class="text-xs text-slate-400">· ${x.t.nombres || 'tutor s/nombre'} · ${x.nums.map((n) => '+' + n).join(' y ')}${x.nums.length > 1 ? ' <b class="text-indigo-600">(2 números)</b>' : ''}</span></span>
         <b class="shrink-0 ${x.vencido ? 'text-rose-600' : 'text-slate-700'}">${S0(x.total)}</b>
       </label>`).join('')}
     </div>
@@ -3987,26 +3991,31 @@ window.enviarCobranzaMasiva = async () => {
   for (let i = 0; i < sel.length; i++) {
     const x = sel[i];
     if (el('cmEnviar')) el('cmEnviar').textContent = `Enviando ${i + 1} de ${sel.length}…`;
-    try {
-      const sd = sede(x.j.sede_id);
-      const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body: {
-        accion: 'cobranza', telefono: x.num,
-        // Sede VIP: plantilla propia con cabecera de imagen (vacío = estándar)
-        plantilla: (sd && sd.tpl_cobranza) || undefined,
-        imagen_url: (sd && sd.tpl_cobranza && sd.tpl_imagen_url) || undefined,
-        // 6 variables [tutor, alumno, monto, sede, detalle, medios]: la función
-        // descarta el detalle si la plantilla activa es la de 5 variables
-        variables: [((x.t.nombres || '').trim().split(/\s+/)[0] || 'padre de familia'), nom(x.j), 'S/ ' + x.total.toFixed(2),
-          sd ? sd.nombre_sede : DB.academia.nombre_academia,
-          x.detalle || 'mensualidad',
-          (sd && sd.medios_cobro) || 'consulta los medios de pago con tu sede'],
-      } });
-      let msg = null;
-      if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
-      else if (data && data.error) msg = data.error;
-      if (msg) throw new Error(msg);
-      x.j.ultimo_recordatorio = HOY; ok++;
-    } catch (e) { fallos.push({ to: '+' + x.num, error: e.message || String(e) }); }
+    const sd = sede(x.j.sede_id);
+    // Papá Y mamá: un envío por cada celular del tutor (1 o 2 números)
+    let algunoOk = false;
+    for (const numDest of x.nums) {
+      try {
+        const { data, error } = await AcademiasDB.sb.functions.invoke('whatsapp-enviar', { body: {
+          accion: 'cobranza', telefono: numDest,
+          // Sede VIP: plantilla propia con cabecera de imagen (vacío = estándar)
+          plantilla: (sd && sd.tpl_cobranza) || undefined,
+          imagen_url: (sd && sd.tpl_cobranza && sd.tpl_imagen_url) || undefined,
+          // 6 variables [tutor, alumno, monto, sede, detalle, medios]: la función
+          // descarta el detalle si la plantilla activa es la de 5 variables
+          variables: [((x.t.nombres || '').trim().split(/\s+/)[0] || 'padre de familia'), nom(x.j), 'S/ ' + x.total.toFixed(2),
+            sd ? sd.nombre_sede : DB.academia.nombre_academia,
+            x.detalle || 'mensualidad',
+            (sd && sd.medios_cobro) || 'consulta los medios de pago con tu sede'],
+        } });
+        let msg = null;
+        if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
+        else if (data && data.error) msg = data.error;
+        if (msg) throw new Error(msg);
+        algunoOk = true;
+      } catch (e) { fallos.push({ to: '+' + numDest, error: e.message || String(e) }); }
+    }
+    if (algunoOk) { x.j.ultimo_recordatorio = HOY; ok++; }
   }
   closeModal();
   toast(`📣 ${ok} recordatorio(s) enviados${fallos.length ? ` · ${fallos.length} fallaron` : ''}`);
@@ -4611,6 +4620,7 @@ window.guardarEdicionAlumno = async (e, jid) => {
     }
     Object.assign(destino, datos);
     destino.telefono_celular = telNuevo || (compartido ? '' : destino.telefono_celular);
+    destino.telefono_celular2 = (el('tut_tel2') && val('tut_tel2').trim()) || null;
   }
   Object.assign(j, {
     nombre: val('nj_nombre'), apellido: val('nj_apellido'), fecha_nacimiento: val('nj_fnac'),
