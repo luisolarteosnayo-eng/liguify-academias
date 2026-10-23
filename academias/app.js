@@ -397,10 +397,10 @@ function stockTallas(conceptoId, sedeId = SEDE_ACTUAL) {
   return st;
 }
 // Selector de talla para un CNR inventariable (solo tallas con stock > 0)
-function tallaSelectHTML(conceptoId, selId) {
+function tallaSelectHTML(conceptoId, selId, sedeId = SEDE_ACTUAL) {
   const cn = DB.conceptosCNR.find((c) => c.id === conceptoId);
   if (!cn || !cn.maneja_stock) return '';
-  const st = stockTallas(conceptoId);
+  const st = stockTallas(conceptoId, sedeId);
   const tallas = Object.keys(st).filter((t) => st[t] > 0).sort();
   if (!tallas.length) return `<span class="text-xs text-rose-500">⚠ Sin stock de ${cn.nombre} en el almacén de esta sede</span>`;
   return `<label class="text-xs text-slate-500 shrink-0">Talla</label>
@@ -2807,7 +2807,9 @@ window.mostrarFormCR = (iid, jid) => { FICHA_CR_INSC = iid; renderFichaTracks(ji
 window.cancelarFormCR = (jid) => { FICHA_CR_INSC = null; renderFichaTracks(jid); };
 
 // Pestaña CNR de la ficha: agregar CNR + historial de CNRs del alumno
+let CNR_FICHA_JID = null;   // alumno de la ficha abierta (su sede manda en el stock)
 function cnrFormHTML(jid) {
+  CNR_FICHA_JID = jid;
   const cnrCat = conceptosCNRSede();
   const cnrs = DB.cargos.filter((c) => c.jugador_id === jid && c.tipo === 'CNR');
   const saldoC = (c) => c.monto - (c.pagado_monto || 0);
@@ -2834,7 +2836,7 @@ function cnrFormHTML(jid) {
           </select>
           <input id="cnr_monto" type="number" step="0.01" value="${cnrCat[0].precio || ''}" placeholder="Monto" class="w-24 rounded border border-slate-300 px-2 py-1.5 text-sm text-right">
         </div>
-        <div id="cnr_tallaBox" class="flex items-center gap-2 empty:hidden">${tallaSelectHTML(cnrCat[0].id, 'cnr_talla')}</div>
+        <div id="cnr_tallaBox" class="flex items-center gap-2 empty:hidden">${tallaSelectHTML(cnrCat[0].id, 'cnr_talla', (jugador(jid) && jugador(jid).sede_id) || SEDE_ACTUAL)}</div>
         <div class="flex items-center gap-2">
           <label class="text-xs text-slate-500 shrink-0">Vence</label>
           <input id="cnr_venc" type="date" value="${HOY}" class="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm bg-white">
@@ -3173,10 +3175,13 @@ window.agregarCNR = (jid) => {
   if (monto <= 0) { toast('Ingresa un monto'); return; }
   // Inventariable: exige talla con stock disponible y registra la salida
   let talla = null;
+  // Stock y salida SIEMPRE del almacén de la sede del ALUMNO (la ficha puede
+  // abrirse desde la bandeja con el selector en otra sede)
+  const sedeJ = (j && j.sede_id) || SEDE_ACTUAL;
   if (cn && cn.maneja_stock) {
-    if (!el('cnr_talla')) { toast(`⚠ Sin stock de ${cn.nombre} en el almacén de esta sede`); return; }
+    if (!el('cnr_talla')) { toast(`⚠ Sin stock de ${cn.nombre} en el almacén de la sede del alumno`); return; }
     talla = el('cnr_talla').value;
-    if (stockDe(cn.id, talla) < 1) { toast(`⚠ Sin stock de talla ${talla}`); cnrTallaBox(); return; }
+    if (stockDe(cn.id, talla, sedeJ) < 1) { toast(`⚠ Sin stock de talla ${talla}`); cnrTallaBox(); return; }
   }
   const desc = el('cnr_desc').value.trim();
   const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo',
@@ -3185,9 +3190,9 @@ window.agregarCNR = (jid) => {
     monto, pagado_monto: 0, estado: 'por_pagar' };
   DB.cargos.push(cargo);
   if (talla !== null) {
-    DB.invMovimientos.push({ id: uid('im'), sede_id: SEDE_ACTUAL, concepto_cnr_id: cn.id, talla,
+    DB.invMovimientos.push({ id: uid('im'), sede_id: sedeJ, concepto_cnr_id: cn.id, talla,
       tipo: 'salida', cantidad: 1, motivo: 'Asignación a alumno', jugador_id: jid, cargo_id: cargo.id, fecha: HOY });
-    toast(`Cargo agregado · salida de almacén: ${cn.nombre} talla ${talla} (quedan ${stockDe(cn.id, talla)})`);
+    toast(`Cargo agregado · salida de almacén: ${cn.nombre} talla ${talla} (quedan ${stockDe(cn.id, talla, sedeJ)})`);
   } else {
     toast('Cargo CNR agregado');
   }
@@ -3405,7 +3410,9 @@ window.guardarPagoAlumno = async (e, jid) => {
     try { voucherFinal = await subirVoucher(PAGO_VOUCHER, `${AcademiasDB.academiaId}/vouchers/${pid}.jpg`); }
     catch (ex) { console.warn('[voucher] fallback dataURL:', ex); }
   }
-  DB.pagos.push({ id: pid, jugador_id: jid, tutor_id: j.tutor_id, sede_id: SEDE_ACTUAL,
+  // La sede del pago es SIEMPRE la del alumno (no la del selector: desde la
+  // bandeja de WhatsApp se registran pagos de alumnos de cualquier sede)
+  DB.pagos.push({ id: pid, jugador_id: jid, tutor_id: j.tutor_id, sede_id: (j && j.sede_id) || SEDE_ACTUAL,
     fecha: fechaPago,                              // fecha de PAGO (editable para regularizaciones)
     created_at: new Date().toISOString(),          // fecha de REGISTRO en el sistema (la BD guarda la suya al insertar)
     registrado_por: usuarioActual(),               // quién registró el pago (visible al aprobar)
@@ -5629,7 +5636,7 @@ window.guardarCargo = (e) => {
   if (cn && cn.maneja_stock) {
     if (!el('f_talla')) { toast(`⚠ Sin stock de ${cn.nombre} en el almacén de esta sede`); return; }
     talla = el('f_talla').value;
-    if (stockDe(cn.id, talla) < 1) { toast(`⚠ Sin stock de talla ${talla}`); fTallaBox(); return; }
+    if (stockDe(cn.id, talla, j.sede_id || SEDE_ACTUAL) < 1) { toast(`⚠ Sin stock de talla ${talla}`); fTallaBox(); return; }
   }
   const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo',
     descripcion: [talla ? `Talla ${talla}` : null, val('f_desc')].filter(Boolean).join(' · '),
@@ -5637,7 +5644,7 @@ window.guardarCargo = (e) => {
     monto: num('f_monto'), pagado_monto: 0, estado: 'por_pagar' };
   DB.cargos.push(cargo);
   if (talla !== null) {
-    DB.invMovimientos.push({ id: uid('im'), sede_id: SEDE_ACTUAL, concepto_cnr_id: cn.id, talla,
+    DB.invMovimientos.push({ id: uid('im'), sede_id: j.sede_id || SEDE_ACTUAL, concepto_cnr_id: cn.id, talla,
       tipo: 'salida', cantidad: 1, motivo: 'Asignación a alumno', jugador_id: j.id, cargo_id: cargo.id, fecha: HOY });
   }
   closeModal(); toast(talla ? `Cargo generado · salida de almacén talla ${talla}` : 'Cargo no recurrente generado'); go('tesoreria');
@@ -6214,7 +6221,9 @@ window.cnrAutoPrecio = (selId, montoId) => {
 // Muestra/oculta el selector de talla según si el concepto maneja stock
 window.cnrTallaBox = () => {
   const b = el('cnr_tallaBox');
-  if (b) b.innerHTML = tallaSelectHTML(el('cnr_concepto').value, 'cnr_talla');
+  // Stock del almacén de la SEDE DEL ALUMNO de la ficha abierta
+  const jF = CNR_FICHA_JID ? jugador(CNR_FICHA_JID) : null;
+  if (b) b.innerHTML = tallaSelectHTML(el('cnr_concepto').value, 'cnr_talla', (jF && jF.sede_id) || SEDE_ACTUAL);
 };
 window.fTallaBox = () => {
   const b = el('f_tallaBox');
