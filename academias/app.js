@@ -3884,6 +3884,10 @@ window.formCobranzaMasiva = () => {
   if (!cand.length) { toast('No hay candidatos: sin deuda, sin teléfono válido o ya recordados esta semana'); return; }
   openModal(`📣 Recordatorios masivos · ${sede(SEDE_ACTUAL).nombre_sede}`, `
     <p class="mb-2 text-xs text-slate-500">Se enviará la <b>plantilla aprobada de WhatsApp</b> a los tutores marcados. Quedan fuera los que recibieron un recordatorio en los últimos 7 días.</p>
+    <label class="mb-1 flex cursor-pointer items-center gap-2 px-1 text-xs font-medium text-slate-600">
+      <input type="checkbox" id="cmTodos" class="h-4 w-4 accent-emerald-600" onchange="cmMarcarTodos(this.checked)">
+      <span id="cmTodosTxt">Seleccionar todo</span>
+    </label>
     <div class="mb-2 max-h-72 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
       ${cand.map((x, i) => `<label class="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer">
         <input type="checkbox" class="cmChk h-4 w-4 accent-emerald-600" value="${i}" ${x.vencido ? 'checked' : ''} onchange="cmCount()">
@@ -3899,7 +3903,19 @@ window.formCobranzaMasiva = () => {
   window.__cmCand = cand;
   cmCount();
 };
-window.cmCount = () => { if (el('cmN')) el('cmN').textContent = document.querySelectorAll('.cmChk:checked').length; };
+window.cmCount = () => {
+  const todos = document.querySelectorAll('.cmChk').length;
+  const marcados = document.querySelectorAll('.cmChk:checked').length;
+  if (el('cmN')) el('cmN').textContent = marcados;
+  // El check maestro refleja el estado real de la lista
+  const m = el('cmTodos');
+  if (m) { m.checked = todos > 0 && marcados === todos; m.indeterminate = marcados > 0 && marcados < todos; }
+  if (el('cmTodosTxt')) el('cmTodosTxt').textContent = marcados === todos && todos > 0 ? 'Deseleccionar todo' : 'Seleccionar todo';
+};
+window.cmMarcarTodos = (on) => {
+  document.querySelectorAll('.cmChk').forEach((c) => { c.checked = on; });
+  cmCount();
+};
 window.enviarCobranzaMasiva = async () => {
   if (!window.AcademiasDB || !AcademiasDB.on) { toast('El envío masivo solo funciona en modo conectado'); return; }
   const sel = [...document.querySelectorAll('.cmChk:checked')].map((c) => window.__cmCand[+c.value]).filter(Boolean);
