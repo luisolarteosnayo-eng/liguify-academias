@@ -2737,10 +2737,20 @@ function estadoCuentaHTML(jid) {
       <div class="mt-1 text-xs text-slate-500">Pendiente CR: <b>${S(totCR)}</b> · Pendiente CNR: <b>${S(totCNR)}</b></div>
       ${tracksInfo ? `<div class="mt-2 border-t ${saldo > 0 ? 'border-rose-200' : 'border-emerald-200'} pt-1.5">${tracksInfo}</div>` : ''}
     </div>
-    ${hayPagables ? `<div class="mb-3 flex justify-end">
-      <button type="button" onclick="formPagoAlumno('${jid}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">Registrar pago</button>
-    </div>` : ''}
-    ${rows.length ? table(['Concepto', 'Vence', 'Pendiente'], rows) : '<p class="text-sm text-slate-400 px-1">Sin cargos pendientes de pago. 🎉</p>'}
+    ${(() => {   // La tabla de deudas va INMEDIATAMENTE después del saldo, con
+      // resumen de vencidos y fila de TOTAL (el botón Registrar pago vive en la
+      // barra inferior de la ficha, junto a Cancelar/Guardar)
+      if (!rows.length) return '<p class="text-sm text-slate-400 px-1">Sin cargos pendientes de pago. 🎉</p>';
+      const venc = mostrar.filter((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY && saldoC(c) > 0);
+      const sumVenc = venc.reduce((s, c) => s + saldoC(c), 0);
+      const filas = [...rows, [`<b class="text-slate-600">TOTAL PENDIENTE</b>`, '', `<b class="text-rose-600">${S(saldo)}</b>`]];
+      return `
+      <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h4 class="text-sm font-semibold text-slate-600">Cargos pendientes (${mostrar.length})</h4>
+        ${venc.length ? `<span class="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-600">⚠ ${venc.length} vencido(s) · ${S(sumVenc)}</span>` : '<span class="text-xs text-emerald-600">sin vencidos ✓</span>'}
+      </div>
+      ${table(['Concepto', 'Vence', 'Pendiente'], filas)}`;
+    })()}
     ${(() => {
       const c = puedeEditarCR && CR_EDIT_ID ? mostrar.find((x) => x.id === CR_EDIT_ID) : null;
       if (!c) return '';
@@ -4543,6 +4553,8 @@ window.formEditarAlumno = (jid) => {
           class="rounded-lg px-3 py-2 text-sm ${j.estado_alumno === 'activo' ? 'text-rose-600 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}">
           ${j.estado_alumno === 'activo' ? 'Dar de baja' : 'Reactivar'}</button>`}
         <div class="flex gap-2">
+          ${DB.cargos.some((c) => c.jugador_id === jid && c.estado !== 'pagado')
+            ? `<button type="button" onclick="formPagoAlumno('${jid}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">💳 Registrar pago</button>` : ''}
           <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
           <button type="submit" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Guardar</button>
         </div>
