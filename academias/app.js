@@ -3725,6 +3725,16 @@ window.wspEstadoSet = async (cid, estado) => {
     if (error) { toast('⚠ No se pudo guardar el estado: ' + error.message); return; }
   }
   renderWsp(true);
+  // Puente con el sistema: la etiqueta DADO DE BAJA es solo seguimiento de la
+  // conversación; la BAJA FORMAL (la que lo saca de Por cobrar, masivos y
+  // dashboards) se procesa en la ficha — se ofrece hacerla de inmediato
+  if (estado === 'baja' && c.jugador_id) {
+    const jj = jugador(c.jugador_id);
+    if (jj && jj.estado_alumno === 'activo'
+      && confirm(`${nom(jj)} sigue ACTIVO en el sistema.\n\n¿Procesar también su baja formal ahora? (motivo + libera cupos; lo saca de Por cobrar, recordatorios y dashboards)\n\nSi eliges Cancelar, seguirá figurando como activo y recibiendo cobranzas.`)) {
+      toggleBajaAlumno(jj.id);   // abre el formulario de baja con motivo
+    }
+  }
 };
 window.wspFiltrar = (f) => { WSP_FILTRO = f; renderWsp(true); };
 let WSP_ENVIANDO = false;   // candado anti doble envío (Enter repetido / doble clic)
