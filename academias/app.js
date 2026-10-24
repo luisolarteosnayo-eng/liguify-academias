@@ -432,7 +432,10 @@ function statsTorneo(t) {
   // Pagado a la fecha: suma de lo abonado en los CNRs generados del torneo
   const totalPagado = conCNR.reduce((s, x) => { const c = DB.cargos.find((cc) => cc.id === x.cargo_id); return s + (c ? Math.min(+c.pagado_monto || 0, +c.monto || 0) : 0); }, 0);
   return { cats, jugs, costoTotal, totalInsc, nConCNR: conCNR.length, montoCNR, totalPagado,
-    pendientes: jugs.length - conCNR.length, rentabilidad: montoCNR - costoTotal };
+    pendientes: jugs.length - conCNR.length, rentabilidad: montoCNR - costoTotal,
+    // 💰 lo que falta cobrar del torneo: inscripciones totales − pagado
+    // (incluye CNRs impagos Y alumnos que aún no tienen CNR generado)
+    porCobrar: totalInsc - totalPagado };
 }
 
 // ---------- Menú por rol ----------
@@ -827,9 +830,10 @@ const SCREENS = {
               ${st.pendientes ? badge(`${st.pendientes} CNR pend.`, 'amber') : (st.jugs.length ? badge('CNRs al día', 'emerald') : '')}
             </div>
             <div class="mt-0.5 text-xs text-slate-400">${fmtFecha(t.fecha_inicio)}${t.descripcion ? ' · ' + t.descripcion : ''}</div>
-            <div class="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+            <div class="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
               <div><div class="text-slate-400">Categorías</div><b>${st.cats.length}</b></div>
               <div><div class="text-slate-400">Alumnos</div><b>${st.jugs.length}</b></div>
+              <div><div class="text-slate-400">Por cobrar</div><b class="${st.porCobrar > 0 ? 'text-rose-600' : 'text-emerald-600'}" title="Inscripciones ${S(st.totalInsc)} − pagado ${S(st.totalPagado)}">${S(st.porCobrar)}</b></div>
               <div><div class="text-slate-400">Rentab.</div><b class="${st.rentabilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${S(st.rentabilidad)}</b></div>
             </div>
           </div>`;
