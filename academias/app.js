@@ -3942,8 +3942,10 @@ function candidatosCobranzaMasiva() {
     // Control de "no repetir en 7 días" POR NÚMERO: si al alumno se le agregó
     // un celular nuevo después del último envío, reaparece y el masivo sale
     // SOLO a los números pendientes (sin re-spamear al que ya recibió)
+    // Retrocompatibilidad: un recordatorio reciente SIN registro de números
+    // (enviado antes del v51) bloquea TODOS sus números, como la regla antigua
     const notificados = (j.ultimo_recordatorio && j.ultimo_recordatorio >= hace7)
-      ? (Array.isArray(j.recordatorio_tels) ? j.recordatorio_tels : []) : [];
+      ? (Array.isArray(j.recordatorio_tels) ? j.recordatorio_tels : nums) : [];
     const numsPend = nums.filter((n) => !notificados.includes(n));
     return { j, t, num, nums: numsPend, numsTot: nums.length, detalle,
       total: pend.reduce((s, c) => s + saldoC(c), 0),
