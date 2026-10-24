@@ -3939,10 +3939,16 @@ function candidatosCobranzaMasiva() {
       if (ds.length > 2) txt += ` y ${ds.length - 2} más`;
       return txt.length > 110 ? txt.slice(0, 107) + '…' : txt;
     })();
-    return { j, t, num, nums, detalle, total: pend.reduce((s, c) => s + saldoC(c), 0),
-      vencido: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY),
-      reciente: !!(j.ultimo_recordatorio && j.ultimo_recordatorio >= hace7) };
-  }).filter((x) => x && x.nums.length && !x.reciente).sort((a, b) => b.total - a.total);
+    // Control de "no repetir en 7 días" POR NÚMERO: si al alumno se le agregó
+    // un celular nuevo después del último envío, reaparece y el masivo sale
+    // SOLO a los números pendientes (sin re-spamear al que ya recibió)
+    const notificados = (j.ultimo_recordatorio && j.ultimo_recordatorio >= hace7)
+      ? (Array.isArray(j.recordatorio_tels) ? j.recordatorio_tels : []) : [];
+    const numsPend = nums.filter((n) => !notificados.includes(n));
+    return { j, t, num, nums: numsPend, numsTot: nums.length, detalle,
+      total: pend.reduce((s, c) => s + saldoC(c), 0),
+      vencido: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY) };
+  }).filter((x) => x && x.nums.length).sort((a, b) => b.total - a.total);
 }
 window.formCobranzaMasiva = () => {
   const cand = candidatosCobranzaMasiva();
@@ -3956,7 +3962,7 @@ window.formCobranzaMasiva = () => {
     <div class="mb-2 max-h-72 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
       ${cand.map((x, i) => `<label class="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer">
         <input type="checkbox" class="cmChk h-4 w-4 accent-emerald-600" value="${i}" ${x.vencido ? 'checked' : ''} onchange="cmCount()">
-        <span class="flex-1 min-w-0 truncate">${nom(x.j)} <span class="text-xs text-slate-400">· ${x.t.nombres || 'tutor s/nombre'} · ${x.nums.map((n) => '+' + n).join(' y ')}${x.nums.length > 1 ? ' <b class="text-indigo-600">(2 números)</b>' : ''}</span></span>
+        <span class="flex-1 min-w-0 truncate">${nom(x.j)} <span class="text-xs text-slate-400">· ${x.t.nombres || 'tutor s/nombre'} · ${x.nums.map((n) => '+' + n).join(' y ')}${x.nums.length > 1 ? ' <b class="text-indigo-600">(2 números)</b>' : ''}${x.numsTot > x.nums.length ? ' <b class="text-amber-600">(solo al número nuevo; el otro ya recibió esta semana)</b>' : ''}</span></span>
         <b class="shrink-0 ${x.vencido ? 'text-rose-600' : 'text-slate-700'}">${S0(x.total)}</b>
       </label>`).join('')}
     </div>
@@ -3992,7 +3998,9 @@ window.enviarCobranzaMasiva = async () => {
     const x = sel[i];
     if (el('cmEnviar')) el('cmEnviar').textContent = `Enviando ${i + 1} de ${sel.length}…`;
     const sd = sede(x.j.sede_id);
-    // Papá Y mamá: un envío por cada celular del tutor (1 o 2 números)
+    // Papá Y mamá: un envío por cada celular PENDIENTE del tutor. Si el último
+    // blast fue hace más de 7 días, el registro de números notificados se resetea
+    if (!(x.j.ultimo_recordatorio && x.j.ultimo_recordatorio >= isoAddDays(HOY, -7))) x.j.recordatorio_tels = [];
     let algunoOk = false;
     for (const numDest of x.nums) {
       try {
@@ -4013,6 +4021,8 @@ window.enviarCobranzaMasiva = async () => {
         else if (data && data.error) msg = data.error;
         if (msg) throw new Error(msg);
         algunoOk = true;
+        // Registrar QUÉ número recibió (control anti-spam por número)
+        x.j.recordatorio_tels = [...new Set([...(Array.isArray(x.j.recordatorio_tels) ? x.j.recordatorio_tels : []), numDest])];
       } catch (e) { fallos.push({ to: '+' + numDest, error: e.message || String(e) }); }
     }
     if (algunoOk) { x.j.ultimo_recordatorio = HOY; ok++; }
