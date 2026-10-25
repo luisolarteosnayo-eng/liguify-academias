@@ -3953,7 +3953,10 @@ function candidatosCobranzaMasiva() {
     const numsPend = nums.filter((n) => !notificados.includes(n));
     return { j, t, num, nums: numsPend, numsTot: nums.length, detalle,
       total: pend.reduce((s, c) => s + saldoC(c), 0),
-      vencido: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY) };
+      vencido: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY),
+      // Política de cobranza anticipada: los CR se generan ~5 días antes del
+      // periodo, y el blast también avisa lo que vence en los próximos 7 días
+      porVencer: pend.some((c) => c.fecha_vencimiento && c.fecha_vencimiento >= HOY && c.fecha_vencimiento <= isoAddDays(HOY, 7)) };
   }).filter((x) => x && x.nums.length).sort((a, b) => b.total - a.total);
 }
 window.formCobranzaMasiva = () => {
@@ -3967,12 +3970,12 @@ window.formCobranzaMasiva = () => {
     </label>
     <div class="mb-2 max-h-72 overflow-y-auto rounded-lg ring-1 ring-slate-200 divide-y divide-slate-100">
       ${cand.map((x, i) => `<label class="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer">
-        <input type="checkbox" class="cmChk h-4 w-4 accent-emerald-600" value="${i}" ${x.vencido ? 'checked' : ''} onchange="cmCount()">
+        <input type="checkbox" class="cmChk h-4 w-4 accent-emerald-600" value="${i}" ${(x.vencido || x.porVencer) ? 'checked' : ''} onchange="cmCount()">
         <span class="flex-1 min-w-0 truncate">${nom(x.j)} <span class="text-xs text-slate-400">· ${x.t.nombres || 'tutor s/nombre'} · ${x.nums.map((n) => '+' + n).join(' y ')}${x.nums.length > 1 ? ' <b class="text-indigo-600">(2 números)</b>' : ''}${x.numsTot > x.nums.length ? ' <b class="text-amber-600">(solo al número nuevo; el otro ya recibió esta semana)</b>' : ''}</span></span>
-        <b class="shrink-0 ${x.vencido ? 'text-rose-600' : 'text-slate-700'}">${S0(x.total)}</b>
+        <b class="shrink-0 ${x.vencido ? 'text-rose-600' : x.porVencer ? 'text-amber-600' : 'text-slate-700'}" title="${x.vencido ? 'Tiene deuda vencida' : x.porVencer ? 'Vence en los próximos 7 días' : 'Vence más adelante'}">${S0(x.total)}</b>
       </label>`).join('')}
     </div>
-    <p class="mb-3 text-[11px] text-slate-400">Marcados por defecto: solo los que tienen deuda <b>vencida</b>. Costo aprox. USD 0.03 por mensaje.</p>
+    <p class="mb-3 text-[11px] text-slate-400">Marcados por defecto: deuda <b>vencida</b> y la que <b>vence en los próximos 7 días</b> (cobranza anticipada del nuevo periodo). Costo aprox. USD 0.03 por mensaje.</p>
     <div class="flex justify-end gap-2">
       <button type="button" onclick="closeModal()" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Cancelar</button>
       <button type="button" id="cmEnviar" onclick="enviarCobranzaMasiva()" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">📣 Enviar (<span id="cmN">0</span>)</button>
