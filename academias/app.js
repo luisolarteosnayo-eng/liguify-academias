@@ -1054,6 +1054,45 @@ const SCREENS = {
         ${card('🧒 Alumnos nuevos', `<span class="text-emerald-600">+${tot.nuevos}</span>`, 'altas del periodo')}
         ${card('Bajas', `<span class="${tot.bajas ? 'text-rose-600' : ''}">−${tot.bajas}</span>`, 'del periodo')}
       </div>
+      ${(() => {   // 💰 Cobros del MES por DÍA: pagos aprobados apilados por sede
+        const sedesG = sedesActivas();
+        const palette = ['#d9232e', '#171e2e', '#8b93a7', '#10b981', '#f59e0b', '#0ea5e9'];
+        const colorDe = {}; sedesG.forEach((s, i2) => { colorDe[s.id] = palette[i2 % palette.length]; });
+        const pagosWin = DB.pagos.filter((p) => p.estado === 'aprobado' && (p.fecha || '') >= win.inicio && (p.fecha || '') <= win.fin
+          && sedesG.some((s) => s.id === p.sede_id));
+        if (!pagosWin.length) return '<h3 class="mb-2 text-sm font-semibold text-slate-600">💰 Cobros del mes por día</h3><div class="mb-6 rounded-xl bg-white p-6 text-center text-sm text-slate-400 ring-1 ring-slate-200">Sin pagos aprobados en el periodo.</div>';
+        const dias = [...new Set(pagosWin.map((p) => p.fecha))].sort();
+        const monto = (dia, sid) => pagosWin.filter((p) => p.fecha === dia && p.sede_id === sid).reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+        const totalDia = (dia) => pagosWin.filter((p) => p.fecha === dia).reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+        const maxDia = Math.max(...dias.map(totalDia), 1);
+        const barW = 40, gap = 14, padL = 10, padB = 22, padT = 18, h = 190;
+        const w = padL * 2 + dias.length * (barW + gap);
+        const chartH = h - padB - padT;
+        const bars = dias.map((dia, di) => {
+          const x = padL + di * (barW + gap);
+          let y = h - padB;
+          const segs = sedesG.map((s) => {
+            const m = monto(dia, s.id);
+            if (!m) return '';
+            const segH = (m / maxDia) * chartH;
+            y -= segH;
+            return `<rect x="${x}" y="${y}" width="${barW}" height="${segH}" rx="2" fill="${colorDe[s.id]}"><title>${s.nombre_sede}: ${S0(m)}</title></rect>`;
+          }).join('');
+          const topY = (h - padB) - (totalDia(dia) / maxDia) * chartH;
+          return `${segs}
+            <text x="${x + barW / 2}" y="${topY - 4}" text-anchor="middle" font-size="9" font-weight="700" fill="#334155">${S0(totalDia(dia)).replace('S/ ', '')}</text>
+            <text x="${x + barW / 2}" y="${h - padB + 14}" text-anchor="middle" font-size="10" fill="#64748b">${fmtDMY(dia).slice(0, 5)}</text>`;
+        }).join('');
+        const leyenda = sedesG.filter((s) => pagosWin.some((p) => p.sede_id === s.id))
+          .map((s) => `<span class="inline-flex items-center gap-1.5 text-xs text-slate-600"><span class="inline-block h-3 w-3 rounded-sm" style="background:${colorDe[s.id]}"></span>${s.nombre_sede}</span>`).join('');
+        const totMes = pagosWin.reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+        return `
+        <h3 class="mb-2 text-sm font-semibold text-slate-600">💰 Cobros del mes por día <span class="font-normal text-xs text-slate-400">· ${dias.length} día(s) con cobros · total ${S0(totMes)}</span></h3>
+        <div class="mb-6 rounded-xl bg-white p-4 ring-1 ring-slate-200">
+          <div class="overflow-x-auto"><svg width="${w}" height="${h}" class="block">${bars}</svg></div>
+          <div class="mt-2 flex flex-wrap gap-3">${leyenda}</div>
+        </div>`;
+      })()}
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Ingresos vs gastos por sede</h3>
       <div class="rounded-xl bg-white ring-1 ring-slate-200 px-4 py-2 mb-6">
         ${porSede.map((x) => `
