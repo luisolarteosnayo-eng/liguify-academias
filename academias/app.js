@@ -683,9 +683,10 @@ const SCREENS = {
       .reduce((s, e) => s + (+e.monto || 0), 0);
     // Cuentas por cobrar (snapshot): cargos pendientes por tipo, no depende del
     // periodo. Los alumnos dados de BAJA no cuentan (su deuda sigue en la ficha)
-    const porCobrarItems = DB.cargos
+    const porCobrarCargos = DB.cargos
       .filter((c) => c.jugador_id && inDash(jugador(c.jugador_id).sede_id)
-        && jugador(c.jugador_id).estado_alumno !== 'baja' && (c.monto - (c.pagado_monto || 0)) > 0)
+        && jugador(c.jugador_id).estado_alumno !== 'baja' && (c.monto - (c.pagado_monto || 0)) > 0);
+    const porCobrarItems = porCobrarCargos
       .map((c) => ({ cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), monto: c.monto - (c.pagado_monto || 0) }));
     const totalPorCobrar = porCobrarItems.reduce((s, d) => s + d.monto, 0);
 
@@ -722,6 +723,35 @@ const SCREENS = {
           ${donaPorCategoria(porCobrarItems, 'Sin cuentas por cobrar.')}
         </div>
       </div>
+      ${(() => {   // 📅 ANTIGÜEDAD de la deuda: a qué MES pertenece cada cobranza
+        // pendiente (CR por su ciclo; CNR por su periodo o vencimiento)
+        if (!porCobrarCargos.length) return '';
+        const mesDe = (c) => String(c.ciclo_inicio || (c.periodo ? c.periodo + '-01' : (c.fecha_vencimiento || ''))).slice(0, 7);
+        const porMes = {};
+        porCobrarCargos.forEach((c) => {
+          const m = mesDe(c) || 'sin-fecha';
+          if (!porMes[m]) porMes[m] = { monto: 0, n: 0 };
+          porMes[m].monto += c.monto - (c.pagado_monto || 0); porMes[m].n++;
+        });
+        const meses = Object.keys(porMes).sort();
+        const maxM = Math.max(...meses.map((m) => porMes[m].monto), 1);
+        const mesAct = HOY.slice(0, 7);
+        const nomMes = (m) => m === 'sin-fecha' ? 'Sin fecha'
+          : ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'][+m.slice(5) - 1] + ' ' + m.slice(0, 4);
+        const colorM = (m) => m === 'sin-fecha' ? '#8b93a7' : m < mesAct ? '#d9232e' : m === mesAct ? '#f59e0b' : '#0ea5e9';
+        const tagM = (m) => m === 'sin-fecha' ? '' : m < mesAct ? ' <span class="text-[10px] font-bold text-rose-600">ATRASADO</span>' : m === mesAct ? ' <span class="text-[10px] font-bold text-amber-600">mes actual</span>' : ' <span class="text-[10px] font-bold text-sky-600">nuevo periodo</span>';
+        return `
+        <h3 class="mb-2 text-sm font-semibold text-slate-600">📅 Cuentas por cobrar por mes <span class="text-xs font-normal text-slate-400">· antigüedad de la deuda</span></h3>
+        <div class="mb-6 rounded-xl bg-white p-4 ring-1 ring-slate-200">
+          ${meses.map((m) => `
+            <div class="flex items-center gap-2 py-1 text-xs">
+              <span class="w-24 shrink-0 text-slate-600"><b>${nomMes(m)}</b>${tagM(m)}</span>
+              <div class="h-4 flex-1 overflow-hidden rounded bg-slate-100">
+                <div class="h-4 rounded" style="width:${Math.max(1, Math.round(porMes[m].monto * 100 / maxM))}%;background:${colorM(m)}"></div></div>
+              <span class="w-32 shrink-0 text-right"><b>${S0(porMes[m].monto)}</b> <span class="text-slate-400">· ${porMes[m].n} cargo(s)</span></span>
+            </div>`).join('')}
+        </div>`;
+      })()}
 
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Alumnos nuevos por día
         <button onclick="reporteNuevosPruebas('nuevos')" class="ml-1 text-xs font-normal text-indigo-600 hover:underline">Ver detalle →</button></h3>
