@@ -312,6 +312,42 @@ const descCargo = (c) => {
   if (!c.descripcion) return base;
   return c.tipo === 'CR' ? `${base} ${c.descripcion}` : `${base} · ${c.descripcion}`;
 };
+// Mes al que pertenece una deuda: CR por su ciclo; CNR por periodo o vencimiento
+const mesDeCargo = (c) => String(c.ciclo_inicio || (c.periodo ? c.periodo + '-01' : (c.fecha_vencimiento || ''))).slice(0, 7);
+// Drill-down del Dashboard: deudores de un MES (clic en la barra de antigüedad)
+window.verDeudoresMes = (mes) => {
+  const sedeOk = (sid) => { const s = sede(sid); return !!s && s.activo !== false && (!DASH_SEDE || sid === DASH_SEDE); };
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const cs = DB.cargos.filter((c) => c.jugador_id && saldoC(c) > 0 && mesDeCargo(c) === mes && (() => {
+    const j = jugador(c.jugador_id); return j && j.estado_alumno !== 'baja' && sedeOk(j.sede_id);
+  })());
+  const nomMesL = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'][+mes.slice(5) - 1] + ' ' + mes.slice(0, 4);
+  if (!cs.length) { toast(`Sin deudas de ${nomMesL}`); return; }
+  const porJ = {};
+  cs.forEach((c) => { (porJ[c.jugador_id] = porJ[c.jugador_id] || []).push(c); });
+  const filasD = Object.entries(porJ).map(([jid, lista]) => {
+    const j = jugador(jid); const t = tutor(j.tutor_id) || {};
+    return { j, t, lista, total: lista.reduce((s, c) => s + saldoC(c), 0) };
+  }).sort((a, b) => b.total - a.total);
+  const total = filasD.reduce((s, x) => s + x.total, 0);
+  openModal(`📅 Deudores de ${nomMesL} · ${S0(total)}`, `
+    <p class="mb-2 text-xs text-slate-500">${filasD.length} alumno(s) con deuda del periodo <b>${nomMesL}</b>${DASH_SEDE ? ' · ' + sede(DASH_SEDE).nombre_sede : ' · todas las sedes'}. Clic en el nombre abre la ficha.</p>
+    ${table(['Alumno', 'Cel. tutor', 'Detalle', 'Deuda del mes', ''], [
+      ...filasD.map((x) => [
+        `<button type="button" onclick="formEditarAlumno('${x.j.id}')" class="font-bold text-left hover:text-indigo-600 hover:underline">${nom(x.j)}</button>
+         <div class="text-[10px] text-slate-400">${sede(x.j.sede_id) ? sede(x.j.sede_id).nombre_sede : ''}</div>`,
+        x.t.telefono_celular || '—',
+        x.lista.map((c) => { const v = c.fecha_vencimiento && c.fecha_vencimiento < HOY;
+          return `<div class="text-[11px] ${v ? 'text-rose-600' : 'text-slate-500'}">${c.tipo} · ${descCargo(c)} · <b>${S(saldoC(c))}</b>${v ? ' (vencido)' : ''}</div>`; }).join(''),
+        `<b>${S(x.total)}</b>`,
+        `<div class="flex flex-col gap-1 text-xs">
+          ${waNumero(x.t.telefono_celular || '') ? `<button onclick="waCobro('${x.j.id}')" class="rounded-lg bg-emerald-600 px-2.5 py-1 font-medium text-white hover:bg-emerald-700">💬 Cobro</button>` : ''}
+          <button onclick="formLinkPago('${x.j.id}')" class="rounded-lg bg-indigo-600 px-2.5 py-1 font-medium text-white hover:bg-indigo-700">💳 Link</button>
+        </div>`,
+      ]),
+      [`<b class="text-slate-500">TOTAL</b>`, '', '', `<b>${S0(total)}</b>`, ''],
+    ])}`, 'xl');
+};
 // Etiqueta de origen del CR: automático (proceso) o manual
 const origenTag = (c) => {
   if (c.tipo !== 'CR' || c.origen === 'promo') return '';
@@ -726,10 +762,9 @@ const SCREENS = {
       ${(() => {   // 📅 ANTIGÜEDAD de la deuda: a qué MES pertenece cada cobranza
         // pendiente (CR por su ciclo; CNR por su periodo o vencimiento)
         if (!porCobrarCargos.length) return '';
-        const mesDe = (c) => String(c.ciclo_inicio || (c.periodo ? c.periodo + '-01' : (c.fecha_vencimiento || ''))).slice(0, 7);
         const porMes = {};
         porCobrarCargos.forEach((c) => {
-          const m = mesDe(c) || 'sin-fecha';
+          const m = mesDeCargo(c) || 'sin-fecha';
           if (!porMes[m]) porMes[m] = { monto: 0, n: 0 };
           porMes[m].monto += c.monto - (c.pagado_monto || 0); porMes[m].n++;
         });
@@ -744,11 +779,12 @@ const SCREENS = {
         <h3 class="mb-2 text-sm font-semibold text-slate-600">📅 Cuentas por cobrar por mes <span class="text-xs font-normal text-slate-400">· antigüedad de la deuda</span></h3>
         <div class="mb-6 rounded-xl bg-white p-4 ring-1 ring-slate-200">
           ${meses.map((m) => `
-            <div class="flex items-center gap-2 py-1 text-xs">
+            <div class="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-xs hover:bg-slate-50"
+              ${m === 'sin-fecha' ? '' : `onclick="verDeudoresMes('${m}')"`} title="Ver los deudores de ${nomMes(m)}">
               <span class="w-24 shrink-0 text-slate-600"><b>${nomMes(m)}</b>${tagM(m)}</span>
               <div class="h-4 flex-1 overflow-hidden rounded bg-slate-100">
                 <div class="h-4 rounded" style="width:${Math.max(1, Math.round(porMes[m].monto * 100 / maxM))}%;background:${colorM(m)}"></div></div>
-              <span class="w-32 shrink-0 text-right"><b>${S0(porMes[m].monto)}</b> <span class="text-slate-400">· ${porMes[m].n} cargo(s)</span></span>
+              <span class="w-36 shrink-0 text-right"><b>${S0(porMes[m].monto)}</b> <span class="text-slate-400">· ${porMes[m].n} cargo(s) →</span></span>
             </div>`).join('')}
         </div>`;
       })()}
