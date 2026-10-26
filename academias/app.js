@@ -1065,7 +1065,7 @@ const SCREENS = {
         const monto = (dia, sid) => pagosWin.filter((p) => p.fecha === dia && p.sede_id === sid).reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
         const totalDia = (dia) => pagosWin.filter((p) => p.fecha === dia).reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
         const maxDia = Math.max(...dias.map(totalDia), 1);
-        const barW = 40, gap = 14, padL = 10, padB = 22, padT = 18, h = 190;
+        const barW = 40, gap = 14, padL = 10, padB = 34, padT = 18, h = 200;
         const w = padL * 2 + dias.length * (barW + gap);
         const chartH = h - padB - padT;
         const bars = dias.map((dia, di) => {
@@ -1079,9 +1079,14 @@ const SCREENS = {
             return `<rect x="${x}" y="${y}" width="${barW}" height="${segH}" rx="2" fill="${colorDe[s.id]}"><title>${s.nombre_sede}: ${S0(m)}</title></rect>`;
           }).join('');
           const topY = (h - padB) - (totalDia(dia) / maxDia) * chartH;
-          return `${segs}
+          // Día de la semana bajo la fecha (fin de semana resaltado)
+          const dow = new Date(dia + 'T12:00:00').getDay();
+          const dowTxt = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'][dow];
+          const finde = dow === 0 || dow === 6;
+          return `${finde ? `<rect x="${x - gap / 2}" y="${padT - 14}" width="${barW + gap}" height="${h - padT + 10}" fill="#f1f5f9" rx="3"/>` : ''}${segs}
             <text x="${x + barW / 2}" y="${topY - 4}" text-anchor="middle" font-size="9" font-weight="700" fill="#334155">${S0(totalDia(dia)).replace('S/ ', '')}</text>
-            <text x="${x + barW / 2}" y="${h - padB + 14}" text-anchor="middle" font-size="10" fill="#64748b">${fmtDMY(dia).slice(0, 5)}</text>`;
+            <text x="${x + barW / 2}" y="${h - padB + 12}" text-anchor="middle" font-size="9" fill="#64748b">${fmtDMY(dia).slice(0, 5)}</text>
+            <text x="${x + barW / 2}" y="${h - padB + 23}" text-anchor="middle" font-size="9" font-weight="${finde ? '800' : '600'}" fill="${finde ? '#d9232e' : '#94a3b8'}">${dowTxt}</text>`;
         }).join('');
         const leyenda = sedesG.filter((s) => pagosWin.some((p) => p.sede_id === s.id))
           .map((s) => `<span class="inline-flex items-center gap-1.5 text-xs text-slate-600"><span class="inline-block h-3 w-3 rounded-sm" style="background:${colorDe[s.id]}"></span>${s.nombre_sede}</span>`).join('');
