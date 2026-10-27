@@ -293,7 +293,24 @@ window.AcademiasDB = (() => {
       : { data: [] };
     const perfiles = perfilQ.data || [];
     const perfil = perfiles[0] || null;
-    const sel = (t) => sb.from(t).select('*');
+    // Supabase devuelve MÁXIMO 1000 filas por consulta: con tablas grandes
+    // (cargos, pago_cargo, asistencias…) los registros nuevos quedaban fuera
+    // de la carga y "desaparecían" de la vista aunque estaban bien guardados.
+    // Se pagina de 1000 en 1000 (orden estable por id) hasta traerlo todo.
+    const ORDEN = { pago_cargo: ['pago_id', 'cargo_id'], track_staff: ['track_id', 'staff_id'] };
+    const sel = async (t) => {
+      const PAGE = 1000, all = [];
+      const cols = ORDEN[t] || ['id'];
+      for (let from = 0; ; from += PAGE) {
+        let q = sb.from(t).select('*');
+        cols.forEach((c) => { q = q.order(c); });
+        const r = await q.range(from, from + PAGE - 1);
+        if (r.error) return r;
+        all.push(...(r.data || []));
+        if (!r.data || r.data.length < PAGE) break;
+      }
+      return { data: all, error: null };
+    };
     const [ac, se, st, tr, ts, tu, ju, ins, ca, pa, pc, mp, ci, pr, cn, pf, asis, ip, im, to, tcat, tjug, eg, te, tci, cg, ev] = await Promise.all([
       sel('academias'), sel('sedes'), sel('staff'), sel('tracks'), sel('track_staff'), sel('tutores'),
       sel('jugadores'), sel('inscripciones'), sel('cargos'), sel('pagos'), sel('pago_cargo'),
