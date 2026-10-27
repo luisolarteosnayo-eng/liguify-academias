@@ -3297,7 +3297,10 @@ window.agregarCNR = (jid) => {
   const j = jugador(jid);
   const cn = DB.conceptosCNR.find((c) => c.id === el('cnr_concepto').value);
   const monto = parseFloat(el('cnr_monto').value) || 0;
-  if (monto <= 0) { toast('Ingresa un monto'); return; }
+  if (monto < 0) { toast('El monto no puede ser negativo'); return; }
+  // Monto 0 = CNR GRATIS (obsequio/beca): nace pagado, descuenta stock y queda
+  // visible en el historial — se pide confirmación para evitar ceros por error
+  if (monto === 0 && !confirm(`¿Registrar "${cn ? cn.nombre : 'el cargo'}" como GRATIS (S/ 0)?\n\nNo genera deuda: nace pagado${cn && cn.maneja_stock ? ' y descuenta stock del almacén' : ''}. Quedará en el historial como obsequio.`)) return;
   // Inventariable: exige talla con stock disponible y registra la salida
   let talla = null;
   // Stock y salida SIEMPRE del almacén de la sede del ALUMNO (la ficha puede
@@ -3310,16 +3313,16 @@ window.agregarCNR = (jid) => {
   }
   const desc = el('cnr_desc').value.trim();
   const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo',
-    descripcion: [talla ? `Talla ${talla}` : null, desc].filter(Boolean).join(' · '),
+    descripcion: [talla ? `Talla ${talla}` : null, desc, monto === 0 ? 'GRATIS' : null].filter(Boolean).join(' · '),
     periodo: HOY.slice(0, 7), fecha_vencimiento: (el('cnr_venc') && el('cnr_venc').value) || HOY,
-    monto, pagado_monto: 0, estado: 'por_pagar' };
+    monto, pagado_monto: 0, estado: monto > 0 ? 'por_pagar' : 'pagado' };   // gratis: nace pagado
   DB.cargos.push(cargo);
   if (talla !== null) {
     DB.invMovimientos.push({ id: uid('im'), sede_id: sedeJ, concepto_cnr_id: cn.id, talla,
-      tipo: 'salida', cantidad: 1, motivo: 'Asignación a alumno', jugador_id: jid, cargo_id: cargo.id, fecha: HOY });
-    toast(`Cargo agregado · salida de almacén: ${cn.nombre} talla ${talla} (quedan ${stockDe(cn.id, talla, sedeJ)})`);
+      tipo: 'salida', cantidad: 1, motivo: monto === 0 ? 'Obsequio a alumno (gratis)' : 'Asignación a alumno', jugador_id: jid, cargo_id: cargo.id, fecha: HOY });
+    toast(`${monto === 0 ? '🎁 Obsequio registrado' : 'Cargo agregado'} · salida de almacén: ${cn.nombre} talla ${talla} (quedan ${stockDe(cn.id, talla, sedeJ)})`);
   } else {
-    toast('Cargo CNR agregado');
+    toast(monto === 0 ? '🎁 CNR gratis registrado (sin deuda)' : 'Cargo CNR agregado');
   }
   FICHA_ADD_CNR = false;   // al agregar, el panel se vuelve a plegar
   renderFichaCNR(jid);
@@ -5856,10 +5859,13 @@ window.guardarCargo = (e) => {
     talla = el('f_talla').value;
     if (stockDe(cn.id, talla, j.sede_id || SEDE_ACTUAL) < 1) { toast(`⚠ Sin stock de talla ${talla}`); fTallaBox(); return; }
   }
+  const montoF = num('f_monto') || 0;
+  if (montoF < 0) { toast('El monto no puede ser negativo'); return; }
+  if (montoF === 0 && !confirm(`¿Registrar "${cn ? cn.nombre : 'el cargo'}" como GRATIS (S/ 0)? No genera deuda: nace pagado.`)) return;
   const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: j.id, tipo: 'CNR', concepto: cn ? cn.nombre : 'Cargo',
-    descripcion: [talla ? `Talla ${talla}` : null, val('f_desc')].filter(Boolean).join(' · '),
+    descripcion: [talla ? `Talla ${talla}` : null, val('f_desc'), montoF === 0 ? 'GRATIS' : null].filter(Boolean).join(' · '),
     periodo: HOY.slice(0, 7), fecha_vencimiento: val('f_venc') || HOY,
-    monto: num('f_monto'), pagado_monto: 0, estado: 'por_pagar' };
+    monto: montoF, pagado_monto: 0, estado: montoF > 0 ? 'por_pagar' : 'pagado' };
   DB.cargos.push(cargo);
   if (talla !== null) {
     DB.invMovimientos.push({ id: uid('im'), sede_id: j.sede_id || SEDE_ACTUAL, concepto_cnr_id: cn.id, talla,
