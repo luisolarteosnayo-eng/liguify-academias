@@ -551,7 +551,16 @@ let TORNEO_SEL = null;         // torneo abierto en el detalle (o null = lista)
 let ASIS_TRACK = null;         // track activo en Asistencia
 let ASIS_FECHA = null;         // fecha activa en Asistencia
 let AL_FILTRO = 'activos';     // filtro de la lista de Alumnos: activos | prospectos | bajas | todos
-let AL_ORDEN = 'nombre';       // orden de la lista: nombre | deuda | corte
+let AL_SORT = { col: 'nombre', dir: 1 };    // orden de Alumnos (clic en cabeceras)
+let TRK_SORT = { col: 'nombre', dir: 1 };   // orden de la lista de alumnos del track
+window.alOrdenar = (col) => {
+  AL_SORT = { col, dir: AL_SORT.col === col ? -AL_SORT.dir : (col === 'deuda' ? -1 : 1) };
+  renderAlumnosList();
+};
+window.trkOrdenar = (col) => {
+  TRK_SORT = { col, dir: TRK_SORT.col === col ? -TRK_SORT.dir : (col === 'deuda' ? -1 : 1) };
+  renderTrackRows();
+};
 let DASH_SEDE = '';            // filtro de sede del Dashboard ('' = todas)
 let DASH_PERIODO = 'mes';      // 'mes' (mes actual) | 'anterior' (mes anterior completo)
 let GER_PERIODO = 'mes';       // periodo del Dashboard Gerencial
@@ -1290,20 +1299,11 @@ const SCREENS = {
           ['sincorte', 'Sin fecha corte', pr.sincorte.length],
         ].map(([v, t, n]) => `<button onclick="alFiltro('${v}')"
           class="rounded-full px-3 py-1.5 text-xs font-medium ${AL_FILTRO === v ? 'bg-amber-500 text-white' : n > 0 ? 'bg-amber-50 ring-1 ring-amber-300 text-amber-700 hover:bg-amber-100' : 'bg-white ring-1 ring-slate-200 text-slate-400'}">${t} (${n})</button>`).join(''); })()}
-        <span class="flex-1"></span>
-        <label class="flex items-center gap-1.5 text-xs text-slate-500">Ordenar por
-          <select onchange="AL_ORDEN = this.value; renderAlumnosList()" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
-            <option value="nombre" ${AL_ORDEN === 'nombre' ? 'selected' : ''}>Nombre (A–Z)</option>
-            <option value="reciente" ${AL_ORDEN === 'reciente' ? 'selected' : ''}>Más recientes (recién matriculados)</option>
-            <option value="deuda" ${AL_ORDEN === 'deuda' ? 'selected' : ''}>Mayor deuda primero</option>
-            <option value="corte" ${AL_ORDEN === 'corte' ? 'selected' : ''}>Últ. corte de CR (sin generar / más antiguo primero)</option>
-          </select>
-        </label>
       </div>
       <div id="alEmbudo"></div>
       <input id="al_q" oninput="renderAlumnosList()" placeholder="Buscar alumno por nombre..."
         class="w-full mb-3 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
-      <div id="alumnosList" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>`;
+      <div id="alumnosList"></div>`;
     renderAlumnosList();
   },
 
@@ -1645,6 +1645,83 @@ function pruebaEstado(j) {
   if (asis && (asis.estado === 'presente' || asis.estado === 'tardanza')) return 'asistio';
   return 'agendado';
 }
+// Datos de cobranza de un alumno: mismas métricas que la pantalla "Por cobrar".
+// Deuda = TODOS sus cargos con saldo (mismo criterio que su ficha), sin filtrar
+// por sede — j.sede_id podría diferir de la sede del track/lista.
+function alDatosCobranza(j) {
+  const saldoC = (c) => c.monto - (c.pagado_monto || 0);
+  const cs = DB.cargos.filter((c) => c.jugador_id === j.id && saldoC(c) > 0)
+    .sort((a, b) => ((a.periodo || '') < (b.periodo || '') ? -1 : 1));
+  const venc = cs.filter((c) => c.fecha_vencimiento && c.fecha_vencimiento < HOY);
+  const insc = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo);
+  // corte: '' = track SIN CR generado (lo más urgente); '9999-99-99' = sin tracks
+  const corte = !insc.length ? '9999-99-99'
+    : insc.some((i) => !i.ultima_fecha_corte) ? ''
+    : insc.map((i) => i.ultima_fecha_corte).sort()[0];
+  const t = tutor(j.tutor_id);
+  return { j, cs, saldoC,
+    total: cs.reduce((s, c) => s + saldoC(c), 0),
+    totalVenc: venc.reduce((s, c) => s + saldoC(c), 0),
+    tieneVencido: venc.length > 0, corte,
+    tel: (t && t.telefono_celular) || j.telefono || '' };
+}
+// Comparadores por columna (comparten Alumnos y el detalle de Track)
+const alCmpDe = (col) => ({
+  nombre: (a, b) => nom(a.j).localeCompare(nom(b.j), 'es'),
+  cat: (a, b) => anio(a.j.fecha_nacimiento) - anio(b.j.fecha_nacimiento),
+  tel: (a, b) => String(a.tel || 'zzz').localeCompare(String(b.tel || 'zzz')),
+  corte: (a, b) => String(a.corte).localeCompare(String(b.corte)),
+  deuda: (a, b) => a.total - b.total,
+  detalle: (a, b) => a.cs.length - b.cs.length,
+}[col] || ((a, b) => nom(a.j).localeCompare(nom(b.j), 'es')));
+// Cabecera ordenable (mismo patrón visual que Por cobrar)
+const thCobranza = (SORT, fn) => (col, txt) => SORT.col === col
+  ? `<button onclick="${fn}('${col}')" class="cursor-pointer font-semibold text-indigo-600">${txt} ${SORT.dir > 0 ? '↑' : '↓'}</button>`
+  : `<button onclick="${fn}('${col}')" title="Ordenar por ${txt}" class="cursor-pointer font-medium underline decoration-dotted decoration-slate-300 underline-offset-4 hover:text-indigo-600">${txt} <span class="text-slate-300">↕</span></button>`;
+// Celdas de una fila estilo "Por cobrar": Alumno / Cat. / Cel. tutor /
+// Matriculado hasta / Deuda total / Detalle de deuda / acciones
+function celdasAlumnoCobranza(d, { sub = '', acciones = '' } = {}) {
+  const j = d.j;
+  const t = tutor(j.tutor_id) || {};
+  const baja = j.estado_alumno === 'baja';
+  const pros = esProspecto(j);
+  const ini = ((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase();
+  const perfil = t.perfil_reclamado
+    ? '<span class="text-emerald-500">✓ perfil</span>'
+    : `<button onclick="formOnboarding('${t.id}')" class="text-amber-500 underline">reclamar perfil</button>`;
+  const corteVencido = d.corte && d.corte !== '9999-99-99' && d.corte < HOY;
+  const trks = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo)
+    .map((i) => (track(i.track_id) || {}).nombre_track).filter(Boolean).join(', ') || 'sin track';
+  const detalle = d.cs.length
+    ? `<div class="space-y-0.5">${d.cs.slice(0, 3).map((c) => { const v = c.fecha_vencimiento && c.fecha_vencimiento < HOY;
+        return `<div class="text-[11px] ${v ? 'text-rose-600' : 'text-slate-500'}">${c.tipo} · ${descCargo(c)} · <b>${S(d.saldoC(c))}</b>${v ? ' (vencido)' : ''}</div>`; }).join('')}
+        ${d.cs.length > 3 ? `<div class="text-[11px] text-slate-400" title="${d.cs.map((c) => `${descCargo(c)} ${S(d.saldoC(c))}`).join(' · ').replace(/"/g, '&quot;')}">+${d.cs.length - 3} cargo(s) más</div>` : ''}</div>`
+    : pros
+      ? `<span class="text-[11px]">${pruebaEstado(j) === 'asistio' ? '<span class="text-emerald-600 font-medium">✓ Asistió a su clase de prueba</span>' : `<span class="text-fuchsia-600">🎈 Prueba: ${j.prueba_fecha ? fmtDMY(j.prueba_fecha) : 'sin fecha'}${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}</span>`}</span>`
+      : `<span class="text-[11px] text-slate-400">🎯 ${trks}</span>`;
+  return [
+    `<div class="flex items-start gap-2 ${baja ? 'opacity-60' : ''}">
+      ${j.foto_url ? `<img src="${j.foto_url}" class="h-8 w-8 rounded-full object-cover shrink-0">` : `<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[11px] font-medium">${ini}</span>`}
+      <div class="min-w-0">
+        <button onclick="formEditarAlumno('${j.id}')" class="font-semibold text-left hover:text-indigo-600 hover:underline">${nom(j)}</button>
+        ${baja ? badge('Baja', 'slate') : ''}${pros ? badge('Prospecto', 'fuchsia') : ''}
+        ${j.ultimo_recordatorio ? `<span class="text-[10px] text-slate-400" title="Último recordatorio enviado">🔔 ${fmtDMY(j.ultimo_recordatorio)}</span>` : ''}
+        ${sub}
+        <div class="text-[10px] text-slate-400">Tutor ${t.nombres ? t.nombres + ' · ' : ''}${t.dni_tutor ? 'DNI ' + t.dni_tutor : '<span class="text-amber-500">sin DNI</span>'}${t.ruc ? ' · ' + badge('RUC', 'sky') : ''} · ${perfil}</div>
+      </div>
+    </div>`,
+    String(anio(j.fecha_nacimiento)),
+    d.tel ? `<span class="whitespace-nowrap">${d.tel}</span>` : '<span class="text-amber-600 text-xs">sin teléfono</span>',
+    d.corte === '9999-99-99' ? '<span class="text-amber-600 text-xs">sin tracks</span>'
+      : d.corte === '' ? '<span class="text-rose-600 text-xs font-medium">⚠ sin CR</span>'
+      : `<span class="${corteVencido ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(d.corte)}</span>`,
+    d.total > 0
+      ? `<b class="${d.tieneVencido ? 'text-rose-600' : 'text-slate-800'}">${S(d.total)}</b>${d.tieneVencido ? `<div class="text-[10px] text-rose-500">${S(d.totalVenc)} vencido</div>` : ''}`
+      : '<span class="text-emerald-600 text-xs">Sin deuda</span>',
+    detalle,
+    acciones,
+  ];
+}
 function renderAlumnosList() {
   const q = (el('al_q') ? el('al_q').value : '').toLowerCase();
   let als = alumnosSede();
@@ -1656,22 +1733,9 @@ function renderAlumnosList() {
     als = als.filter((j) => ids.has(j.id));
   }
   if (q) als = als.filter((j) => nom(j).toLowerCase().includes(q));
-  // Deuda total del alumno (todos sus cargos con saldo)
-  const deudaDe = (jid) => DB.cargos.filter((c) => c.jugador_id === jid)
-    .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
-  // Corte de cobranza: '' = tiene track SIN CR generado (lo más urgente);
-  // si no, el corte más antiguo; sin tracks → al final
-  const corteDe = (jid) => {
-    const insc = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
-    if (!insc.length) return '9999-99-99';
-    if (insc.some((i) => !i.ultima_fecha_corte)) return '';
-    return insc.map((i) => i.ultima_fecha_corte).sort()[0];
-  };
-  if (AL_ORDEN === 'deuda') als = als.slice().sort((a, b) => deudaDe(b.id) - deudaDe(a.id));
-  else if (AL_ORDEN === 'corte') als = als.slice().sort((a, b) => (corteDe(a.id) < corteDe(b.id) ? -1 : 1));
-  else if (AL_ORDEN === 'reciente') als = als.slice().sort((a, b) => ((b.fecha_registro || '') < (a.fecha_registro || '') ? -1 : 1));
-  else als = als.slice().sort((a, b) => nom(a).localeCompare(nom(b), 'es'));
-  if (el('alCount')) el('alCount').textContent = als.length;
+  const lista = als.map(alDatosCobranza);
+  lista.sort((a, b) => alCmpDe(AL_SORT.col)(a, b) * AL_SORT.dir);
+  if (el('alCount')) el('alCount').textContent = lista.length;
   // Embudo de clases de prueba (visible en la pestaña Prospectos)
   if (el('alEmbudo')) {
     if (AL_FILTRO === 'prospectos') {
@@ -1689,37 +1753,19 @@ function renderAlumnosList() {
       </div>`;
     } else el('alEmbudo').innerHTML = '';
   }
-  el('alumnosList').innerHTML = als.length ? als.map((j) => {
-    const t = tutor(j.tutor_id);
-    const trks = DB.inscripciones.filter((i) => i.jugador_id === j.id && i.activo).map((i) => track(i.track_id).nombre_track).join(', ') || 'sin track';
-    const ini = ((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase();
-    const baja = j.estado_alumno === 'baja';
-    const pros = esProspecto(j);
-    const deuda = deudaDe(j.id);
-    const corte = corteDe(j.id);
-    const perfil = t.perfil_reclamado
-      ? '<span class="text-emerald-500">✓ perfil</span>'
-      : `<button onclick="event.stopPropagation(); formOnboarding('${t.id}')" class="text-amber-500 underline">reclamar perfil</button>`;
-    const pruebaInfo = pros
-      ? `<div class="mt-2 text-xs truncate">${pruebaEstado(j) === 'asistio' ? '<span class="text-emerald-600 font-medium">✓ Asistió a su clase de prueba</span>' : `<span class="text-fuchsia-600">🎈 Prueba: ${j.prueba_fecha ? fmtDMY(j.prueba_fecha) : 'sin fecha'}${j.prueba_track_id && track(j.prueba_track_id) ? ' · ' + track(j.prueba_track_id).nombre_track : ''}</span>`}</div>`
-      : `<div class="mt-2 text-xs text-slate-500 truncate">🎯 ${trks}</div>`;
-    const corteInfo = (AL_ORDEN === 'corte' || AL_FILTRO === 'sincr' || AL_FILTRO === 'sincorte') && !pros
-      ? `<div class="text-xs mt-0.5 ${corte === '' ? 'text-rose-600 font-medium' : 'text-slate-400'}">${corte === '' ? '⚠ Track sin CR generado' : corte === '9999-99-99' ? 'Sin tracks' : 'Últ. corte: ' + fmtDMY(corte)}</div>`
-      : '';
-    return `<div onclick="formEditarAlumno('${j.id}')" class="cursor-pointer rounded-xl p-3 hover:shadow-sm transition ${deuda > 0 ? 'bg-rose-50 ring-1 ring-rose-300 hover:ring-rose-400' : `bg-white ring-1 ${pros ? 'ring-fuchsia-200' : 'ring-slate-200'} hover:ring-indigo-300`} ${baja ? 'opacity-60' : ''}">
-      <div class="flex items-center gap-2">
-        ${j.foto_url ? `<img src="${j.foto_url}" class="h-10 w-10 rounded-full object-cover">` : `<span class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 text-sm font-medium">${ini}</span>`}
-        <div class="min-w-0 flex-1">
-          <div class="font-medium ${deuda > 0 ? 'text-rose-700' : 'text-slate-800'} truncate">${nom(j)}${baja ? ' ' + badge('Baja', 'slate') : ''}${pros ? ' ' + badge('Prospecto', 'fuchsia') : ''}</div>
-          <div class="text-xs text-slate-400">Cat. ${anio(j.fecha_nacimiento)}${j.fecha_registro ? ' · Inscrito ' + fmtDMY(j.fecha_registro) : ''}${j.posicion_juego ? ' · ' + j.posicion_juego : ''}${j.numero_camiseta != null ? ' · #' + j.numero_camiseta : ''}</div>
-        </div>
-        ${deuda > 0 ? `<div class="shrink-0 text-right"><div class="text-[10px] uppercase tracking-wide text-rose-400">Debe</div><div class="text-sm font-bold text-rose-600">${S0(deuda)}</div></div>` : ''}
-      </div>
-      ${pruebaInfo}
-      ${corteInfo}
-      <div class="text-xs text-slate-400 mt-0.5">Tutor ${t.nombres ? t.nombres + ' · ' : ''}${t.dni_tutor ? 'DNI ' + t.dni_tutor : '<span class="text-amber-500">sin DNI</span>'}${t.ruc ? ' · ' + badge('RUC', 'sky') : ''} · ${perfil}</div>
-    </div>`;
-  }).join('') : '<p class="text-sm text-slate-400 p-2 col-span-full">No hay alumnos que coincidan.</p>';
+  const th = thCobranza(AL_SORT, 'alOrdenar');
+  const acciones = (d) => `<div class="flex flex-col gap-1 text-xs">
+    ${d.total > 0 && d.tel ? `<button onclick="waCobro('${d.j.id}')" class="rounded-lg bg-emerald-600 px-2.5 py-1 font-medium text-white hover:bg-emerald-700">💬 Cobro</button>` : ''}
+    ${d.total > 0 ? `<button onclick="formLinkPago('${d.j.id}')" class="rounded-lg bg-indigo-600 px-2.5 py-1 font-medium text-white hover:bg-indigo-700" title="Link de pago online (tarjeta/Yape): el pago entra aprobado automáticamente">💳 Link</button>` : ''}
+    <button onclick="formDocumentoCuenta('${d.j.id}')" class="text-indigo-600 hover:underline">📄 Estado</button>
+  </div>`;
+  const sub = (j) => (j.fecha_registro || j.posicion_juego || j.numero_camiseta != null)
+    ? `<div class="text-[10px] text-slate-400">${[j.fecha_registro ? 'Inscrito ' + fmtDMY(j.fecha_registro) : '', j.posicion_juego || '', j.numero_camiseta != null ? '#' + j.numero_camiseta : ''].filter(Boolean).join(' · ')}</div>`
+    : '';
+  el('alumnosList').innerHTML = lista.length
+    ? table([th('nombre', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
+        lista.map((d) => celdasAlumnoCobranza(d, { sub: sub(d.j), acciones: acciones(d) })))
+    : '<p class="text-sm text-slate-400 p-2">No hay alumnos que coincidan.</p>';
 }
 
 // ---------- Dashboard: control + gráfico de alumnos nuevos por día ----------
@@ -2341,52 +2387,33 @@ function renderTrackRows() {
   const cat = el('fltCat') ? el('fltCat').value : '';
   const pago = el('fltPago') ? el('fltPago').value : '';
   const q = (el('fltQ') ? el('fltQ').value : '').toLowerCase();
-  // Deuda del alumno: TODOS sus cargos (mismo criterio que su estado de cuenta),
-  // sin filtrar por sede — j.sede_id podría diferir de la sede del track.
-  const debeDe = (jid) => DB.cargos.filter((c) => c.jugador_id === jid).reduce((s, c) => s + (c.monto - (c.pagado_monto || 0)), 0);
   let insc = DB.inscripciones.filter((i) => i.track_id === t.id);
   if (estado === 'inscritos') insc = insc.filter((i) => i.activo);
   if (cat) insc = insc.filter((i) => String(anio(jugador(i.jugador_id).fecha_nacimiento)) === cat);
-  if (pago === 'pendiente') insc = insc.filter((i) => debeDe(i.jugador_id) > 0);
-  if (pago === 'aldia') insc = insc.filter((i) => debeDe(i.jugador_id) === 0);
   if (q) insc = insc.filter((i) => nom(jugador(i.jugador_id)).toLowerCase().includes(q));
+  // Mismas columnas y datos que "Por cobrar" (alDatosCobranza: deuda de TODOS
+  // sus cargos, sin filtrar por sede)
+  let rows = insc.map((i) => ({ i, d: alDatosCobranza(jugador(i.jugador_id)) }));
+  if (pago === 'pendiente') rows = rows.filter((r) => r.d.total > 0);
+  if (pago === 'aldia') rows = rows.filter((r) => r.d.total === 0);
+  rows.sort((a, b) => alCmpDe(TRK_SORT.col)(a.d, b.d) * TRK_SORT.dir);
 
-  const cards = insc.map((i) => {
-    const j = jugador(i.jugador_id);
-    const efect = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
-    const beca = i.costo_mensual_personalizado != null && i.costo_mensual_personalizado !== t.mensualidad_sugerida;
-    const debe = debeDe(j.id);
-    const asis = DB.asistencias.filter((a) => a.track_id === t.id && a.jugador_id === j.id && a.estado !== 'ausente').length;
-    const ini = ((j.nombre[0] || '') + (j.apellido[0] || '')).toUpperCase();
-    return `<div class="rounded-xl bg-white ring-1 ring-slate-200 p-3 ${i.activo ? '' : 'opacity-60'}">
-      <div class="flex items-start justify-between gap-2">
-        <div onclick="formEditarAlumno('${j.id}')" class="flex items-center gap-2 cursor-pointer min-w-0 group">
-          ${j.foto_url ? `<img src="${j.foto_url}" class="h-9 w-9 rounded-full object-cover">` : `<span class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-medium">${ini}</span>`}
-          <div class="min-w-0">
-            <div class="font-medium text-slate-800 truncate group-hover:text-indigo-600">${nom(j)}</div>
-            <div class="text-xs mt-0.5"><span class="rounded bg-amber-100 text-amber-700 px-1.5 py-0.5">${anio(j.fecha_nacimiento)}</span></div>
-          </div>
-        </div>
-        ${debe > 0 ? badge('Pendiente', 'amber') : badge('Al día', 'emerald')}
-      </div>
-      <div class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-        <div><div class="text-slate-400">Inscrito</div><div class="font-medium">${fmtFecha(i.fecha_inscripcion)}</div></div>
-        <div><div class="text-slate-400">Últ. corte</div><div class="font-medium">${i.ultima_fecha_corte ? fmtDMY(i.ultima_fecha_corte) : '—'}</div></div>
-        <div><div class="text-slate-400">Asistencias</div><div class="font-medium">${asis}/${t.clases_mensuales || 8}</div></div>
-        <div><div class="text-slate-400">Mensualidad</div><div class="font-medium">${beca ? `<span class="text-indigo-600">${S(efect)}</span>` : S(efect)}</div></div>
-      </div>
-      <div class="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
-        <span>${debe > 0 ? `Debe <b class="text-rose-600">${S(debe)}</b>` : '<span class="text-emerald-600">Sin deuda</span>'}</span>
-        <div class="flex gap-3">
-          ${debe > 0 ? `<button onclick="formPagoAlumno('${j.id}')" class="font-medium text-indigo-600 hover:underline">Registrar pago</button>` : ''}
-          ${i.activo ? `<button onclick="removerInscripcion('${i.id}')" class="text-rose-600 hover:underline">Remover</button>` : ''}
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  el('trkDetalleRows').innerHTML = insc.length
-    ? `<div class="grid gap-2 md:grid-cols-2">${cards}</div>`
+  const th = thCobranza(TRK_SORT, 'trkOrdenar');
+  el('trkDetalleRows').innerHTML = rows.length
+    ? table([th('nombre', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
+        rows.map(({ i, d }) => {
+          const j = d.j;
+          const efect = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
+          const beca = i.costo_mensual_personalizado != null && i.costo_mensual_personalizado !== t.mensualidad_sugerida;
+          const asis = DB.asistencias.filter((a) => a.track_id === t.id && a.jugador_id === j.id && a.estado !== 'ausente').length;
+          const sub = `<div class="text-[10px] text-slate-400">Inscrito ${fmtFecha(i.fecha_inscripcion)} · Asist. ${asis}/${t.clases_mensuales || 8} · Mens. ${beca ? `<span class="text-indigo-600 font-medium">${S(efect)}</span>` : S(efect)}${i.activo ? '' : ' · <span class="text-rose-500">removido</span>'}</div>`;
+          const acciones = `<div class="flex flex-col gap-1 text-xs">
+            ${d.total > 0 ? `<button onclick="formPagoAlumno('${j.id}')" class="rounded-lg bg-indigo-600 px-2.5 py-1 font-medium text-white hover:bg-indigo-700">💳 Registrar pago</button>` : ''}
+            ${i.activo ? `<button onclick="removerInscripcion('${i.id}')" class="text-rose-600 hover:underline">Remover</button>` : ''}
+          </div>`;
+          // "Matriculado hasta" de la fila = el corte de ESTA inscripción
+          return celdasAlumnoCobranza({ ...d, corte: i.ultima_fecha_corte || '' }, { sub, acciones });
+        }))
     : '<p class="text-sm text-slate-400 p-4">No hay jugadores que coincidan con el filtro.</p>';
   if (el('trkCount')) {
     const activos = DB.inscripciones.filter((i) => i.track_id === t.id && i.activo).length;
