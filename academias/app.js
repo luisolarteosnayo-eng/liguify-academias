@@ -4712,6 +4712,7 @@ window.formEditarAlumno = (jid) => {
       ${(j.estado_alumno === 'prospecto' || j.fue_prospecto || (j.seguimiento || []).length) ? `<div id="segBox">${seguimientoHTML(j)}</div>` : ''}
       ${njFormBody(j, jid)}
       <div class="sticky bottom-0 -mx-5 md:-mx-6 -mb-5 mt-4 flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 md:px-6 py-3">
+        <div class="flex items-center gap-1">
         ${j.estado_alumno === 'prospecto'
           ? `<div class="flex gap-2">
               <button type="button" onclick="convertirProspecto('${jid}')" class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">✓ Convertir en alumno</button>
@@ -4720,6 +4721,8 @@ window.formEditarAlumno = (jid) => {
           : `<button type="button" onclick="toggleBajaAlumno('${jid}')"
           class="rounded-lg px-3 py-2 text-sm ${j.estado_alumno === 'activo' ? 'text-rose-600 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}">
           ${j.estado_alumno === 'activo' ? 'Dar de baja' : 'Reactivar'}</button>`}
+        ${ROL === 'admin' ? `<button type="button" onclick="formFusionAlumno('${jid}')" title="Une este registro con un duplicado del mismo alumno conservando pagos y datos" class="rounded-lg px-3 py-2 text-sm text-slate-500 hover:bg-slate-100">🔀 Fusionar duplicado</button>` : ''}
+        </div>
         <div class="flex gap-2">
           ${DB.cargos.some((c) => c.jugador_id === jid && c.estado !== 'pagado')
             ? `<button type="button" onclick="formPagoAlumno('${jid}')" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">💳 Registrar pago</button>` : ''}
@@ -4809,6 +4812,166 @@ window.editarFechaBaja = (jid, f) => {
   DB.inscripciones.filter((i) => i.jugador_id === jid && !i.activo
     && (i.baja_fecha || null) === antes).forEach((i) => { i.baja_fecha = f; });
   toast(`Fecha de baja: ${fmtDMY(f)} · recalcula el cierre de ese mes para verla`);
+};
+// ---------- Fusión de alumnos duplicados (solo admin) ----------
+// Une dos registros del mismo alumno: todo lo transaccional (tracks, cargos,
+// pagos, asistencias, evaluaciones, torneos, almacén) pasa al registro que se
+// conserva, los datos personales/tutor vacíos se completan con los del
+// duplicado y el duplicado se elimina. El motor de sync 2 fases hace los
+// PATCH liberadores antes de los deletes, así el borrado no choca con FKs.
+const telUlt9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+let FUSION_BASE = null;
+window.formFusionAlumno = (jid) => {
+  FUSION_BASE = jid;
+  openModal(`🔀 Fusionar duplicado · ${nom(jugador(jid))}`, `
+    <p class="mb-3 text-sm text-slate-500">Elige el <b>otro registro</b> de este mismo alumno. Los pagos, cargos, tracks y asistencias
+      de ambos quedarán en un solo registro; los datos personales que falten se completan con los del otro y el duplicado se elimina.</p>
+    <input id="fu_q" oninput="renderFusionCands()" placeholder="Buscar el registro duplicado por nombre…"
+      class="w-full mb-3 rounded-lg border border-slate-300 px-3 py-2.5 text-sm">
+    <div id="fuCands"></div>
+    <div class="mt-4 flex justify-end">
+      <button type="button" onclick="formEditarAlumno('${jid}')" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">← Volver a la ficha</button>
+    </div>`);
+  renderFusionCands();
+};
+window.renderFusionCands = () => {
+  const j = jugador(FUSION_BASE);
+  if (!j) return;
+  const q = (el('fu_q') ? el('fu_q').value : '').trim().toLowerCase();
+  const tj = tutor(j.tutor_id) || {};
+  const tels = [telUlt9(tj.telefono_celular), telUlt9(tj.telefono_celular2)].filter((t) => t.length === 9);
+  const palabras = nom(j).toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  let cands = DB.jugadores.filter((x) => x.id !== j.id);
+  if (q) cands = cands.filter((x) => nom(x).toLowerCase().includes(q));
+  else cands = cands.filter((x) => {
+    const tx = tutor(x.tutor_id) || {};
+    const mismoTel = [telUlt9(tx.telefono_celular), telUlt9(tx.telefono_celular2)].some((n) => n.length === 9 && tels.includes(n));
+    const mismoDoc = j.num_documento && x.num_documento === j.num_documento;
+    const nombreParecido = palabras.filter((w) => nom(x).toLowerCase().includes(w)).length >= 2;
+    return mismoTel || mismoDoc || nombreParecido;
+  });
+  cands = cands.slice(0, 20);
+  el('fuCands').innerHTML = cands.length ? cands.map((x) => {
+    const sd = sede(x.sede_id);
+    const nP = DB.pagos.filter((p) => p.jugador_id === x.id).length;
+    const nC = DB.cargos.filter((c) => c.jugador_id === x.id).length;
+    return `<div class="flex items-center justify-between gap-2 rounded-lg ring-1 ring-slate-200 px-3 py-2 mb-1.5">
+      <div class="min-w-0 text-sm">
+        <div class="font-medium truncate">${nom(x)} ${badge(x.estado_alumno === 'activo' ? 'Activo' : x.estado_alumno === 'prospecto' ? 'Prospecto' : 'Baja', x.estado_alumno === 'activo' ? 'emerald' : x.estado_alumno === 'prospecto' ? 'fuchsia' : 'slate')}</div>
+        <div class="text-xs text-slate-400">${sd ? sd.nombre_sede + ' · ' : ''}Cat. ${anio(x.fecha_nacimiento)} · ${nC} cargo(s) · ${nP} pago(s)</div>
+      </div>
+      <button type="button" onclick="formFusionConfirm('${j.id}','${x.id}')" class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">Elegir →</button>
+    </div>`;
+  }).join('') : `<p class="text-sm text-slate-400">${q ? 'Ningún alumno coincide con la búsqueda.' : 'No se detectaron duplicados probables (mismo teléfono, documento o nombre parecido). Usa el buscador.'}</p>`;
+};
+// Propone conservar el registro con más actividad (pagos pesan más); se puede invertir
+window.formFusionConfirm = (aId, bId) => {
+  const peso = (id) => DB.pagos.filter((p) => p.jugador_id === id).length * 3
+    + DB.cargos.filter((c) => c.jugador_id === id).length
+    + DB.inscripciones.filter((i) => i.jugador_id === id && i.activo).length
+    + (jugador(id).estado_alumno === 'activo' ? 1 : 0);
+  if (peso(bId) > peso(aId)) renderFusionConfirm(bId, aId); else renderFusionConfirm(aId, bId);
+};
+window.renderFusionConfirm = (keepId, dupId) => {
+  const card = (id, esKeep) => {
+    const x = jugador(id); const tx = tutor(x.tutor_id) || {};
+    const nP = DB.pagos.filter((p) => p.jugador_id === id).length;
+    const nC = DB.cargos.filter((c) => c.jugador_id === id).length;
+    const nI = DB.inscripciones.filter((i) => i.jugador_id === id && i.activo).length;
+    const sd = sede(x.sede_id);
+    return `<div class="rounded-xl p-3 ring-2 ${esKeep ? 'ring-emerald-400 bg-emerald-50' : 'ring-rose-300 bg-rose-50'}">
+      <div class="text-[10px] uppercase tracking-wide font-semibold ${esKeep ? 'text-emerald-600' : 'text-rose-500'}">${esKeep ? '✓ Se conserva' : '✕ Se elimina (todo pasa al otro)'}</div>
+      <div class="mt-1 text-sm font-semibold">${nom(x)}</div>
+      <div class="text-xs text-slate-500">${x.estado_alumno === 'activo' ? 'Activo' : x.estado_alumno === 'prospecto' ? 'Prospecto' : 'Baja'}${sd ? ' · ' + sd.nombre_sede : ''} · Cat. ${anio(x.fecha_nacimiento)}${x.fecha_registro ? ' · Inscrito ' + fmtDMY(x.fecha_registro) : ''}</div>
+      <div class="text-xs text-slate-500">Tutor ${tx.nombres || '—'}${tx.dni_tutor ? ' · DNI ' + tx.dni_tutor : ''} · ${tx.telefono_celular || 'sin cel.'}</div>
+      <div class="mt-1 text-xs font-medium">${nI} track(s) · ${nC} cargo(s) · ${nP} pago(s)</div>
+    </div>`;
+  };
+  openModal('🔀 Confirmar fusión', `
+    <div class="mb-2 grid grid-cols-2 gap-3">${card(keepId, true)}${card(dupId, false)}</div>
+    <button type="button" onclick="renderFusionConfirm('${dupId}','${keepId}')" class="mb-3 text-xs text-indigo-600 hover:underline">⇄ Invertir: conservar el otro registro</button>
+    <div class="mb-4 rounded-lg bg-amber-50 ring-1 ring-amber-200 p-3 text-xs text-amber-800">
+      Al duplicado se le moverán sus tracks, cargos, pagos, asistencias, evaluaciones, torneos y movimientos de almacén.
+      Los datos personales y del tutor que falten en el registro conservado se completan con los del duplicado
+      (un celular distinto del tutor pasa como 2° celular). Esta acción <b>no se puede deshacer</b>.</div>
+    <div class="flex justify-end gap-2">
+      <button type="button" onclick="formFusionAlumno('${keepId}')" class="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">← Volver</button>
+      <button type="button" onclick="fusionarAlumnos('${keepId}','${dupId}')" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">Fusionar registros</button>
+    </div>`);
+};
+window.fusionarAlumnos = async (keepId, dupId) => {
+  const keep = jugador(keepId), dup = jugador(dupId);
+  if (!keep || !dup || keepId === dupId) return;
+  if (!confirm(`¿Fusionar "${nom(dup)}" dentro de "${nom(keep)}"?\nEl duplicado se eliminará y no se puede deshacer.`)) return;
+  const keepT = tutor(keep.tutor_id), dupT = tutor(dup.tutor_id);
+  // 1) Tracks: mover inscripciones; si ambos están en el mismo track se funden
+  //    (los cargos del duplicado pasan a la inscripción conservada)
+  DB.inscripciones.filter((i) => i.jugador_id === dupId).slice().forEach((i) => {
+    const ya = DB.inscripciones.find((x) => x.jugador_id === keepId && x.track_id === i.track_id);
+    if (ya) {
+      DB.cargos.forEach((c) => { if (c.inscripcion_id === i.id) c.inscripcion_id = ya.id; });
+      if (i.ultima_fecha_corte && (!ya.ultima_fecha_corte || i.ultima_fecha_corte > ya.ultima_fecha_corte)) ya.ultima_fecha_corte = i.ultima_fecha_corte;
+      if (i.fecha_inscripcion && (!ya.fecha_inscripcion || i.fecha_inscripcion < ya.fecha_inscripcion)) ya.fecha_inscripcion = i.fecha_inscripcion;
+      if (i.activo && !ya.activo) { ya.activo = true; ya.baja_fecha = null; }
+      DB.inscripciones.splice(DB.inscripciones.indexOf(i), 1);
+    } else i.jugador_id = keepId;
+  });
+  // 2) Dinero y actividad
+  DB.cargos.forEach((c) => { if (c.jugador_id === dupId) { c.jugador_id = keepId; if (keepT) c.tutor_id = keepT.id; } });
+  DB.pagos.forEach((p) => { if (p.jugador_id === dupId) { p.jugador_id = keepId; if (keepT && p.tutor_id) p.tutor_id = keepT.id; } });
+  // 3) Asistencias (clave única track+alumno+fecha: en choque gana la del conservado)
+  DB.asistencias.slice().forEach((a) => { if (a.jugador_id !== dupId) return;
+    const choca = DB.asistencias.some((x) => x.jugador_id === keepId && x.track_id === a.track_id && x.fecha === a.fecha);
+    if (choca) DB.asistencias.splice(DB.asistencias.indexOf(a), 1); else a.jugador_id = keepId; });
+  // 4) Evaluaciones (única por periodo) y torneos (único por categoría)
+  (DB.evaluaciones || []).slice().forEach((e) => { if (e.jugador_id !== dupId) return;
+    const choca = DB.evaluaciones.some((x) => x.jugador_id === keepId && x.periodo === e.periodo);
+    if (choca) DB.evaluaciones.splice(DB.evaluaciones.indexOf(e), 1); else e.jugador_id = keepId; });
+  DB.torneoJugadores.slice().forEach((x) => { if (x.jugador_id !== dupId) return;
+    const choca = DB.torneoJugadores.some((y) => y.jugador_id === keepId && y.categoria_id === x.categoria_id);
+    if (choca) DB.torneoJugadores.splice(DB.torneoJugadores.indexOf(x), 1); else x.jugador_id = keepId; });
+  DB.invMovimientos.forEach((m) => { if (m.jugador_id === dupId) m.jugador_id = keepId; });
+  // 5) Datos personales: lo vacío del conservado se completa con lo del duplicado
+  ['sexo', 'foto_url', 'tipo_documento', 'num_documento', 'telefono', 'talla_camiseta', 'talla_short', 'nombre_camiseta',
+    'posicion_juego', 'pierna_habil', 'tipo_sangre', 'notas_medicas', 'historial_lesiones', 'alergias', 'otras_actividades',
+    'numero_camiseta', 'prueba_fecha', 'prueba_track_id', 'jugador_maestro_id', 'doc_scan_frente_url', 'doc_scan_reverso_url']
+    .forEach((f) => { if ((keep[f] == null || keep[f] === '') && dup[f] != null && dup[f] !== '') keep[f] = dup[f]; });
+  keep.fue_prospecto = !!(keep.fue_prospecto || dup.fue_prospecto || dup.estado_alumno === 'prospecto');
+  if (dup.fecha_registro && (!keep.fecha_registro || dup.fecha_registro < keep.fecha_registro)) keep.fecha_registro = dup.fecha_registro;
+  if (dup.ultimo_recordatorio && (!keep.ultimo_recordatorio || dup.ultimo_recordatorio > keep.ultimo_recordatorio)) keep.ultimo_recordatorio = dup.ultimo_recordatorio;
+  if (Array.isArray(dup.recordatorio_tels)) keep.recordatorio_tels = [...new Set([...(Array.isArray(keep.recordatorio_tels) ? keep.recordatorio_tels : []), ...dup.recordatorio_tels])];
+  if ((dup.seguimiento || []).length) keep.seguimiento = [...(keep.seguimiento || []), ...dup.seguimiento];
+  if (keep.estado_alumno !== 'activo' && dup.estado_alumno === 'activo') {
+    keep.estado_alumno = 'activo'; keep.baja_fecha = null; keep.baja_motivo = null; keep.baja_comentario = null;
+  }
+  // 6) Tutor: completar vacíos; un celular distinto pasa al 2° celular si hay espacio
+  if (keepT && dupT && keepT.id !== dupT.id) {
+    ['nombres', 'dni_tutor', 'email_tutor', 'ruc', 'razon_social'].forEach((f) => { if (!keepT[f] && dupT[f]) keepT[f] = dupT[f]; });
+    keepT.perfil_reclamado = !!(keepT.perfil_reclamado || dupT.perfil_reclamado);
+    [dupT.telefono_celular, dupT.telefono_celular2].filter(Boolean).forEach((tel) => {
+      const yaLo = [telUlt9(keepT.telefono_celular), telUlt9(keepT.telefono_celular2)].includes(telUlt9(tel));
+      if (!yaLo) { if (!keepT.telefono_celular) keepT.telefono_celular = tel; else if (!keepT.telefono_celular2) keepT.telefono_celular2 = tel; }
+    });
+    // el tutor del duplicado se elimina solo si ya nadie lo referencia
+    const enUso = DB.jugadores.some((x) => x.id !== dupId && x.tutor_id === dupT.id)
+      || DB.cargos.some((c) => c.tutor_id === dupT.id) || DB.pagos.some((p) => p.tutor_id === dupT.id);
+    if (!enUso) DB.tutores.splice(DB.tutores.indexOf(dupT), 1);
+  }
+  // 7) Eliminar el duplicado y persistir de inmediato (operación de dinero)
+  DB.jugadores.splice(DB.jugadores.indexOf(dup), 1);
+  closeModal();
+  toast(`🔀 Registros fusionados en ${nom(keep)}`);
+  await syncAhora();
+  // Bandeja WhatsApp: sus conversaciones pasan a apuntar al registro conservado
+  if (window.AcademiasDB && AcademiasDB.on) {
+    try {
+      await AcademiasDB.sb.from('wsp_conversaciones').update({ jugador_id: keepId }).eq('jugador_id', dupId);
+      if (dupT && keepT && dupT.id !== keepT.id) await AcademiasDB.sb.from('wsp_conversaciones').update({ tutor_id: keepT.id }).eq('tutor_id', dupT.id);
+    } catch (e) { console.warn('[fusion] wsp_conversaciones:', e); }
+  }
+  if (SCREEN === 'alumnos') renderAlumnosList();
+  else if (TRACK_SEL) renderTrackRows();
+  formEditarAlumno(keepId);
 };
 const MOTIVOS_BAJA = ['DEJO DE ASISTIR', 'PROBLEMA CON ACADEMIA', 'PROBLEMA CON PROFESOR', 'OTRO'];
 window.toggleBajaAlumno = (jid) => {
