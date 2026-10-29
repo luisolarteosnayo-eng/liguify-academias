@@ -476,20 +476,22 @@ function statsTorneo(t) {
 
 // ---------- Menú por rol ----------
 const MENU = [
-  { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','profesor','operador','cobranza'] },
+  { id: 'dashboard',   label: 'Dashboard',     icon: '📊', roles: ['admin','coordinador','tesorero','operador','cobranza'] },
   { id: 'gerencial',   label: 'Gerencial',     icon: '📈', roles: ['admin'] },
   { id: 'tracks',      label: 'Tracks · Horarios', icon: '🎯', roles: ['admin','coordinador','operador'] },
-  { id: 'prospectos',  label: 'Clases de prueba · Prospectos', icon: '🎈', roles: ['admin','coordinador','operador','profesor'] },
+  { id: 'prospectos',  label: 'Clases de prueba · Prospectos', icon: '🎈', roles: ['admin','coordinador','operador'] },
   { id: 'alumnos',     label: 'Alumnos',       icon: '🧒', roles: ['admin','coordinador','operador'] },
   { id: 'calendario',  label: 'Calendario de clases', icon: '🗓️', roles: ['admin','coordinador'] },
   { id: 'almacen',     label: 'Almacén',       icon: '📦', roles: ['admin','coordinador'] },
-  { id: 'torneos',     label: 'Torneos',       icon: '🏆', roles: ['admin','coordinador'] },
+  // Profesor: SOLO Torneos — crea torneos, selecciona alumnos y les asigna su
+  // precio; lo financiero (generar CNRs, reporte de deuda) queda fuera de su rol
+  { id: 'torneos',     label: 'Torneos',       icon: '🏆', roles: ['admin','coordinador','profesor'] },
   { id: 'gastos',      label: 'Gastos',        icon: '💸', roles: ['admin','coordinador'] },
   { id: 'tesoreria',   label: 'Tesorería',     icon: '💵', roles: ['admin','coordinador','tesorero'] },
   { id: 'porcobrar',   label: 'Por cobrar',    icon: '📋', roles: ['admin','coordinador','tesorero','cobranza'] },
   { id: 'whatsapp',    label: 'WhatsApp · Bandeja', icon: '💬', roles: ['admin','coordinador','cobranza'] },
   { id: 'aprobar',     label: 'Aprobar pagos', icon: '✔️', roles: ['admin','tesorero'] },
-  { id: 'asistencia',  label: 'Asistencia',    icon: '✅', roles: ['admin','profesor'] },
+  { id: 'asistencia',  label: 'Asistencia',    icon: '✅', roles: ['admin'] },
   { id: 'usuarios',    label: 'Usuarios',      icon: '👥', roles: ['admin','coordinador'] },
   { id: 'config',      label: 'Configuración', icon: '⚙️', roles: ['admin'] },
 ];
@@ -654,7 +656,9 @@ function renderNav() {
 
 function go(screen) {
   const item = MENU.find((m) => m.id === screen);
-  SCREEN = item && item.roles.includes(ROL) ? screen : 'dashboard';
+  // Si la pantalla no está permitida para el rol, cae a su primera opción de menú
+  const primera = (MENU.find((m) => m.roles.includes(ROL)) || {}).id || 'dashboard';
+  SCREEN = item && item.roles.includes(ROL) ? screen : primera;
   el('pageTitle').textContent = (MENU.find((m) => m.id === SCREEN) || {}).label || '';
   renderNav();
   renderSedeSelect();   // el selector cambia de modo entre Dashboard y pantallas operativas
@@ -918,11 +922,12 @@ const SCREENS = {
               ${st.pendientes ? badge(`${st.pendientes} CNR pend.`, 'amber') : (st.jugs.length ? badge('CNRs al día', 'emerald') : '')}
             </div>
             <div class="mt-0.5 text-xs text-slate-400">${fmtFecha(t.fecha_inicio)}${t.descripcion ? ' · ' + t.descripcion : ''}</div>
-            <div class="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+            <div class="mt-3 grid ${ROL === 'profesor' ? 'grid-cols-2' : 'grid-cols-4'} gap-2 text-center text-xs">
               <div><div class="text-slate-400">Categorías</div><b>${st.cats.length}</b></div>
               <div><div class="text-slate-400">Alumnos</div><b>${st.jugs.length}</b></div>
+              ${ROL === 'profesor' ? '' : `
               <div><div class="text-slate-400">Por cobrar</div><b class="${st.porCobrar > 0 ? 'text-rose-600' : 'text-emerald-600'}" title="Inscripciones ${S(st.totalInsc)} − pagado ${S(st.totalPagado)}">${S(st.porCobrar)}</b></div>
-              <div><div class="text-slate-400">Rentab.</div><b class="${st.rentabilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${S(st.rentabilidad)}</b></div>
+              <div><div class="text-slate-400">Rentab.</div><b class="${st.rentabilidad >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${S(st.rentabilidad)}</b></div>`}
             </div>
           </div>`;
         }).join('') : '<p class="text-sm text-slate-400 col-span-full">Aún no hay torneos. Crea el primero.</p>'}
@@ -7046,6 +7051,7 @@ function renderTorneoDetalle() {
   if (!t) { TORNEO_SEL = null; SCREENS.torneos(); return; }
   const st = statsTorneo(t);
   const rentCls = st.rentabilidad > 0 ? 'text-emerald-600' : st.rentabilidad < 0 ? 'text-rose-600' : 'text-slate-700';
+  const esProfe = ROL === 'profesor';   // profesor: arma el torneo, sin acciones financieras ni ficha del alumno
   const catHTML = (c) => {
     const jugs = DB.torneoJugadores.filter((x) => x.categoria_id === c.id && jugadorOperativo(x.jugador_id));
     const pendCat = jugs.filter((x) => !x.cargo_id).length;
@@ -7062,7 +7068,7 @@ function renderTorneoDetalle() {
           <input type="number" step="0.01" value="${c.costo_inscripcion}" onchange="editarCostoCatTorneo('${c.id}', this.value)"
             class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">
           <button onclick="formAgregarJugTorneo('${c.id}')" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">+ Agregar jugadores</button>
-          ${pendCat ? `<button onclick="generarCNRsTorneo('${t.id}','${c.id}')" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Generar CNRs (${pendCat})</button>` : ''}
+          ${pendCat && !esProfe ? `<button onclick="generarCNRsTorneo('${t.id}','${c.id}')" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">Generar CNRs (${pendCat})</button>` : ''}
           ${jugs.length ? '' : `<button onclick="eliminarCatTorneo('${c.id}')" class="text-rose-500 hover:underline">Eliminar</button>`}
         </div>
       </div>
@@ -7077,7 +7083,8 @@ function renderTorneoDetalle() {
               : cargo && cargo.estado === 'parcial' ? badge('Generado · Parcial', 'amber')
               : badge('Generado · Por pagar', 'indigo'));
           return [
-            `<span class="cursor-pointer hover:text-indigo-600" onclick="formEditarAlumno('${x.jugador_id}')">${j ? nom(j) : '?'}</span>`,
+            esProfe ? `<span>${j ? nom(j) : '?'}</span>`
+              : `<span class="cursor-pointer hover:text-indigo-600" onclick="formEditarAlumno('${x.jugador_id}')">${j ? nom(j) : '?'}</span>`,
             x.cargo_id ? S(x.precio_inscripcion) : `<input type="number" step="0.01" value="${x.precio_inscripcion || ''}" placeholder="0.00"
               onchange="editarPrecioTorneoJug('${x.id}', this.value)" class="w-24 rounded border border-slate-300 px-2 py-1 text-sm text-right">`,
             cargo ? `<span class="${pagadoJ >= (+cargo.monto || 0) && pagadoJ > 0 ? 'text-emerald-600 font-medium' : pagadoJ > 0 ? 'text-amber-600 font-medium' : 'text-slate-400'}">${S(pagadoJ)}</span>` : '<span class="text-slate-300">—</span>',
@@ -7098,21 +7105,22 @@ function renderTorneoDetalle() {
         </div>
         <div class="text-xs text-slate-400">${fmtFecha(t.fecha_inicio)}${t.descripcion ? ' · ' + t.descripcion : ''}</div>
       </div>
-      <div class="flex flex-wrap gap-2">
+      ${esProfe ? '' : `<div class="flex flex-wrap gap-2">
         <button onclick="torneoImprimirDeuda('${t.id}')" title="Participantes del torneo con deuda (CR y CNR) para la cobranza"
           class="rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">🖨 Deuda · Imprimir/PDF</button>
         <button onclick="generarCNRsTorneo('${t.id}')" ${st.pendientes ? '' : 'disabled'}
           class="rounded-lg px-4 py-2.5 text-sm font-medium ${st.pendientes ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}">
           GENERAR CNRs PENDIENTES${st.pendientes ? ` (${st.pendientes})` : ''}</button>
-      </div>
+      </div>`}
     </div>
     <div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       ${card('Alumnos', st.jugs.length, `en ${st.cats.length} categoría(s)`)}
       ${card('Total inscripciones', S(st.totalInsc), 'asignado a alumnos')}
+      ${esProfe ? '' : `
       ${card('CNRs generados', S(st.montoCNR), `${st.nConCNR} de ${st.jugs.length} alumnos`)}
       ${card('Pagado a la fecha', `<span class="text-emerald-600">${S(st.totalPagado)}</span>`, `pendiente ${S(st.montoCNR - st.totalPagado)}`)}
       ${card('Costo del torneo', S(st.costoTotal), 'suma de categorías')}
-      ${card('Rentabilidad', `<span class="${rentCls}">${st.rentabilidad < 0 ? '−' : ''}${S(Math.abs(st.rentabilidad))}</span>`, 'CNRs − costo del torneo')}
+      ${card('Rentabilidad', `<span class="${rentCls}">${st.rentabilidad < 0 ? '−' : ''}${S(Math.abs(st.rentabilidad))}</span>`, 'CNRs − costo del torneo')}`}
     </div>
     <div class="space-y-3">${st.cats.map(catHTML).join('') || '<p class="text-sm text-slate-400">Agrega la primera categoría.</p>'}</div>
     <div class="mt-4 rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4">
