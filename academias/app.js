@@ -774,27 +774,40 @@ const SCREENS = {
         const porMes = {};
         porCobrarCargos.forEach((c) => {
           const m = mesDeCargo(c) || 'sin-fecha';
-          if (!porMes[m]) porMes[m] = { monto: 0, n: 0 };
-          porMes[m].monto += c.monto - (c.pagado_monto || 0); porMes[m].n++;
+          if (!porMes[m]) porMes[m] = { cr: 0, cnr: 0, n: 0 };
+          porMes[m][c.tipo === 'CNR' ? 'cnr' : 'cr'] += c.monto - (c.pagado_monto || 0); porMes[m].n++;
         });
+        const totalM = (m) => porMes[m].cr + porMes[m].cnr;
         const meses = Object.keys(porMes).sort();
-        const maxM = Math.max(...meses.map((m) => porMes[m].monto), 1);
+        const maxM = Math.max(...meses.map(totalM), 1);
         const mesAct = HOY.slice(0, 7);
         const nomMes = (m) => m === 'sin-fecha' ? 'Sin fecha'
           : ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'][+m.slice(5) - 1] + ' ' + m.slice(0, 4);
         const colorM = (m) => m === 'sin-fecha' ? '#8b93a7' : m < mesAct ? '#d9232e' : m === mesAct ? '#f59e0b' : '#0ea5e9';
+        const CNR_COLOR = '#475569';   // CNR en gris pizarra fijo; el CR lleva el color de antigüedad
         const tagM = (m) => m === 'sin-fecha' ? '' : m < mesAct ? ' <span class="text-[10px] font-bold text-rose-600">ATRASADO</span>' : m === mesAct ? ' <span class="text-[10px] font-bold text-amber-600">mes actual</span>' : ' <span class="text-[10px] font-bold text-sky-600">nuevo periodo</span>';
         return `
         <h3 class="mb-2 text-sm font-semibold text-slate-600">📅 Cuentas por cobrar por mes <span class="text-xs font-normal text-slate-400">· antigüedad de la deuda</span></h3>
         <div class="mb-6 rounded-xl bg-white p-4 ring-1 ring-slate-200">
-          ${meses.map((m) => `
+          ${meses.map((m) => { const d = porMes[m]; const tot = totalM(m);
+            const pct = (v) => (v * 100 / maxM).toFixed(2);
+            return `
             <div class="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-xs hover:bg-slate-50"
-              ${m === 'sin-fecha' ? '' : `onclick="verDeudoresMes('${m}')"`} title="Ver los deudores de ${nomMes(m)}">
+              ${m === 'sin-fecha' ? '' : `onclick="verDeudoresMes('${m}')"`} title="Ver los deudores de ${nomMes(m)} · CR ${S0(d.cr)} · CNR ${S0(d.cnr)}">
               <span class="w-24 shrink-0 text-slate-600"><b>${nomMes(m)}</b>${tagM(m)}</span>
-              <div class="h-4 flex-1 overflow-hidden rounded bg-slate-100">
-                <div class="h-4 rounded" style="width:${Math.max(1, Math.round(porMes[m].monto * 100 / maxM))}%;background:${colorM(m)}"></div></div>
-              <span class="w-36 shrink-0 text-right"><b>${S0(porMes[m].monto)}</b> <span class="text-slate-400">· ${porMes[m].n} cargo(s) →</span></span>
-            </div>`).join('')}
+              <div class="flex h-4 flex-1 overflow-hidden rounded bg-slate-100">
+                ${d.cr > 0 ? `<div class="h-4" style="width:${Math.max(1, +pct(d.cr))}%;background:${colorM(m)}"></div>` : ''}
+                ${d.cnr > 0 ? `<div class="h-4" style="width:${Math.max(1, +pct(d.cnr))}%;background:${CNR_COLOR}"></div>` : ''}
+              </div>
+              <span class="w-44 shrink-0 text-right leading-tight">
+                <b>${S0(tot)}</b> <span class="text-slate-400">· ${d.n} cargo(s) →</span>
+                <div class="text-[10px] text-slate-400">CR ${S0(d.cr)} · CNR ${S0(d.cnr)}</div>
+              </span>
+            </div>`; }).join('')}
+          <div class="mt-2 flex items-center gap-3 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
+            <span class="flex items-center gap-1"><span class="inline-block h-2.5 w-2.5 rounded-sm" style="background:linear-gradient(90deg,#d9232e 33%,#f59e0b 33% 66%,#0ea5e9 66%)"></span> CR (mensualidades, color según antigüedad)</span>
+            <span class="flex items-center gap-1"><span class="inline-block h-2.5 w-2.5 rounded-sm" style="background:${CNR_COLOR}"></span> CNR (otros cargos)</span>
+          </div>
         </div>`;
       })()}
 
