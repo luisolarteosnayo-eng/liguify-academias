@@ -7292,17 +7292,53 @@ function clasificaDoc(p) {
   return 'boleta';
 }
 let EM_TIPO = '';   // filtro de la cola de emisión: '' todos | recibo | boleta | factura
+let EM_Q = '';      // filtro por nombre del alumno
+let EM_DESDE = '';  // fecha de pago desde (YYYY-MM-DD)
+let EM_HASTA = '';  // fecha de pago hasta
+let EM_SORT = { col: 'fecha', dir: 1 };   // orden por columna (fecha asc = se emiten en orden)
+window.emOrdenar = (col) => {
+  EM_SORT = { col, dir: EM_SORT.col === col ? -EM_SORT.dir : (col === 'total' ? -1 : 1) };
+  colaEmision();
+};
+window.emFiltro = (campo, v) => {
+  if (campo === 'q') EM_Q = v; else if (campo === 'desde') EM_DESDE = v; else if (campo === 'hasta') EM_HASTA = v;
+  colaEmision();
+};
 window.colaEmision = (tipoSel) => {
   if (tipoSel !== undefined) EM_TIPO = tipoSel;
+  // Al repintar (filtros/orden) se preserva lo marcado y el tipo elegido por fila
+  const prevChk = {}, prevTipo = {};
+  document.querySelectorAll('.emChk').forEach((c) => { prevChk[c.value] = c.checked; });
+  document.querySelectorAll('[id^="emTipo_"]').forEach((sl) => { prevTipo[sl.id.slice(7)] = sl.value; });
   const s = sede(SEDE_ACTUAL);
   const ids = new Set(alumnosSede().map((j) => j.id));
   // SOLO pagos aprobados y sin comprobante
-  const todos = DB.pagos.filter((p) => p.estado === 'aprobado' && !p.doc_tipo && ids.has(p.jugador_id))
-    .sort((a, b) => ((a.fecha || '') < (b.fecha || '') ? -1 : 1));   // más antiguos primero: se emiten en orden
+  let todos = DB.pagos.filter((p) => p.estado === 'aprobado' && !p.doc_tipo && ids.has(p.jugador_id));
+  // Filtros por nombre (sin distinguir tildes) y rango de fecha de pago
+  // (también recalculan los chips)
+  const sinTildes = (x) => String(x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const q = sinTildes(EM_Q.trim());
+  if (q) todos = todos.filter((p) => { const j = jugador(p.jugador_id); return j && sinTildes(nom(j)).includes(q); });
+  if (EM_DESDE) todos = todos.filter((p) => (p.fecha || '') >= EM_DESDE);
+  if (EM_HASTA) todos = todos.filter((p) => (p.fecha || '') <= EM_HASTA);
   // Filtro por tipo de documento a emitir, según la clasificación automática:
   // recibo = medio sin SUNAT · factura = con RUC registrado · boleta = el resto
   const nDe = (t) => todos.filter((p) => clasificaDoc(p) === t).length;
-  const cola = EM_TIPO ? todos.filter((p) => clasificaDoc(p) === EM_TIPO) : todos;
+  const cola = EM_TIPO ? todos.filter((p) => clasificaDoc(p) === EM_TIPO) : todos.slice();
+  // Orden por columna (clic en la cabecera alterna ↑/↓)
+  const nomDe = (p) => { const j = jugador(p.jugador_id); return j ? nom(j) : ''; };
+  const cmp = {
+    alumno: (a, b) => nomDe(a).localeCompare(nomDe(b), 'es'),
+    total: (a, b) => (a.total ?? 0) - (b.total ?? 0),
+    medio: (a, b) => String(a.medio || '').localeCompare(String(b.medio || ''), 'es'),
+    fecha: (a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')),
+    op: (a, b) => String(a.num_operacion || 'zzz').localeCompare(String(b.num_operacion || 'zzz')),
+    doc: (a, b) => clasificaDoc(a).localeCompare(clasificaDoc(b)),
+  }[EM_SORT.col] || ((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+  cola.sort((a, b) => cmp(a, b) * EM_SORT.dir);
+  const th = (col, txt) => EM_SORT.col === col
+    ? `<button onclick="emOrdenar('${col}')" class="cursor-pointer font-semibold text-indigo-600">${txt} ${EM_SORT.dir > 0 ? '↑' : '↓'}</button>`
+    : `<button onclick="emOrdenar('${col}')" title="Ordenar por ${txt}" class="cursor-pointer font-medium underline decoration-dotted decoration-slate-300 underline-offset-4 hover:text-indigo-600">${txt} <span class="text-slate-300">↕</span></button>`;
   const chip = (v, txt) => `<button onclick="colaEmision('${v}')"
     class="rounded-full px-3 py-1.5 ring-1 ${EM_TIPO === v ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'}">${txt}</button>`;
   const dniOk = (t) => t && /^\d{8}$/.test(String(t.dni_tutor || '').trim());
@@ -7316,14 +7352,14 @@ window.colaEmision = (tipoSel) => {
       : '<span class="text-amber-600 text-xs">Cliente varios (sin DNI)</span>';
     const semaforo = cls === 'recibo' ? '⚪' : cls === 'factura' ? '🟢' : dniOk(t) ? '🟢' : '🟡';
     return [
-      `<input type="checkbox" class="emChk h-4 w-4 accent-indigo-600" value="${p.id}" checked onchange="emCount()">`,
+      `<input type="checkbox" class="emChk h-4 w-4 accent-indigo-600" value="${p.id}" ${prevChk[p.id] === false ? '' : 'checked'} onchange="emCount()">`,
       `${semaforo} <b>${j ? nom(j) : '—'}</b>`,
       S(p.total ?? 0),
       p.medio || '—',
       fmtDMY(p.fecha),
       p.num_operacion || '—',
       `<select id="emTipo_${p.id}" class="rounded border border-slate-300 px-2 py-1 text-xs bg-white">
-        ${['recibo', 'boleta', 'factura'].map((x) => `<option value="${x}" ${x === cls ? 'selected' : ''}>${x === 'recibo' ? 'Recibo simple' : x.charAt(0).toUpperCase() + x.slice(1)}</option>`).join('')}
+        ${['recibo', 'boleta', 'factura'].map((x) => `<option value="${x}" ${x === (prevTipo[p.id] || cls) ? 'selected' : ''}>${x === 'recibo' ? 'Recibo simple' : x.charAt(0).toUpperCase() + x.slice(1)}</option>`).join('')}
       </select>`,
       cliente,
     ];
@@ -7345,13 +7381,22 @@ window.colaEmision = (tipoSel) => {
       ${chip('boleta', `🧾 Boletas (${nDe('boleta')})`)}
       ${chip('factura', `📄 Facturas (${nDe('factura')})`)}
     </div>
+    <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+      <input value="${EM_Q.replace(/"/g, '&quot;')}" placeholder="🔎 Buscar alumno por nombre…"
+        onchange="emFiltro('q', this.value)" class="w-60 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs">
+      <label class="flex items-center gap-1.5 text-slate-500">Pagado desde
+        <input type="date" value="${EM_DESDE}" onchange="emFiltro('desde', this.value)" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
+      <label class="flex items-center gap-1.5 text-slate-500">hasta
+        <input type="date" value="${EM_HASTA}" onchange="emFiltro('hasta', this.value)" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
+      ${(EM_Q || EM_DESDE || EM_HASTA) ? `<button onclick="EM_Q=''; EM_DESDE=''; EM_HASTA=''; colaEmision()" class="text-indigo-600 hover:underline">✕ Quitar filtros</button>` : ''}
+    </div>
     ${cola.length ? `
       <div class="mb-3">
         <button onclick="emitirSeleccionados()" class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Procesar seleccionados</button>
       </div>
       ${table(['<input type="checkbox" checked onchange="document.querySelectorAll(\'.emChk\').forEach(c => { c.checked = this.checked; }); emCount()" class="h-4 w-4 accent-indigo-600">',
-        'Alumno', 'Total', 'Medio de pago', 'Fecha de pago', 'N° Op.', 'Documento', 'Cliente'], rows)}`
-      : `<p class="text-sm text-slate-400">${EM_TIPO ? `No hay ${EM_TIPO === 'recibo' ? 'recibos' : EM_TIPO + 's'} por emitir con este filtro.` : '🎉 No hay pagos aprobados pendientes de comprobante en esta sede.'}</p>`}`;
+        th('alumno', 'Alumno'), th('total', 'Total'), th('medio', 'Medio de pago'), th('fecha', 'Fecha de pago'), th('op', 'N° Op.'), th('doc', 'Documento'), 'Cliente'], rows)}`
+      : `<p class="text-sm text-slate-400">${(EM_TIPO || q || EM_DESDE || EM_HASTA) ? 'No hay pagos por emitir que coincidan con los filtros.' : '🎉 No hay pagos aprobados pendientes de comprobante en esta sede.'}</p>`}`;
   window.emCount = () => { const n = document.querySelectorAll('.emChk:checked').length; const i = el('emInfo'); if (i) i.textContent = n ? `${n} seleccionado(s)` : ''; };
   emCount();
 };
