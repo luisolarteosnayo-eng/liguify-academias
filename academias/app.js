@@ -7481,23 +7481,40 @@ window.ejecutarEmision = async () => {
     if (!s.ruc_emisor) { errores++; err1 = err1 || 'Configura el RUC emisor de la sede'; continue; }
     const serie = tipo === 'factura' ? s.serie_factura : s.serie_boleta;
     if (!serie) { errores++; err1 = err1 || `Configura la serie de ${tipo} de la sede`; continue; }
-    const numero = tipo === 'factura' ? (+s.correlativo_factura || 1) : (+s.correlativo_boleta || 1);
+    let numero = tipo === 'factura' ? (+s.correlativo_factura || 1) : (+s.correlativo_boleta || 1);
     try {
-      const { data, error } = await AcademiasDB.sb.functions.invoke('emitir-comprobante',
-        { body: { pago_id: pid, tipo, serie, numero } });
-      // El cliente devuelve un mensaje genérico en errores HTTP: la causa real
-      // está en el cuerpo de la respuesta de la función (error.context)
-      let errMsg = null;
-      if (error) {
-        errMsg = error.message || 'Error al emitir';
-        try {
-          const body = error.context && await error.context.json();
-          if (body && body.error) errMsg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
-        } catch (e2) { /* se queda el genérico */ }
-      } else if (data && data.error) {
-        errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+      // Si Nubefact responde que el serie-número ya existe: se adopta ese
+      // comprobante cuando es el mismo pago (emisión previa que no llegó a
+      // registrarse), o se avanza al siguiente número libre si es de otro
+      let data = null, saltos = 0;
+      for (;;) {
+        const r = await AcademiasDB.sb.functions.invoke('emitir-comprobante',
+          { body: { pago_id: pid, tipo, serie, numero } });
+        data = r.data;
+        // El cliente devuelve un mensaje genérico en errores HTTP: la causa real
+        // está en el cuerpo de la respuesta de la función (error.context)
+        let errMsg = null;
+        if (r.error) {
+          errMsg = r.error.message || 'Error al emitir';
+          try {
+            const body = r.error.context && await r.error.context.json();
+            if (body && body.error) errMsg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+          } catch (e2) { /* se queda el genérico */ }
+        } else if (data && data.error) {
+          errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+        }
+        if (errMsg) throw new Error(errMsg);
+        if (data && data.ya_existia) {
+          const totP = +(p.total ?? p.monto ?? 0);
+          const mismo = data.total_existente != null && Math.abs(data.total_existente - totP) < 0.01;
+          if (!mismo) {
+            if (++saltos > 25) throw new Error(`La serie ${serie} tiene demasiados números ya ocupados en Nubefact: ajusta el correlativo en Configuración → Sedes`);
+            numero++; continue;   // número de otro documento: probar el siguiente
+          }
+          // mismo total → es este pago: se vincula el comprobante ya emitido
+        }
+        break;
       }
-      if (errMsg) throw new Error(errMsg);
       p.doc_tipo = tipo; p.doc_serie = serie; p.doc_numero = numero;
       p.doc_pdf_url = (data && data.pdf) || null; p.doc_xml_url = (data && data.xml) || null;
       p.sunat_estado = 'emitido'; p.sunat_error = null; p.emitido_at = new Date().toISOString();

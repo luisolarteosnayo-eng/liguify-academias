@@ -125,7 +125,31 @@ Deno.serve(async (req) => {
     });
     const rb = await resp.json().catch(() => null);
     if (!resp.ok || (rb && rb.errors)) {
-      return json({ error: (rb && (rb.errors || rb.error)) || `Nubefact ${resp.status}` }, 502);
+      const errRaw = (rb && (rb.errors || rb.error)) || `Nubefact ${resp.status}`;
+      // Idempotencia: si el serie-número ya está ocupado en Nubefact (reintento
+      // de una emisión que sí llegó, o correlativo local desfasado), se consulta
+      // ese comprobante y se devuelve para que el cliente decida: adoptarlo si
+      // es el mismo pago (mismo total) o avanzar al siguiente número libre.
+      if (/ya existe/i.test(JSON.stringify(errRaw))) {
+        const q = await fetch(RUTA, {
+          method: 'POST',
+          headers: { Authorization: `Token token="${TOKEN}"`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operacion: 'consultar_comprobante', tipo_de_comprobante: esFactura ? 1 : 2, serie, numero: +numero }),
+        });
+        const qb = await q.json().catch(() => null);
+        if (q.ok && qb && !qb.errors) {
+          return json({
+            ya_existia: true, serie, numero: +numero,
+            total_existente: qb.total != null ? +qb.total : null,
+            cliente_existente: qb.cliente_denominacion || null,
+            pdf: qb.enlace_del_pdf || null,
+            xml: qb.enlace_del_xml || null,
+            cdr: qb.enlace_del_cdr || null,
+            aceptada_por_sunat: qb.aceptada_por_sunat,
+          });
+        }
+      }
+      return json({ error: errRaw }, 502);
     }
     return json({
       ok: true, serie, numero: +numero,
