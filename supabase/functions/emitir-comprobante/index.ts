@@ -142,6 +142,7 @@ Deno.serve(async (req) => {
             ya_existia: true, serie, numero: +numero,
             total_existente: qb.total != null ? +qb.total : null,
             cliente_existente: qb.cliente_denominacion || null,
+            cliente_doc_existente: qb.cliente_numero_de_documento != null ? String(qb.cliente_numero_de_documento) : null,
             pdf: qb.enlace_del_pdf || null,
             xml: qb.enlace_del_xml || null,
             cdr: qb.enlace_del_cdr || null,

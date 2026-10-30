@@ -7506,12 +7506,20 @@ window.ejecutarEmision = async () => {
         if (errMsg) throw new Error(errMsg);
         if (data && data.ya_existia) {
           const totP = +(p.total ?? p.monto ?? 0);
-          const mismo = data.total_existente != null && Math.abs(data.total_existente - totP) < 0.01;
+          // Mismo pago = mismo total Y mismo documento del cliente (DNI/RUC, o
+          // ambos "cliente varios"): evita adoptar la boleta de otro alumno
+          // que casualmente tenga el mismo monto
+          const tP = DB.tutores.find((x) => x.id === p.tutor_id);
+          const docEsperado = tipo === 'factura' ? String((tP && tP.ruc) || '-')
+            : (tP && /^\d{8}$/.test(String(tP.dni_tutor || '').trim())) ? String(tP.dni_tutor).trim() : '-';
+          const docExistente = data.cliente_doc_existente == null ? null : (String(data.cliente_doc_existente).trim() || '-');
+          const mismo = data.total_existente != null && Math.abs(data.total_existente - totP) < 0.01
+            && (docExistente === null || docExistente === docEsperado);
           if (!mismo) {
-            if (++saltos > 25) throw new Error(`La serie ${serie} tiene demasiados números ya ocupados en Nubefact: ajusta el correlativo en Configuración → Sedes`);
+            if (++saltos > 50) throw new Error(`La serie ${serie} tiene demasiados números ya ocupados en Nubefact: ajusta el correlativo en Configuración → Sedes`);
             numero++; continue;   // número de otro documento: probar el siguiente
           }
-          // mismo total → es este pago: se vincula el comprobante ya emitido
+          // mismo total y cliente → es este pago: se vincula el comprobante ya emitido
         }
         break;
       }
