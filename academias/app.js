@@ -7385,7 +7385,8 @@ window.colaEmision = (tipoSel) => {
       p.num_operacion || '—',
       `<select id="emTipo_${p.id}" class="rounded border border-slate-300 px-2 py-1 text-xs bg-white">
         ${['recibo', 'boleta', 'factura'].map((x) => `<option value="${x}" ${x === (prevTipo[p.id] || cls) ? 'selected' : ''}>${x === 'recibo' ? 'Recibo simple' : x.charAt(0).toUpperCase() + x.slice(1)}</option>`).join('')}
-      </select>`,
+      </select>
+      ${ROL === 'admin' ? `<button type="button" onclick="vincularComprobanteExistente('${p.id}')" title="El comprobante ya salió en Nubefact pero no quedó registrado aquí: ingresa su número para vincularlo a este pago sin volver a emitir" class="mt-1 block text-[11px] text-indigo-600 hover:underline">🔗 Vincular N° emitido</button>` : ''}`,
       cliente,
     ];
   });
@@ -7449,6 +7450,53 @@ window.emitirSeleccionados = () => {
         <button type="button" onclick="ejecutarEmision()" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700">Aceptar</button>
       </div>
     </div>`);
+};
+// Vincular un pago con un comprobante YA emitido en Nubefact que no quedó
+// registrado en el sistema (solo admin): consulta el serie-número, muestra a
+// quién salió y por cuánto, y al confirmar lo asigna al pago sin reemitir.
+window.vincularComprobanteExistente = async (pid) => {
+  if (ROL !== 'admin') { toast('Solo el Administrador puede vincular comprobantes'); return; }
+  const p = DB.pagos.find((x) => x.id === pid);
+  if (!p || p.doc_tipo) return;
+  if (!(window.AcademiasDB && AcademiasDB.on)) { toast('Requiere el modo conectado'); return; }
+  const tipo = el('emTipo_' + pid) ? el('emTipo_' + pid).value : clasificaDoc(p);
+  if (tipo === 'recibo') { toast('Los recibos simples no se vinculan: usa Procesar seleccionados'); return; }
+  const s = sede(SEDE_ACTUAL);
+  const serie = tipo === 'factura' ? s.serie_factura : s.serie_boleta;
+  if (!serie) { toast(`Configura la serie de ${tipo} de la sede`); return; }
+  const num = prompt(`Número de la ${tipo} ya emitida en Nubefact (serie ${serie}) que corresponde a este pago:`);
+  if (!num || !(+num > 0)) return;
+  try {
+    const { data, error } = await AcademiasDB.sb.functions.invoke('emitir-comprobante',
+      { body: { pago_id: pid, tipo, serie, numero: +num, consultar: true } });
+    let errMsg = null;
+    if (error) {
+      errMsg = error.message || 'Error al consultar';
+      try { const body = error.context && await error.context.json();
+        if (body && body.error) errMsg = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
+      } catch (e2) { /* genérico */ }
+    } else if (data && data.error) {
+      errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+    }
+    if (errMsg) throw new Error(errMsg);
+    const tot = +(p.total ?? p.monto ?? 0);
+    const coincide = data.total != null && Math.abs(data.total - tot) < 0.01;
+    if (!confirm(`Nubefact ${serie}-${num}: ${data.cliente || '(sin denominación)'} · ${S(data.total || 0)}`
+      + `\nPago a vincular: ${S(tot)}`
+      + (coincide ? '' : '\n\n⚠ LOS MONTOS NO COINCIDEN: verifica que sea el comprobante correcto.')
+      + `\n\n¿Vincular este comprobante al pago?`)) return;
+    p.doc_tipo = tipo; p.doc_serie = serie; p.doc_numero = +num;
+    p.doc_pdf_url = data.pdf || null; p.doc_xml_url = data.xml || null;
+    p.sunat_estado = 'emitido'; p.sunat_error = null; p.emitido_at = new Date().toISOString();
+    // El correlativo local nunca debe quedar por detrás de un número ya usado
+    if (tipo === 'factura') { if ((+s.correlativo_factura || 1) <= +num) s.correlativo_factura = +num + 1; }
+    else if ((+s.correlativo_boleta || 1) <= +num) s.correlativo_boleta = +num + 1;
+    toast(`🔗 ${serie}-${num} vinculado al pago`);
+    syncAhora();
+    colaEmision();
+  } catch (ex) {
+    toast('No se pudo vincular: ' + (ex.message || ex));
+  }
 };
 let EM_PENDIENTE = [];
 // Paso 2 y 3: procesar mostrando EN PROCESO, y al terminar el resumen

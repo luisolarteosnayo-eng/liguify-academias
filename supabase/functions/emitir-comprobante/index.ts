@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     const auth = req.headers.get('Authorization') || '';
     if (!auth) return json({ error: 'Falta la sesión del usuario' }, 401);
 
-    const { pago_id, tipo, serie, numero } = await req.json();
+    const { pago_id, tipo, serie, numero, consultar } = await req.json();
     if (!pago_id || !['boleta', 'factura'].includes(tipo) || !serie || !(+numero > 0)) {
       return json({ error: 'Faltan pago_id, tipo, serie o numero' }, 400);
     }
@@ -62,6 +62,30 @@ Deno.serve(async (req) => {
     const RUTA = Deno.env.get(`NUBEFACT_RUTA_${s.ruc_emisor}`);
     const TOKEN = Deno.env.get(`NUBEFACT_TOKEN_${s.ruc_emisor}`);
     if (!RUTA || !TOKEN) return json({ error: `Faltan los secretos NUBEFACT_RUTA_${s.ruc_emisor} / NUBEFACT_TOKEN_${s.ruc_emisor}` }, 500);
+
+    // Solo CONSULTA (vincular manualmente un comprobante ya emitido): devuelve
+    // los datos del serie-número en Nubefact sin emitir nada
+    if (consultar) {
+      const q = await fetch(RUTA, {
+        method: 'POST',
+        headers: { Authorization: `Token token="${TOKEN}"`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operacion: 'consultar_comprobante', tipo_de_comprobante: tipo === 'factura' ? 1 : 2, serie, numero: +numero }),
+      });
+      const qb = await q.json().catch(() => null);
+      if (!q.ok || !qb || qb.errors) {
+        return json({ error: (qb && (qb.errors || qb.error)) || `Nubefact ${q.status}: no se pudo consultar ${serie}-${numero}` }, 502);
+      }
+      return json({
+        ok: true, consulta: true, serie, numero: +numero,
+        total: qb.total != null ? +qb.total : null,
+        cliente: qb.cliente_denominacion || null,
+        cliente_doc: qb.cliente_numero_de_documento != null ? String(qb.cliente_numero_de_documento) : null,
+        pdf: qb.enlace_del_pdf || null,
+        xml: qb.enlace_del_xml || null,
+        cdr: qb.enlace_del_cdr || null,
+        aceptada_por_sunat: qb.aceptada_por_sunat,
+      });
+    }
 
     // Cliente: factura exige RUC; boleta usa DNI o "cliente varios" (doc 0 / -)
     const esFactura = tipo === 'factura';
