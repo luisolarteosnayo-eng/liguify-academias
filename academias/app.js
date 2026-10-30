@@ -3066,7 +3066,10 @@ window.eliminarCargoCR = (cid, jid) => {
   const tienePagos = (c.pagado_monto || 0) > 0 || DB.pagos.some((p) => p.estado !== 'rechazado' && (p.detalle || []).some((d) => d.cargo_id === cid));
   if (tienePagos) { toast('No se puede eliminar: tiene pagos asociados'); return; }
   const i = c.inscripcion_id ? DB.inscripciones.find((x) => x.id === c.inscripcion_id) : null;
-  const esUltimo = i && c.ciclo_fin && i.ultima_fecha_corte === c.ciclo_fin;
+  // "Último" solo si ningún OTRO CR de la misma inscripción cubre hasta esa
+  // fecha (un CR duplicado del mismo periodo sostiene el corte: no retrocede)
+  const esUltimo = i && c.ciclo_fin && i.ultima_fecha_corte === c.ciclo_fin
+    && !DB.cargos.some((x) => x.id !== cid && x.tipo === 'CR' && x.inscripcion_id === c.inscripcion_id && (x.ciclo_fin || '') >= c.ciclo_fin);
   const msg = `¿Eliminar el CR "${descCargo(c)}" de ${S(c.monto)}? Esta acción no se puede deshacer.`
     + (esUltimo ? `\n\nLa fecha de corte del track volverá al ${fmtDMY(isoAddDays(c.ciclo_inicio, -1))} (el proceso podrá regenerar este periodo).`
                 : (i ? '\n\n⚠ No es el último CR del track: la fecha de corte no cambia y el periodo eliminado quedará sin CR.' : ''));
@@ -4466,6 +4469,27 @@ function revertirCargosPago(p) {
   });
   if (p.jugador_id) liquidarCargosGratis(p.jugador_id);   // la promo dejó de estar pagada → su mes gratis vuelve a pendiente
 }
+// Eliminar un pago registrado por error (solo Administrador y SOLO si aún no
+// tiene comprobante emitido — con boleta/factura SUNAT no se elimina): sus
+// cargos vuelven a pendiente de pago y el documento desaparece del historial.
+window.eliminarPagoAdmin = async (pid, jid) => {
+  if (ROL !== 'admin') { toast('Solo el Administrador puede eliminar pagos'); return; }
+  const p = DB.pagos.find((x) => x.id === pid);
+  if (!p) return;
+  if (p.doc_tipo) { toast('No se puede eliminar: ya tiene comprobante emitido'); return; }
+  const tot = p.total ?? p.monto ?? 0;
+  if (!confirm(`¿Eliminar el pago de ${S(tot)} del ${fmtDMY(p.fecha)}?\n\nSus cargos volverán a PENDIENTE DE PAGO y el documento desaparecerá del historial. Esta acción no se puede deshacer.`)) return;
+  if (p.estado !== 'rechazado') revertirCargosPago(p);   // un rechazado ya devolvió sus montos
+  // FK pago_cargo en la BD: primero se vacía el detalle (el sync borra los
+  // renglones del servidor al upsertar el pago) y en un segundo pase se
+  // elimina la fila del pago, ya sin renglones que la bloqueen
+  p.detalle = [];
+  await syncAhora();
+  DB.pagos = DB.pagos.filter((x) => x.id !== pid);
+  toast('Pago eliminado · sus cargos volvieron a pendientes');
+  await syncAhora();
+  if (jid) { renderCuenta(jid); if (el('nj_pagos')) el('nj_pagos').innerHTML = pagosDocsHTML(jid); }
+};
 // data:/demo se resuelve al instante; 'vstore:' requiere URL firmada (async)
 const voucherSrc = (p) => {
   if (!p || !p.voucher_url) return null;
@@ -4545,6 +4569,7 @@ function pagosDocsHTML(jid) {
           ${p.voucher_url ? `<button type="button" onclick="verComprobante('${p.id}')" class="mt-1 text-xs text-indigo-600 hover:underline">🖼️ Ver voucher</button>` : ''}
           ${p.doc_tipo ? `<button type="button" onclick="verComprobantePago('${p.id}')" class="mt-1 block w-full text-right text-xs text-indigo-600 hover:underline">${p.doc_tipo === 'recibo' ? '🧾 Recibo' : p.doc_tipo === 'factura' ? '📄 Factura' : '📄 Boleta'} ${p.doc_serie || ''}-${p.doc_numero || ''}</button>`
             : rech ? '' : `<button type="button" onclick="verComprobantePago('${p.id}')" title="Vista previa del recibo (aún sin emitir)" class="mt-1 block w-full text-right text-xs text-slate-500 hover:text-indigo-600 hover:underline">🧾 Comprobante</button>`}
+          ${ROL === 'admin' && !p.doc_tipo && !rech ? `<button type="button" onclick="eliminarPagoAdmin('${p.id}','${jid}')" title="Pago registrado por error: lo elimina y sus cargos vuelven a pendiente de pago (solo pagos SIN comprobante emitido)" class="mt-1 block w-full text-right text-xs text-rose-500 hover:underline">🗑 Eliminar pago</button>` : ''}
         </div>
       </div>
       <div class="mt-2 border-t border-slate-100 pt-2 space-y-1 ${rech ? 'opacity-60' : ''}">
