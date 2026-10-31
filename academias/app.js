@@ -7576,11 +7576,16 @@ window.ejecutarEmision = async () => {
       p.sunat_estado = 'emitido'; p.sunat_error = null; p.emitido_at = new Date().toISOString();
       if (tipo === 'factura') s.correlativo_factura = numero + 1; else s.correlativo_boleta = numero + 1;
       emitidos++;
+      // CRÍTICO: persistir YA cada comprobante SUNAT (número + PDF + correlativo).
+      // Sin esto, una recarga antes del tick periódico perdía el registro local
+      // de boletas que Nubefact SÍ emitió (descuadre B002/B003).
+      await syncAhora();
     } catch (ex) {
       errores++; err1 = err1 || (ex.message || String(ex));
       p.sunat_estado = 'error'; p.sunat_error = ex.message || String(ex);
     }
   }
+  await syncAhora();   // recibos simples y marcas de error también quedan guardados
   // Resumen final del proceso
   el('modalTitle').textContent = 'Proceso finalizado';
   el('modalBody').innerHTML = `
