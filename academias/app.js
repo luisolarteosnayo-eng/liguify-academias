@@ -655,6 +655,7 @@ function renderNav() {
 }
 
 function go(screen) {
+  EM_ABIERTA = false;   // navegar a cualquier pantalla cierra la cola de emisión
   const item = MENU.find((m) => m.id === screen);
   // Si la pantalla no está permitida para el rol, cae a su primera opción de menú
   const primera = (MENU.find((m) => m.roles.includes(ROL)) || {}).id || 'dashboard';
@@ -7317,6 +7318,7 @@ function clasificaDoc(p) {
   return 'boleta';
 }
 let EM_TIPO = '';   // filtro de la cola de emisión: '' todos | recibo | boleta | factura
+let EM_ABIERTA = false;   // la cola de emisión está en pantalla (el pull repinta la cola, no Tesorería)
 let EM_Q = '';      // filtro por nombre del alumno
 let EM_DESDE = '';  // fecha de pago desde (YYYY-MM-DD)
 let EM_HASTA = '';  // fecha de pago hasta
@@ -7330,6 +7332,7 @@ window.emFiltro = (campo, v) => {
   colaEmision();
 };
 window.colaEmision = (tipoSel) => {
+  EM_ABIERTA = true;
   if (tipoSel !== undefined) EM_TIPO = tipoSel;
   // Al repintar (filtros/orden) se preserva lo marcado y el tipo elegido por fila
   const prevChk = {}, prevTipo = {};
@@ -8186,6 +8189,7 @@ async function entrarConectado() {
       const ae = document.activeElement;
       if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
       if (SCREEN === 'whatsapp') renderWsp(true);
+      else if (EM_ABIERTA && SCREEN === 'tesoreria') colaEmision();   // la cola de emisión no se pisa con el repintado
       else if (SCREENS[SCREEN]) SCREENS[SCREEN]();
       wspPollPendientes();
     });
