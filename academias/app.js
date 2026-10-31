@@ -520,6 +520,11 @@ let TES_MES = '';              // filtro de periodo en Documentos de pago ('' = 
 let TES_MEDIOS = [];           // filtro de medios de pago (varios a la vez; [] = todos)
 let TES_FECHA = '';            // filtro de fecha de pago exacta ('' = todas)
 let TES_Q = '';                // búsqueda: alumno / N° operación / N° de recibo-boleta-factura
+let TES_SORT = { col: 'fecha', dir: -1 };   // orden de Documentos de pago (clic en cabeceras)
+window.tesOrdenar = (col) => {
+  TES_SORT = { col, dir: TES_SORT.col === col ? -TES_SORT.dir : (col === 'total' || col === 'fecha' ? -1 : 1) };
+  SCREENS.tesoreria();
+};
 // Un pago pasa los filtros de Documentos de pago de Tesorería
 function tesPasaFiltros(p) {
   if (TES_MES && !(p.fecha || '').startsWith(TES_MES)) return false;
@@ -1356,8 +1361,23 @@ const SCREENS = {
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Documentos de pago</h3>
       ${(() => {
         const medios = [...new Set(pagosS.map((p) => p.medio).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+        // Orden por columna (clic en la cabecera alterna ↑/↓)
+        const alumnoDe = (p) => p.jugador_id && jugador(p.jugador_id) ? nom(jugador(p.jugador_id)) : ((tutor(p.tutor_id) || {}).nombres || '');
+        const cmp = {
+          alumno: (a, b) => alumnoDe(a).localeCompare(alumnoDe(b), 'es'),
+          total: (a, b) => (a.total ?? a.monto ?? 0) - (b.total ?? b.monto ?? 0),
+          medio: (a, b) => String(a.medio || '').localeCompare(String(b.medio || ''), 'es'),
+          op: (a, b) => String(a.num_operacion || 'zzz').localeCompare(String(b.num_operacion || 'zzz')),
+          fecha: (a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')),
+          estado: (a, b) => String(a.estado || '').localeCompare(String(b.estado || '')),
+          sunat: (a, b) => `${a.doc_tipo || 'zzz'}${a.doc_serie || ''}${String(a.doc_numero || 0).padStart(8, '0')}`
+            .localeCompare(`${b.doc_tipo || 'zzz'}${b.doc_serie || ''}${String(b.doc_numero || 0).padStart(8, '0')}`),
+        }[TES_SORT.col] || ((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
         const pagosFil = pagosS.filter(tesPasaFiltros)
-          .slice().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+          .slice().sort((a, b) => cmp(a, b) * TES_SORT.dir);
+        const th = (col, txt) => TES_SORT.col === col
+          ? `<button onclick="tesOrdenar('${col}')" class="cursor-pointer font-semibold text-indigo-600">${txt} ${TES_SORT.dir > 0 ? '↑' : '↓'}</button>`
+          : `<button onclick="tesOrdenar('${col}')" title="Ordenar por ${txt}" class="cursor-pointer font-medium underline decoration-dotted decoration-slate-300 underline-offset-4 hover:text-indigo-600">${txt} <span class="text-slate-300">↕</span></button>`;
         const hayFiltros = TES_MES || TES_FECHA || TES_MEDIOS.length || TES_Q;
         return `
       <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
@@ -1382,7 +1402,8 @@ const SCREENS = {
         ${TES_MEDIOS.length ? '<span class="text-slate-400">· puedes marcar varios</span>' : ''}
       </div>
       <div class="mb-6">
-      ${pagosFil.length ? table([`<input type="checkbox" onchange="document.querySelectorAll('.tesChk').forEach(c => { c.checked = this.checked; }); tesSelCount()" class="h-4 w-4 accent-indigo-600" title="Seleccionar todos">`, 'Alumno', 'Total', 'Medio', 'N° Op.', 'Fecha', 'Estado', 'SUNAT', 'Voucher'],
+      ${pagosFil.length ? table([`<input type="checkbox" onchange="document.querySelectorAll('.tesChk').forEach(c => { c.checked = this.checked; }); tesSelCount()" class="h-4 w-4 accent-indigo-600" title="Seleccionar todos">`,
+        th('alumno', 'Alumno'), th('total', 'Total'), th('medio', 'Medio'), th('op', 'N° Op.'), th('fecha', 'Fecha'), th('estado', 'Estado'), th('sunat', 'SUNAT'), 'Voucher'],
         pagosFil.map((p) => [
           `<input type="checkbox" class="tesChk h-4 w-4 accent-indigo-600" value="${p.id}" onchange="tesSelCount()">`,
           p.jugador_id ? nom(jugador(p.jugador_id)) : ((tutor(p.tutor_id) || {}).nombres || 'Tutor ' + ((tutor(p.tutor_id) || {}).dni_tutor || 's/DNI')),
