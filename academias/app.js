@@ -7515,6 +7515,10 @@ window.ejecutarEmision = async () => {
     </div>`);
   const s = sede(SEDE_ACTUAL);
   let hecho = 0, recibos = 0, emitidos = 0, errores = 0, err1 = '';
+  // Operación de dinero: el pull multiusuario queda EN PAUSA durante el lote
+  // (si pisara la memoria a mitad, las emisiones siguientes se perderían)
+  if (window.AcademiasDB && AcademiasDB.on) AcademiasDB.sync.hold = true;
+  try {
   for (const { pid, tipo } of lote) {
     if (el('emProg')) el('emProg').textContent = `Procesando ${++hecho} de ${lote.length}`;
     await new Promise((r) => setTimeout(r));   // deja respirar al spinner
@@ -7579,16 +7583,24 @@ window.ejecutarEmision = async () => {
       p.sunat_estado = 'emitido'; p.sunat_error = null; p.emitido_at = new Date().toISOString();
       if (tipo === 'factura') s.correlativo_factura = numero + 1; else s.correlativo_boleta = numero + 1;
       emitidos++;
-      // CRÍTICO: persistir YA cada comprobante SUNAT (número + PDF + correlativo).
-      // Sin esto, una recarga antes del tick periódico perdía el registro local
-      // de boletas que Nubefact SÍ emitió (descuadre B002/B003).
+      // CRÍTICO: persistir YA cada comprobante SUNAT (número + PDF + correlativo)
+      // y VERIFICAR que llegó al servidor (la baseline solo avanza tras un
+      // upsert exitoso). Si no se guardó, el lote SE DETIENE: seguir emitiendo
+      // a ciegas crea boletas en Nubefact sin registro local.
       await syncAhora();
+      const enServidor = ((AcademiasDB.sync.baseline.pagos || {})[pid] || '').indexOf('"doc_numero":' + numero) >= 0;
+      if (!enServidor) {
+        errores++;
+        err1 = `⚠ La ${tipo} ${serie}-${numero} SÍ se emitió en Nubefact pero NO se pudo guardar su registro (revisa tu conexión). El lote se detuvo: verifica el estado del sync y usa "🔗 Vincular N° emitido" con ese número si el pago sigue sin comprobante.`;
+        break;
+      }
     } catch (ex) {
       errores++; err1 = err1 || (ex.message || String(ex));
       p.sunat_estado = 'error'; p.sunat_error = ex.message || String(ex);
     }
   }
   await syncAhora();   // recibos simples y marcas de error también quedan guardados
+  } finally { if (window.AcademiasDB && AcademiasDB.on) AcademiasDB.sync.hold = false; }
   // Resumen final del proceso
   el('modalTitle').textContent = 'Proceso finalizado';
   el('modalBody').innerHTML = `

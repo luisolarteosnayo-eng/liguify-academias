@@ -392,14 +392,23 @@ window.AcademiasDB = (() => {
         if (document.visibilityState === 'visible') this.pull();
       });
     },
+    hold: false,   // true = operación crítica en curso (p.ej. lote de emisión SUNAT): el pull no pisa nada
     async pull() {
-      if (this._pulling || !this.db) return;
+      if (this._pulling || this.hold || !this.db) return;
       this._pulling = true;
       try {
         await this.tick();                  // empuja lo pendiente local
         if (this.status !== 'ok') return;   // con errores de guardado no se toca nada
+        const baseAntes = JSON.stringify(this.baseline);
         const fresh = await loadAll();
-        // ¿El usuario cambió algo mientras bajaban los datos? → no pisar
+        // loadAll tarda segundos: si MIENTRAS bajaban los datos se guardó algo
+        // (baseline avanzó con un syncAhora) o el usuario cambió algo sin
+        // guardar, `fresh` ya nació viejo → NO pisar (se reintenta luego).
+        // Sin este candado, un lote de emisión perdía sus registros: el pull
+        // pisaba la memoria con la foto previa y el lote seguía escribiendo
+        // sobre objetos huérfanos que ya nadie sincronizaba.
+        if (this.hold) return;
+        if (JSON.stringify(this.baseline) !== baseAntes) return;
         if (JSON.stringify(this._snapshot()) !== JSON.stringify(this.baseline)) return;
         Object.assign(this.db, fresh);
         this.baseline = this._snapshot();
