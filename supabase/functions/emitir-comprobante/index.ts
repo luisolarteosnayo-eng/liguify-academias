@@ -130,7 +130,9 @@ Deno.serve(async (req) => {
       cliente_numero_de_documento: cliente.numero,
       cliente_denominacion: cliente.denominacion,
       cliente_direccion: '',
-      cliente_email: (t && t.email_tutor) || '',
+      // Un email mal escrito en la ficha del tutor no debe tumbar la emisión:
+      // si no es válido se emite sin envío automático al cliente
+      cliente_email: (t && typeof t.email_tutor === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t.email_tutor.trim())) ? t.email_tutor.trim() : '',
       fecha_de_emision: new Date().toLocaleDateString('es-PE', { timeZone: 'America/Lima' }).split('/').map((x) => x.padStart(2, '0')).join('-'),
       moneda: 1,                                 // soles
       porcentaje_de_igv: 18.0,
@@ -138,7 +140,7 @@ Deno.serve(async (req) => {
       total_igv: r2(total - gravada),
       total,
       enviar_automaticamente_a_la_sunat: true,
-      enviar_automaticamente_al_cliente: !!(t && t.email_tutor),
+      enviar_automaticamente_al_cliente: !!(t && typeof t.email_tutor === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t.email_tutor.trim())),
       items,
     };
 
