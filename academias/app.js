@@ -1208,7 +1208,8 @@ const SCREENS = {
     // 1) Alumnos por sede vs capacidad total (suma de capacidades de sus tracks)
     const data1 = porSede.map((x) => ({ s: x.s,
       n: DB.jugadores.filter((j) => j.sede_id === x.s.id && j.estado_alumno === 'activo').length,
-      cap: DB.tracks.filter((t) => t.sede_id === x.s.id && t.activo !== false).reduce((sm, t) => sm + (+t.capacidad_maxima || 0), 0) }));
+      cap: DB.tracks.filter((t) => t.sede_id === x.s.id && t.activo !== false).reduce((sm, t) => sm + (+t.capacidad_maxima || 0), 0) }))
+      .sort((a, b) => b.n - a.n);   // de más a menos alumnos activos
     const chartAlumnos = (() => {
       if (!data1.length) return '<p class="p-4 text-sm text-slate-400">Sin sedes activas.</p>';
       const max1 = Math.max(...data1.map((d) => Math.max(d.cap, d.n)), 1);
@@ -1235,7 +1236,8 @@ const SCREENS = {
     // 2) Recaudación por sede: proyectado del mes (facturado del periodo) vs cobrado
     const chartRecaudo = (() => {
       if (!porSede.length) return '<p class="p-4 text-sm text-slate-400">Sin sedes activas.</p>';
-      const data2 = porSede.map((x) => ({ s: x.s, proy: x.cobradoP + x.pendP, cob: x.cobradoP }));
+      const data2 = porSede.map((x) => ({ s: x.s, proy: x.cobradoP + x.pendP, cob: x.cobradoP }))
+        .sort((a, b) => b.cob - a.cob);   // de mayor a menor recaudación (cobrado)
       const max2 = Math.max(...data2.map((d) => d.proy), 1);
       const bw = 38, gi = 6, gap = 44, padL = 20, padT = 30, padB = 40, h = 250, chartH = h - padT - padB;
       const grupo = bw * 2 + gi;
