@@ -1754,12 +1754,15 @@ function alDatosCobranza(j) {
     total: cs.reduce((s, c) => s + saldoC(c), 0),
     totalVenc: venc.reduce((s, c) => s + saldoC(c), 0),
     tieneVencido: venc.length > 0, corte,
+    // vencimiento más próximo entre sus cargos pendientes ('' = sin fecha)
+    venceMin: cs.map((c) => c.fecha_vencimiento).filter(Boolean).sort()[0] || '',
     tel: (t && t.telefono_celular) || j.telefono || '' };
 }
 // Comparadores por columna (comparten Alumnos y el detalle de Track)
 const alCmpDe = (col) => ({
   nombre: (a, b) => nom(a.j).localeCompare(nom(b.j), 'es'),
   cat: (a, b) => anio(a.j.fecha_nacimiento) - anio(b.j.fecha_nacimiento),
+  vence: (a, b) => String(a.venceMin || '9999-99-99').localeCompare(String(b.venceMin || '9999-99-99')),
   tel: (a, b) => String(a.tel || 'zzz').localeCompare(String(b.tel || 'zzz')),
   corte: (a, b) => String(a.corte).localeCompare(String(b.corte)),
   deuda: (a, b) => a.total - b.total,
@@ -1806,6 +1809,7 @@ function celdasAlumnoCobranza(d, { sub = '', acciones = '' } = {}) {
     d.corte === '9999-99-99' ? '<span class="text-amber-600 text-xs">sin tracks</span>'
       : d.corte === '' ? '<span class="text-rose-600 text-xs font-medium">⚠ sin CR</span>'
       : `<span class="${corteVencido ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(d.corte)}</span>`,
+    d.venceMin ? `<span class="whitespace-nowrap ${d.venceMin < HOY ? 'text-rose-600 font-medium' : 'text-slate-600'}">${fmtDMY(d.venceMin)}${d.venceMin < HOY ? '<div class="text-[10px] text-rose-500">vencido</div>' : ''}</span>` : '<span class="text-slate-300">—</span>',
     d.total > 0
       ? `<b class="${d.tieneVencido ? 'text-rose-600' : 'text-slate-800'}">${S(d.total)}</b>${d.tieneVencido ? `<div class="text-[10px] text-rose-500">${S(d.totalVenc)} vencido</div>` : ''}`
       : '<span class="text-emerald-600 text-xs">Sin deuda</span>',
@@ -1854,7 +1858,7 @@ function renderAlumnosList() {
     ? `<div class="text-[10px] text-slate-400">${[j.fecha_registro ? 'Inscrito ' + fmtDMY(j.fecha_registro) : '', j.posicion_juego || '', j.numero_camiseta != null ? '#' + j.numero_camiseta : ''].filter(Boolean).join(' · ')}</div>`
     : '';
   el('alumnosList').innerHTML = lista.length
-    ? table([th('nombre', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
+    ? table([th('nombre', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('vence', 'F. Vencimiento'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
         lista.map((d) => celdasAlumnoCobranza(d, { sub: sub(d.j), acciones: acciones(d) })))
     : '<p class="text-sm text-slate-400 p-2">No hay alumnos que coincidan.</p>';
 }
@@ -2541,7 +2545,7 @@ function renderTrackRows() {
 
   const th = thCobranza(TRK_SORT, 'trkOrdenar');
   el('trkDetalleRows').innerHTML = rows.length
-    ? table([th('nombre', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
+    ? table([th('nombre', 'Alumno'), th('cat', 'Cat.'), th('tel', 'Cel. tutor'), th('corte', 'Matriculado hasta'), th('vence', 'F. Vencimiento'), th('deuda', 'Deuda total'), th('detalle', 'Detalle de deuda'), ''],
         rows.map(({ i, d }) => {
           const j = d.j;
           const efect = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
