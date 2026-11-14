@@ -725,19 +725,9 @@ const SCREENS = {
     const alumnosDash = DB.jugadores.filter((j) => inDash(j.sede_id));
     const tracksDash = DB.tracks.filter((t) => t.activo !== false && inDash(t.sede_id));
     const { nuevos, clasesPrueba } = altasYPruebasDash(win, inDash);
-    const activos = alumnosDash.filter((j) => j.estado_alumno === 'activo').length;
     const pagosDash = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin);
     const ingresosItems = pagosDash.flatMap((p) => (p.detalle || []).map((d) => ({ cat: d.cat || (d.tipo === 'CR' ? 'Mensualidades' : d.concepto || 'Otros'), monto: d.monto })))
       .filter((d) => d.monto > 0);   // los documentos en $0 (beca/promo) no suman al recaudado
-    const totalIngresos = ingresosItems.reduce((s, d) => s + d.monto, 0);
-    // Pagos del periodo aún pendientes de aprobación en Tesorería
-    const porAprobar = DB.pagos
-      .filter((p) => p.estado === 'pendiente' && p.jugador_id && inDash(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
-      .reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
-    // Gastos del periodo (sedes filtradas) para la utilidad real
-    const gastosPeriodo = DB.egresos
-      .filter((e) => inDash(e.sede_id) && (e.fecha || '') >= win.inicio && (e.fecha || '') <= win.fin)
-      .reduce((s, e) => s + (+e.monto || 0), 0);
     // Cuentas por cobrar (snapshot): cargos pendientes por tipo, no depende del
     // periodo. Los alumnos dados de BAJA no cuentan (su deuda sigue en la ficha)
     const porCobrarCargos = DB.cargos
@@ -745,7 +735,36 @@ const SCREENS = {
         && jugador(c.jugador_id).estado_alumno !== 'baja' && (c.monto - (c.pagado_monto || 0)) > 0);
     const porCobrarItems = porCobrarCargos
       .map((c) => ({ cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), monto: c.monto - (c.pagado_monto || 0) }));
-    const totalPorCobrar = porCobrarItems.reduce((s, d) => s + d.monto, 0);
+
+    // Fila de 6 KPIs para un conjunto de sedes (fil = predicado sobre sede_id).
+    // Con "todas las sedes" la fila se repite por cada sede (vista gerencial);
+    // con una sede seleccionada se muestra una sola vez.
+    const kpisHTML = (fil) => {
+      const acts = DB.jugadores.filter((j) => fil(j.sede_id) && j.estado_alumno === 'activo').length;
+      const capTotal = DB.tracks.filter((t) => t.activo !== false && fil(t.sede_id))
+        .reduce((s, t) => s + (+t.capacidad_maxima || 0), 0);
+      const pct = capTotal ? Math.round(acts * 100 / capTotal) : 0;
+      const cls = pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
+      const ing = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && fil(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
+        .flatMap((p) => (p.detalle || [])).filter((d) => d.monto > 0).reduce((s, d) => s + d.monto, 0);
+      const porApr = DB.pagos.filter((p) => p.estado === 'pendiente' && p.jugador_id && fil(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
+        .reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+      const gas = DB.egresos.filter((e) => fil(e.sede_id) && (e.fecha || '') >= win.inicio && (e.fecha || '') <= win.fin)
+        .reduce((s, e) => s + (+e.monto || 0), 0);
+      const pc = DB.cargos.filter((c) => c.jugador_id && fil(jugador(c.jugador_id).sede_id) && jugador(c.jugador_id).estado_alumno !== 'baja')
+        .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
+      const nvs = altasYPruebasDash(win, fil).nuevos.length;
+      const uti = ing - gas;
+      return `
+      <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-6">
+        ${card('% Alumnos activos', `<span class="${cls}">${pct}%</span>`, `${acts} activos de ${capTotal} cupos`)}
+        ${card('Recaudado', S0(ing), porApr > 0 ? `+ <b class="text-amber-600">${S0(porApr)}</b> por aprobar` : 'pagos del periodo')}
+        ${card('Gastos', `<span class="text-rose-600">${S0(gas)}</span>`, 'del periodo')}
+        ${card('Utilidad', `<span class="${uti > 0 ? 'text-emerald-600' : uti < 0 ? 'text-rose-600' : 'text-slate-700'}">${uti < 0 ? '−' : ''}${S0(Math.abs(uti))}</span>`, 'recaudado − gastos')}
+        ${card('Por cobrar', S0(pc), 'pendiente total · sin bajas')}
+        <div class="cursor-pointer hover:opacity-80" onclick="reporteNuevosPruebas('nuevos')" title="Ver el detalle de alumnos nuevos">${card('Alumnos nuevos', nvs, 'en el periodo · ver detalle →')}</div>
+      </div>`;
+    };
 
     el('content').innerHTML = `
       <div class="mb-3 flex justify-end">
@@ -756,19 +775,11 @@ const SCREENS = {
       </div>
       <p class="text-xs text-slate-400 mb-4">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'}</p>
 
-      <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-6">
-        ${(() => {
-          const capTotal = tracksDash.reduce((s, t) => s + (+t.capacidad_maxima || 0), 0);
-          const pct = capTotal ? Math.round(activos * 100 / capTotal) : 0;
-          const cls = pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
-          return card('% Alumnos activos', `<span class="${cls}">${pct}%</span>`, `${activos} activos de ${capTotal} cupos`);
-        })()}
-        ${card('Recaudado', S0(totalIngresos), porAprobar > 0 ? `+ <b class="text-amber-600">${S0(porAprobar)}</b> por aprobar` : 'pagos del periodo')}
-        ${card('Gastos', `<span class="text-rose-600">${S0(gastosPeriodo)}</span>`, 'del periodo')}
-        ${card('Utilidad', `<span class="${totalIngresos - gastosPeriodo > 0 ? 'text-emerald-600' : totalIngresos - gastosPeriodo < 0 ? 'text-rose-600' : 'text-slate-700'}">${totalIngresos - gastosPeriodo < 0 ? '−' : ''}${S0(Math.abs(totalIngresos - gastosPeriodo))}</span>`, 'recaudado − gastos')}
-        ${card('Por cobrar', S0(totalPorCobrar), 'pendiente total · sin bajas')}
-        <div class="cursor-pointer hover:opacity-80" onclick="reporteNuevosPruebas('nuevos')" title="Ver el detalle de alumnos nuevos">${card('Alumnos nuevos', nuevos.length, 'en el periodo · ver detalle →')}</div>
-      </div>
+      ${DASH_SEDE
+        ? kpisHTML(inDash)
+        : sedesDash.map((s) => `
+          <h3 class="mb-2 text-sm font-semibold text-slate-600">📍 ${s.nombre_sede}</h3>
+          ${kpisHTML((sid) => sid === s.id)}`).join('')}
 
       <div class="grid gap-4 lg:grid-cols-2 mb-6">
         <div>
