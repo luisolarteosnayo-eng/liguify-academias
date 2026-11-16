@@ -736,35 +736,6 @@ const SCREENS = {
     const porCobrarItems = porCobrarCargos
       .map((c) => ({ cat: c.tipo === 'CR' ? 'Mensualidades' : (c.concepto || 'Otros'), monto: c.monto - (c.pagado_monto || 0) }));
 
-    // Fila de 6 KPIs para un conjunto de sedes (fil = predicado sobre sede_id).
-    // Con "todas las sedes" la fila se repite por cada sede (vista gerencial);
-    // con una sede seleccionada se muestra una sola vez.
-    const kpisHTML = (fil) => {
-      const acts = DB.jugadores.filter((j) => fil(j.sede_id) && j.estado_alumno === 'activo').length;
-      const capTotal = DB.tracks.filter((t) => t.activo !== false && fil(t.sede_id))
-        .reduce((s, t) => s + (+t.capacidad_maxima || 0), 0);
-      const pct = capTotal ? Math.round(acts * 100 / capTotal) : 0;
-      const cls = pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
-      const ing = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && fil(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
-        .flatMap((p) => (p.detalle || [])).filter((d) => d.monto > 0).reduce((s, d) => s + d.monto, 0);
-      const porApr = DB.pagos.filter((p) => p.estado === 'pendiente' && p.jugador_id && fil(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
-        .reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
-      const gas = DB.egresos.filter((e) => fil(e.sede_id) && (e.fecha || '') >= win.inicio && (e.fecha || '') <= win.fin)
-        .reduce((s, e) => s + (+e.monto || 0), 0);
-      const pc = DB.cargos.filter((c) => c.jugador_id && fil(jugador(c.jugador_id).sede_id) && jugador(c.jugador_id).estado_alumno !== 'baja')
-        .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
-      const nvs = altasYPruebasDash(win, fil).nuevos.length;
-      const uti = ing - gas;
-      return `
-      <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-6">
-        ${card('% Alumnos activos', `<span class="${cls}">${pct}%</span>`, `${acts} activos de ${capTotal} cupos`)}
-        ${card('Recaudado', S0(ing), porApr > 0 ? `+ <b class="text-amber-600">${S0(porApr)}</b> por aprobar` : 'pagos del periodo')}
-        ${card('Gastos', `<span class="text-rose-600">${S0(gas)}</span>`, 'del periodo')}
-        ${card('Utilidad', `<span class="${uti > 0 ? 'text-emerald-600' : uti < 0 ? 'text-rose-600' : 'text-slate-700'}">${uti < 0 ? '−' : ''}${S0(Math.abs(uti))}</span>`, 'recaudado − gastos')}
-        ${card('Por cobrar', S0(pc), 'pendiente total · sin bajas')}
-        <div class="cursor-pointer hover:opacity-80" onclick="reporteNuevosPruebas('nuevos')" title="Ver el detalle de alumnos nuevos">${card('Alumnos nuevos', nvs, 'en el periodo · ver detalle →')}</div>
-      </div>`;
-    };
 
     el('content').innerHTML = `
       <div class="mb-3 flex justify-end">
@@ -775,11 +746,7 @@ const SCREENS = {
       </div>
       <p class="text-xs text-slate-400 mb-4">Periodo: <b>${fmtDMY(win.inicio)} al ${fmtDMY(win.fin)}</b> · ${DASH_SEDE ? sede(DASH_SEDE).nombre_sede : 'todas las sedes'}</p>
 
-      ${DASH_SEDE
-        ? kpisHTML(inDash)
-        : sedesDash.map((s) => `
-          <h3 class="mb-2 text-sm font-semibold text-slate-600">📍 ${s.nombre_sede}</h3>
-          ${kpisHTML((sid) => sid === s.id)}`).join('')}
+      ${kpisFilaHTML(win, inDash)}
 
       <div class="grid gap-4 lg:grid-cols-2 mb-6">
         <div>
@@ -1285,6 +1252,9 @@ const SCREENS = {
       <div class="mb-6 rounded-xl bg-white p-4 ring-1 ring-slate-200">${chartAlumnos}</div>
       <h3 class="mb-2 text-sm font-semibold text-slate-600">💰 Recaudación por sede <span class="font-normal text-xs text-slate-400">· proyectado del mes vs cobrado</span></h3>
       <div class="mb-6 rounded-xl bg-white p-4 ring-1 ring-slate-200">${chartRecaudo}</div>
+      ${porSede.map((x) => `
+        <h3 class="mb-2 text-sm font-semibold text-slate-600">📍 ${x.s.nombre_sede}</h3>
+        ${kpisFilaHTML(win, (sid) => sid === x.s.id)}`).join('')}
       <h3 class="mb-2 text-sm font-semibold text-slate-600">Detalle por sede</h3>
       ${tablaDetalleSedes(porSede, tot)}`;
   },
@@ -1880,6 +1850,36 @@ window.frSet = (v) => { FR_PERIODO = v; SCREENS.franquicias(); };
 // % de cobranza del periodo (null = nada facturado)
 const pctCobranzaDe = (x) => { const base = x.cobradoP + x.pendP; return base ? Math.round(x.cobradoP * 100 / base) : null; };
 // Resultado del periodo por sede (comparten Gerencial y Franquicias)
+// Fila de 6 KPIs (% activos, recaudado, gastos, utilidad, por cobrar, nuevos)
+// para un conjunto de sedes (fil = predicado sobre sede_id). El Dashboard la
+// usa una vez (consolidado o sede seleccionada); Franquicias la repite por sede.
+function kpisFilaHTML(win, fil) {
+  const acts = DB.jugadores.filter((j) => fil(j.sede_id) && j.estado_alumno === 'activo').length;
+  const capTotal = DB.tracks.filter((t) => t.activo !== false && fil(t.sede_id))
+    .reduce((s, t) => s + (+t.capacidad_maxima || 0), 0);
+  const pct = capTotal ? Math.round(acts * 100 / capTotal) : 0;
+  const cls = pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-rose-600';
+  const ing = DB.pagos.filter((p) => p.estado === 'aprobado' && p.jugador_id && fil(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
+    .flatMap((p) => (p.detalle || [])).filter((d) => d.monto > 0).reduce((s, d) => s + d.monto, 0);
+  const porApr = DB.pagos.filter((p) => p.estado === 'pendiente' && p.jugador_id && fil(jugador(p.jugador_id).sede_id) && p.fecha >= win.inicio && p.fecha <= win.fin)
+    .reduce((s, p) => s + (p.total ?? p.monto ?? 0), 0);
+  const gas = DB.egresos.filter((e) => fil(e.sede_id) && (e.fecha || '') >= win.inicio && (e.fecha || '') <= win.fin)
+    .reduce((s, e) => s + (+e.monto || 0), 0);
+  const pc = DB.cargos.filter((c) => c.jugador_id && fil(jugador(c.jugador_id).sede_id) && jugador(c.jugador_id).estado_alumno !== 'baja')
+    .reduce((s, c) => s + Math.max(0, c.monto - (c.pagado_monto || 0)), 0);
+  const nvs = altasYPruebasDash(win, fil).nuevos.length;
+  const uti = ing - gas;
+  return `
+  <div class="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-6">
+    ${card('% Alumnos activos', `<span class="${cls}">${pct}%</span>`, `${acts} activos de ${capTotal} cupos`)}
+    ${card('Recaudado', S0(ing), porApr > 0 ? `+ <b class="text-amber-600">${S0(porApr)}</b> por aprobar` : 'pagos del periodo')}
+    ${card('Gastos', `<span class="text-rose-600">${S0(gas)}</span>`, 'del periodo')}
+    ${card('Utilidad', `<span class="${uti > 0 ? 'text-emerald-600' : uti < 0 ? 'text-rose-600' : 'text-slate-700'}">${uti < 0 ? '−' : ''}${S0(Math.abs(uti))}</span>`, 'recaudado − gastos')}
+    ${card('Por cobrar', S0(pc), 'pendiente total · sin bajas')}
+    <div class="cursor-pointer hover:opacity-80" onclick="reporteNuevosPruebas('nuevos')" title="Ver el detalle de alumnos nuevos">${card('Alumnos nuevos', nvs, 'en el periodo · ver detalle →')}</div>
+  </div>`;
+}
+
 function gerPorSede(win) {
   const tuvoTrack = (jid) => DB.inscripciones.some((i) => i.jugador_id === jid);
   const porSede = sedesActivas().map((s) => {
