@@ -2651,8 +2651,8 @@ function njFormBody(j, tracksJid) {
       </label>
     </div>
     <div class="flex flex-wrap gap-1 border-b border-slate-200 mb-4 text-xs">
-      ${['cuenta', 'tracks', 'cnr', 'pagos', 'torneos', 'evalua'].filter(() => showTracks).map((id) => {
-        const lbl = { cuenta: '💳 Cuenta', tracks: '🎯 Tracks', cnr: '🏷️ CNR', pagos: '🧾 Historial de Pagos', torneos: '🏆 Torneos', evalua: '📈 Evaluación' }[id];
+      ${['cuenta', 'addcargo', 'tracks', 'cnr', 'pagos', 'torneos', 'evalua'].filter(() => showTracks).map((id) => {
+        const lbl = { cuenta: '💳 Cuenta', addcargo: '➕ Agregar cargo', tracks: '🎯 Tracks', cnr: '🏷️ CNR', pagos: '🧾 Historial de Pagos', torneos: '🏆 Torneos', evalua: '📈 Evaluación' }[id];
         return `<button type="button" id="njt_${id}" onclick="njTab('${id}')" class="px-2.5 py-2 -mb-px border-b-2 ${id === act ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">${lbl}</button>`;
       }).join('')}
       <button type="button" id="njt_personal" onclick="njTab('personal')" class="px-2.5 py-2 -mb-px border-b-2 ${act === 'personal' ? 'border-indigo-600 text-indigo-600 font-medium' : 'border-transparent text-slate-500'}">👤 Personal</button>
@@ -2660,6 +2660,7 @@ function njFormBody(j, tracksJid) {
       <button type="button" id="njt_academia" onclick="njTab('academia')" class="px-2.5 py-2 -mb-px border-b-2 border-transparent text-slate-500">🏫 Por academia</button>
     </div>
     ${showTracks ? `<div id="nj_cuenta" class="${hide('cuenta')}">${estadoCuentaHTML(tracksJid)}</div>` : ''}
+    ${showTracks ? `<div id="nj_addcargo" class="${hide('addcargo')}">${addCargoHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_tracks" class="${hide('tracks')}">${fichaTracksHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_cnr" class="${hide('cnr')}">${cnrFormHTML(tracksJid)}</div>` : ''}
     ${showTracks ? `<div id="nj_pagos" class="${hide('pagos')}">${pagosDocsHTML(tracksJid)}</div>` : ''}
@@ -3069,7 +3070,7 @@ function estadoCuentaHTML(jid) {
         </div>
       </div>`;
     })()}
-    <p class="mt-3 text-xs text-slate-400">Los cargos se agregan desde las pestañas <b>Tracks</b> (CR) y <b>CNR</b>.</p>`;
+    <p class="mt-3 text-xs text-slate-400">Los cargos se agregan desde la pestaña <b>➕ Agregar cargo</b> (piloto), o desde <b>Tracks</b> (CR) y <b>CNR</b>.</p>`;
 }
 
 // Panel para agregar un CR de UNA inscripción (pestaña Tracks de la ficha)
@@ -3161,6 +3162,200 @@ function cnrFormHTML(jid) {
       : '<p class="text-sm text-slate-400">Sin CNRs registrados.</p>'}`;
 }
 window.renderFichaCNR = (jid) => { if (el('nj_cnr')) el('nj_cnr').innerHTML = cnrFormHTML(jid); };
+
+// ---------- Pestaña piloto "Agregar cargo": estilo punto de venta ----------
+// Botones grandes con todo precalculado (la carta) + comanda que no graba nada
+// hasta Confirmar. La Mensualidad encadena periodos: cada toque agrega el
+// siguiente ciclo, por lo que no se pueden crear CRs duplicados del mismo rango.
+let ADDC_JID = null, ADDC_ITEMS = [];
+// Inicio del próximo CR considerando también los que esperan en la comanda
+function addcInicioDe(i) {
+  const enCola = ADDC_ITEMS.filter((x) => x.kind === 'cr' && x.inscId === i.id).map((x) => x.fin).sort().pop();
+  const base = enCola && (!i.ultima_fecha_corte || enCola > i.ultima_fecha_corte) ? enCola : i.ultima_fecha_corte;
+  return base ? isoAddDays(base, 1) : (i.fecha_inscripcion || HOY);
+}
+function addCargoHTML(jid) {
+  if (ADDC_JID !== jid) { ADDC_JID = jid; ADDC_ITEMS = []; }
+  const j = jugador(jid); if (!j) return '';
+  const sedeJ = j.sede_id || SEDE_ACTUAL;
+  const ciclos = ciclosPagoSede();
+  const cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
+  const inscAct = DB.inscripciones.filter((i) => i.jugador_id === jid && i.activo);
+  const cnrCat = conceptosCNRSede();
+  const esUnif = (c) => /uniforme/i.test(c.nombre);
+  const unifs = cnrCat.filter(esUnif), otros = cnrCat.filter((c) => !esUnif(c));
+
+  const cardsCR = inscAct.map((i) => {
+    const t = track(i.track_id); if (!t) return '';
+    const monto = i.costo_mensual_personalizado ?? t.mensualidad_sugerida;
+    const inicio = addcInicioDe(i), fin = finCR(inicio);
+    const venc = cicloDef && cicloDef.dia_venc ? fechaVencimiento(inicio, cicloDef.dia_venc) : fin;
+    const choque = crSolapado(i.id, inicio, fin);
+    if (choque) return `
+      <div class="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+        <div class="text-sm font-semibold text-slate-400">📅 Mensualidad · ${t.nombre_track}</div>
+        <div class="mt-0.5 text-xs text-slate-400">⚠ El periodo del ${fmtDMY(inicio)} al ${fmtDMY(fin)} ya tiene un CR</div>
+      </div>`;
+    const alDia = i.ultima_fecha_corte && i.ultima_fecha_corte >= HOY;
+    return `
+    <button type="button" onclick="addcMensualidad('${jid}','${i.id}')"
+      class="w-full rounded-xl bg-indigo-50 p-3 text-left ring-2 ring-indigo-300 hover:bg-indigo-100 active:scale-[.99]">
+      <div class="flex items-center justify-between gap-2">
+        <span class="min-w-0 truncate text-sm font-semibold text-indigo-700">📅 Mensualidad · ${t.nombre_track}</span>
+        <span class="shrink-0 text-lg font-bold text-indigo-700">${S(monto)}</span>
+      </div>
+      <div class="mt-0.5 text-xs text-indigo-600">Del ${fmtDMY(inicio)} al ${fmtDMY(fin)} · vence ${fmtDMY(venc)}</div>
+      <div class="text-[11px] ${alDia ? 'text-emerald-600' : 'text-slate-400'}">${i.ultima_fecha_corte ? `matriculado hasta ${fmtDMY(i.ultima_fecha_corte)}` : 'sin CR previo · inicia en su fecha de inscripción'}</div>
+    </button>`;
+  }).join('');
+
+  // Chips de talla para un concepto inventariable: muestran el stock REAL menos
+  // lo que ya espera en la comanda; sin stock = tachado
+  const chips = (cn, tono) => {
+    const st = stockTallas(cn.id, sedeJ);
+    const enCola = (tl) => ADDC_ITEMS.filter((x) => x.kind === 'cnr' && x.cnId === cn.id && x.talla === tl).length;
+    const tallas = Object.keys(st).filter((tl) => st[tl] > 0).sort();
+    if (!tallas.length) return '<div class="mt-1 text-xs text-rose-500">⚠ Sin stock en el almacén de la sede del alumno</div>';
+    return `<div class="mt-1.5 flex flex-wrap gap-1.5">${tallas.map((tl) => {
+      const disp = st[tl] - enCola(tl);
+      return disp > 0
+        ? `<button type="button" onclick="addcCNR('${jid}','${cn.id}','${String(tl).replace(/'/g, '&#39;')}')" class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-${tono}-700 ring-1 ring-${tono}-300 hover:bg-${tono}-100">${tl} <span class="text-${tono}-500">·${disp}</span></button>`
+        : `<span class="rounded-lg px-2.5 py-1.5 text-xs text-slate-300 line-through ring-1 ring-slate-200">${tl}</span>`;
+    }).join('')}</div>`;
+  };
+  const cardsUnif = unifs.map((cn) => `
+    <div class="rounded-xl bg-emerald-50 p-3 ring-2 ring-emerald-300">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-semibold text-emerald-700">👕 ${cn.nombre}</span>
+        <span class="text-lg font-bold text-emerald-700">${S(+cn.precio || 0)}</span>
+      </div>
+      <div class="mt-0.5 text-[11px] text-emerald-600">${cn.maneja_stock ? 'Toca la talla para agregar · descuenta stock' : ''}</div>
+      ${cn.maneja_stock ? chips(cn, 'emerald')
+        : `<button type="button" onclick="addcCNR('${jid}','${cn.id}','')" class="mt-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-100">Agregar</button>`}
+    </div>`).join('');
+  const cardsOtros = otros.map((cn) => `
+    <div class="rounded-xl bg-white p-2.5 ring-1 ring-slate-300 ${cn.maneja_stock ? '' : 'cursor-pointer hover:bg-slate-50'}"
+      ${cn.maneja_stock ? '' : `onclick="addcCNR('${jid}','${cn.id}','')"`}>
+      <div class="flex items-center justify-between gap-2 text-sm">
+        <span class="min-w-0 truncate font-medium text-slate-700">${cn.nombre}</span>
+        <span class="shrink-0 font-semibold text-slate-700">${S(+cn.precio || 0)}</span>
+      </div>
+      ${cn.maneja_stock ? chips(cn, 'slate') : ''}
+    </div>`).join('');
+
+  const total = ADDC_ITEMS.reduce((s, x) => s + (+x.monto || 0), 0);
+  const comanda = `
+    <div class="flex flex-col rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+      <div class="mb-1 text-sm font-semibold text-slate-600">🧾 Comanda (${ADDC_ITEMS.length})</div>
+      ${ADDC_ITEMS.length ? ADDC_ITEMS.map((x, idx) => `
+        <div class="border-b border-slate-200 py-1.5 text-sm">
+          <div class="flex items-center justify-between gap-2">
+            <span class="min-w-0 truncate">${x.kind === 'cr' ? '📅' : '🏷️'} ${x.nombre}${x.talla ? ` · talla ${x.talla}` : ''}</span>
+            ${x.kind === 'cnr'
+              ? `<input type="number" step="0.01" min="0" value="${x.monto}" oninput="addcMonto(${idx}, this.value)" class="w-20 shrink-0 rounded border border-slate-300 px-1.5 py-0.5 text-right text-sm">`
+              : `<b class="shrink-0">${S(x.monto)}</b>`}
+          </div>
+          <div class="flex items-center justify-between text-[11px] text-slate-400">
+            <span>${x.kind === 'cr' ? `Del ${fmtDMY(x.inicio)} al ${fmtDMY(x.fin)} · vence ${fmtDMY(x.venc)}` : (x.manejaStock ? 'descuenta stock al confirmar' : 'cargo no recurrente')}</span>
+            <button type="button" onclick="addcQuitar(${idx})" class="text-rose-500 hover:underline">quitar</button>
+          </div>
+        </div>`).join('')
+        : '<p class="py-5 text-center text-xs text-slate-400">Toca un cargo para agregarlo.<br>Nada se graba hasta confirmar.</p>'}
+      <div class="mt-auto pt-2">
+        <div class="flex justify-between pb-2 text-sm font-semibold text-slate-700"><span>Total</span><span id="addc_total">${S(total)}</span></div>
+        <button type="button" onclick="addcConfirmar('${jid}', false)" ${ADDC_ITEMS.length ? '' : 'disabled'}
+          class="w-full rounded-lg bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40">Confirmar cargos · <span id="addc_btnTotal">${S(total)}</span></button>
+        <button type="button" onclick="addcConfirmar('${jid}', true)" ${ADDC_ITEMS.length ? '' : 'disabled'}
+          class="mt-1.5 w-full rounded-lg px-3 py-2 text-sm font-medium text-indigo-700 ring-1 ring-indigo-300 hover:bg-indigo-50 disabled:opacity-40">Confirmar y registrar pago</button>
+      </div>
+    </div>`;
+
+  return `
+    <p class="mb-3 text-xs text-slate-400">🧪 Pestaña piloto · toca los botones para armar la comanda; los cargos se crean recién al <b>Confirmar</b>. Las fechas y montos de la mensualidad se calculan solos.</p>
+    <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_240px]">
+      <div class="space-y-3">
+        ${cardsCR || '<p class="text-xs text-slate-400">Sin tracks activos: inscríbelo en un track para generar mensualidades.</p>'}
+        ${cardsUnif}
+        ${otros.length ? `<div class="text-xs font-medium text-slate-500">Otros cargos del catálogo</div>
+        <div class="grid grid-cols-2 gap-2">${cardsOtros}</div>` : ''}
+      </div>
+      ${comanda}
+    </div>`;
+}
+window.renderAddCargo = (jid) => { if (el('nj_addcargo')) el('nj_addcargo').innerHTML = addCargoHTML(jid); };
+window.addcMensualidad = (jid, inscId) => {
+  const i = DB.inscripciones.find((x) => x.id === inscId); if (!i) return;
+  const t = track(i.track_id); if (!t) return;
+  const ciclos = ciclosPagoSede(), cicloDef = ciclos.find((c) => c.es_default) || ciclos[0];
+  const inicio = addcInicioDe(i), fin = finCR(inicio);
+  if (crSolapado(i.id, inicio, fin)) { toast('⚠ Ese periodo ya tiene un CR'); renderAddCargo(jid); return; }
+  ADDC_ITEMS.push({ kind: 'cr', inscId: i.id, nombre: t.nombre_track, inicio, fin,
+    venc: cicloDef && cicloDef.dia_venc ? fechaVencimiento(inicio, cicloDef.dia_venc) : fin,
+    cicloDia: cicloDef ? cicloDef.dia : null,
+    monto: i.costo_mensual_personalizado ?? t.mensualidad_sugerida });
+  renderAddCargo(jid);
+};
+window.addcCNR = (jid, cnId, talla) => {
+  const cn = DB.conceptosCNR.find((c) => c.id === cnId); if (!cn) return;
+  const j = jugador(jid), sedeJ = (j && j.sede_id) || SEDE_ACTUAL;
+  if (cn.maneja_stock) {
+    const enCola = ADDC_ITEMS.filter((x) => x.kind === 'cnr' && x.cnId === cnId && x.talla === talla).length;
+    if (stockDe(cnId, talla, sedeJ) - enCola < 1) { toast(`⚠ Sin stock de talla ${talla}`); renderAddCargo(jid); return; }
+  }
+  ADDC_ITEMS.push({ kind: 'cnr', cnId, nombre: cn.nombre, talla: cn.maneja_stock ? talla : null,
+    manejaStock: !!cn.maneja_stock, monto: +cn.precio || 0 });
+  renderAddCargo(jid);
+};
+window.addcQuitar = (idx) => { ADDC_ITEMS.splice(idx, 1); renderAddCargo(ADDC_JID); };
+// El monto se edita sin repintar (se perdería el foco): solo datos + totales
+window.addcMonto = (idx, v) => {
+  if (!ADDC_ITEMS[idx]) return;
+  ADDC_ITEMS[idx].monto = parseFloat(v) || 0;
+  const total = ADDC_ITEMS.reduce((s, x) => s + (+x.monto || 0), 0);
+  ['addc_total', 'addc_btnTotal'].forEach((id2) => { if (el(id2)) el(id2).textContent = S(total); });
+};
+window.addcConfirmar = (jid, conPago) => {
+  if (!ADDC_ITEMS.length) return;
+  const j = jugador(jid); if (!j) return;
+  const sedeJ = j.sede_id || SEDE_ACTUAL;
+  // Validación previa de TODA la comanda: si algo falla, no se graba nada
+  const porTalla = {};
+  for (const x of ADDC_ITEMS) {
+    if (+x.monto < 0) { toast('⚠ Hay un monto negativo en la comanda'); return; }
+    if (x.kind === 'cnr' && x.manejaStock) {
+      const k = x.cnId + '|' + x.talla; porTalla[k] = (porTalla[k] || 0) + 1;
+      if (stockDe(x.cnId, x.talla, sedeJ) < porTalla[k]) { toast(`⚠ Sin stock suficiente de ${x.nombre} talla ${x.talla}`); renderAddCargo(jid); return; }
+    }
+    if (x.kind === 'cr' && crSolapado(x.inscId, x.inicio, x.fin)) { toast(`⚠ ${x.nombre}: el periodo del ${fmtDMY(x.inicio)} ya tiene CR`); renderAddCargo(jid); return; }
+  }
+  let n = 0, total = 0;
+  ADDC_ITEMS.forEach((x) => {
+    const monto = +x.monto || 0;
+    if (x.kind === 'cr') {
+      const i = DB.inscripciones.find((z) => z.id === x.inscId); if (!i) return;
+      DB.cargos.push({ id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, inscripcion_id: i.id, tipo: 'CR', origen: 'manual',
+        concepto: x.nombre, descripcion: `Del ${fmtDMY(x.inicio)} al ${fmtDMY(x.fin)}`,
+        ciclo_inicio: x.inicio, ciclo_fin: x.fin, ciclo_dia: x.cicloDia, fecha_vencimiento: x.venc || null,
+        periodo: x.inicio.slice(0, 7), monto, pagado_monto: 0, estado: monto > 0 ? 'por_pagar' : 'pagado' });
+      if (!i.ultima_fecha_corte || x.fin > i.ultima_fecha_corte) i.ultima_fecha_corte = x.fin;
+    } else {
+      const cargo = { id: uid('c'), tutor_id: j.tutor_id, jugador_id: jid, tipo: 'CNR', concepto: x.nombre,
+        descripcion: [x.talla ? `Talla ${x.talla}` : null, monto === 0 ? 'GRATIS' : null].filter(Boolean).join(' · '),
+        periodo: HOY.slice(0, 7), fecha_vencimiento: HOY, monto, pagado_monto: 0,
+        estado: monto > 0 ? 'por_pagar' : 'pagado' };   // gratis: nace pagado
+      DB.cargos.push(cargo);
+      if (x.manejaStock) DB.invMovimientos.push({ id: uid('im'), sede_id: sedeJ, concepto_cnr_id: x.cnId, talla: x.talla,
+        tipo: 'salida', cantidad: 1, motivo: monto === 0 ? 'Obsequio a alumno (gratis)' : 'Asignación a alumno',
+        jugador_id: jid, cargo_id: cargo.id, fecha: HOY });
+    }
+    n++; total += monto;
+  });
+  ADDC_ITEMS = [];
+  toast(`✅ ${n} cargo(s) creados · ${S(total)}`);
+  renderAddCargo(jid); renderCuenta(jid); renderFichaCNR(jid);
+  if (typeof renderFichaTracks === 'function') renderFichaTracks(jid);
+  if (conPago) formPagoAlumno(jid);
+};
 window.renderCuenta = (jid) => { if (el('nj_cuenta')) el('nj_cuenta').innerHTML = estadoCuentaHTML(jid); };
 // ---------- Modificar CR (solo coordinador/admin): vencimiento y monto ----------
 window.editarCRForm = (cid, jid) => { CR_EDIT_ID = cid; renderCuenta(jid); };
@@ -5208,7 +5403,7 @@ window.confirmarBajaAlumno = (e, jid) => {
 };
 
 window.njTab = (name) => {
-  ['tracks', 'cuenta', 'cnr', 'pagos', 'torneos', 'evalua', 'personal', 'deportiva', 'academia'].forEach((s) => {
+  ['tracks', 'cuenta', 'addcargo', 'cnr', 'pagos', 'torneos', 'evalua', 'personal', 'deportiva', 'academia'].forEach((s) => {
     const sec = el('nj_' + s);
     if (sec) sec.classList.toggle('hidden', s !== name);
     const btn = el('njt_' + s);
