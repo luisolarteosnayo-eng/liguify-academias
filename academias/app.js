@@ -3214,13 +3214,15 @@ function addCargoHTML(jid) {
   const chips = (cn, tono) => {
     const st = stockTallas(cn.id, sedeJ);
     const enCola = (tl) => ADDC_ITEMS.filter((x) => x.kind === 'cnr' && x.cnId === cn.id && x.talla === tl).length;
-    const tallas = Object.keys(st).filter((tl) => st[tl] > 0).sort();
-    if (!tallas.length) return '<div class="mt-1 text-xs text-rose-500">⚠ Sin stock en el almacén de la sede del alumno</div>';
-    return `<div class="mt-1.5 flex flex-wrap gap-1.5">${tallas.map((tl) => {
+    const tallas = Object.keys(st).sort();   // todas: las sin stock salen tachadas
+    if (!tallas.some((tl) => st[tl] > 0)) return '<div class="mt-1 text-xs text-rose-500">⚠ Sin stock en el almacén de la sede del alumno</div>';
+    return `<div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <span class="text-xs font-semibold text-${tono}-700">Elige la talla:</span>
+      ${tallas.map((tl) => {
       const disp = st[tl] - enCola(tl);
       return disp > 0
-        ? `<button type="button" onclick="addcCNR('${jid}','${cn.id}','${String(tl).replace(/'/g, '&#39;')}')" class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-${tono}-700 ring-1 ring-${tono}-300 hover:bg-${tono}-100">${tl} <span class="text-${tono}-500">·${disp}</span></button>`
-        : `<span class="rounded-lg px-2.5 py-1.5 text-xs text-slate-300 line-through ring-1 ring-slate-200">${tl}</span>`;
+        ? `<button type="button" onclick="addcCNR('${jid}','${cn.id}','${String(tl).replace(/'/g, '&#39;')}')" class="rounded-lg bg-white px-2.5 py-1.5 text-xs font-medium text-${tono}-700 ring-1 ring-${tono}-300 hover:bg-${tono}-100">Talla ${tl} <span class="text-${tono}-500">· ${disp} disp.</span></button>`
+        : `<span class="rounded-lg px-2.5 py-1.5 text-xs text-slate-300 line-through ring-1 ring-slate-200" title="Sin stock">Talla ${tl}</span>`;
     }).join('')}</div>`;
   };
   const cardsUnif = unifs.map((cn) => `
@@ -3250,14 +3252,21 @@ function addCargoHTML(jid) {
       ${ADDC_ITEMS.length ? ADDC_ITEMS.map((x, idx) => `
         <div class="border-b border-slate-200 py-1.5 text-sm">
           <div class="flex items-center justify-between gap-2">
-            <span class="min-w-0 truncate">${x.kind === 'cr' ? '📅' : '🏷️'} ${x.nombre}${x.talla ? ` · talla ${x.talla}` : ''}</span>
+            <span class="min-w-0 truncate">${x.kind === 'cr' ? '📅' : '🏷️'} ${x.nombre}</span>
             ${x.kind === 'cnr'
               ? `<input type="number" step="0.01" min="0" value="${x.monto}" oninput="addcMonto(${idx}, this.value)" class="w-20 shrink-0 rounded border border-slate-300 px-1.5 py-0.5 text-right text-sm">`
               : `<b class="shrink-0">${S(x.monto)}</b>`}
           </div>
-          <div class="flex items-center justify-between text-[11px] text-slate-400">
-            <span>${x.kind === 'cr' ? `Del ${fmtDMY(x.inicio)} al ${fmtDMY(x.fin)} · vence ${fmtDMY(x.venc)}` : (x.manejaStock ? 'descuenta stock al confirmar' : 'cargo no recurrente')}</span>
-            <button type="button" onclick="addcQuitar(${idx})" class="text-rose-500 hover:underline">quitar</button>
+          <div class="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+            <span class="flex min-w-0 items-center gap-1">${x.kind === 'cr' ? `Del ${fmtDMY(x.inicio)} al ${fmtDMY(x.fin)} · vence ${fmtDMY(x.venc)}`
+              : x.manejaStock ? (() => {   // la talla elegida se ve y se puede cambiar aquí mismo
+                  const st2 = stockTallas(x.cnId, sedeJ);
+                  const ops = Object.keys(st2).filter((tl) => st2[tl] > 0 || tl === x.talla).sort();
+                  return `<b class="text-slate-500">Talla</b><select onchange="addcTalla(${idx}, this.value)" class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px]">
+                    ${ops.map((tl) => `<option value="${String(tl).replace(/"/g, '&quot;')}" ${tl === x.talla ? 'selected' : ''}>${tl}</option>`).join('')}
+                  </select><span>· stock</span>`;
+                })() : 'cargo no recurrente'}</span>
+            <button type="button" onclick="addcQuitar(${idx})" class="shrink-0 text-rose-500 hover:underline">quitar</button>
           </div>
         </div>`).join('')
         : '<p class="py-5 text-center text-xs text-slate-400">Toca un cargo para agregarlo.<br>Nada se graba hasta confirmar.</p>'}
@@ -3307,6 +3316,15 @@ window.addcCNR = (jid, cnId, talla) => {
   renderAddCargo(jid);
 };
 window.addcQuitar = (idx) => { ADDC_ITEMS.splice(idx, 1); renderAddCargo(ADDC_JID); };
+// Cambiar la talla de una línea de la comanda (valida el stock de la nueva talla)
+window.addcTalla = (idx, v) => {
+  const x = ADDC_ITEMS[idx]; if (!x) return;
+  const j = jugador(ADDC_JID), sedeJ = (j && j.sede_id) || SEDE_ACTUAL;
+  const enCola = ADDC_ITEMS.filter((y, k) => k !== idx && y.kind === 'cnr' && y.cnId === x.cnId && y.talla === v).length;
+  if (stockDe(x.cnId, v, sedeJ) - enCola < 1) { toast(`⚠ Sin stock de talla ${v}`); renderAddCargo(ADDC_JID); return; }
+  x.talla = v;
+  renderAddCargo(ADDC_JID);
+};
 // El monto se edita sin repintar (se perdería el foco): solo datos + totales
 window.addcMonto = (idx, v) => {
   if (!ADDC_ITEMS[idx]) return;
