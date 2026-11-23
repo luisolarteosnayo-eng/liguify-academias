@@ -1375,7 +1375,8 @@ const SCREENS = {
     el('content').innerHTML = `
       <div class="mb-4 flex flex-wrap justify-end gap-2">
         <button onclick="reporteTutores()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">👪 Tutores · facturación</button>
-        ${(ROL === 'admin' || ROL === 'tesorero') ? `<button onclick="colaEmision('')" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Boletas, facturas y recibos de los pagos aprobados">🧾 Emitir comprobantes</button>` : ''}
+        ${(ROL === 'admin' || ROL === 'tesorero') ? `<button onclick="colaEmision('')" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Boletas, facturas y recibos de los pagos aprobados">🧾 Emitir comprobantes</button>
+        <button onclick="reporteDocsSunat()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Boletas, facturas y recibos emitidos: filtros por tipo, medio, mes y rango de fechas, con totales">📑 Reporte documentos SUNAT</button>` : ''}
         <button onclick="liquidarGratisSede()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50" title="Marca como pagados los CR de S/ 0: becas, y meses gratis de promociones ya pagadas">✓ Liquidar CR gratis/beca</button>
         <button onclick="formGenerarCR()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">⚙️ Generar CR por ciclo</button>
         <button onclick="formCargo()" class="rounded-lg bg-white ring-1 ring-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Cargo eventual</button>
@@ -4559,6 +4560,110 @@ window.tesSelCount = () => {
   const n = document.querySelectorAll('.tesChk:checked').length;
   if (el('tesSelN')) el('tesSelN').textContent = n;
 };
+// ---------- Reporte de documentos SUNAT (boletas/facturas/recibos emitidos) ----------
+let RS_TIPOS = ['boleta', 'factura'], RS_MEDIOS = [], RS_MES = '', RS_DESDE = '', RS_HASTA = '', RS_MODO = 'pago';
+const rsFechaRef = (p) => RS_MODO === 'emision' ? (String(p.emitido_at || '').slice(0, 10) || p.fecha || '') : (p.fecha || '');
+const rsDocsFiltrados = () => {
+  let docs = pagosSede().filter((p) => p.doc_tipo && RS_TIPOS.includes(p.doc_tipo));
+  if (RS_MEDIOS.length) docs = docs.filter((p) => RS_MEDIOS.includes(p.medio || ''));
+  if (RS_MES) docs = docs.filter((p) => rsFechaRef(p).slice(0, 7) === RS_MES);
+  if (RS_DESDE) docs = docs.filter((p) => rsFechaRef(p) >= RS_DESDE);
+  if (RS_HASTA) docs = docs.filter((p) => rsFechaRef(p) <= RS_HASTA);
+  return docs.slice().sort((a, b) => rsFechaRef(a).localeCompare(rsFechaRef(b))
+    || String(a.doc_serie || '').localeCompare(String(b.doc_serie || ''))
+    || (a.doc_numero || 0) - (b.doc_numero || 0));
+};
+// Documento y nombre del cliente según el tipo emitido (factura: RUC/razón
+// social · boleta: DNI/tutor o CLIENTE VARIOS · recibo: alumno)
+function rsDatosDoc(p) {
+  const j = p.jugador_id ? jugador(p.jugador_id) : null;
+  const t = tutor(p.tutor_id) || {};
+  if (p.doc_tipo === 'factura') return { doc: t.ruc || '—', nombre: t.razon_social || t.nombres || '—' };
+  if (p.doc_tipo === 'boleta') return dniTutorOk(t.dni_tutor)
+    ? { doc: t.dni_tutor, nombre: t.nombres || (j ? nom(j) : '—') }
+    : { doc: '—', nombre: 'CLIENTE VARIOS' };
+  return { doc: dniTutorOk(t.dni_tutor) ? t.dni_tutor : '—', nombre: j ? nom(j) : (t.nombres || '—') };
+}
+window.rsSet = (campo, v) => {
+  if (campo === 'mes') RS_MES = v; else if (campo === 'desde') RS_DESDE = v;
+  else if (campo === 'hasta') RS_HASTA = v; else if (campo === 'modo') RS_MODO = v;
+  reporteDocsSunat();
+};
+window.rsToggleTipo = (t) => { RS_TIPOS = RS_TIPOS.includes(t) ? RS_TIPOS.filter((x) => x !== t) : [...RS_TIPOS, t]; reporteDocsSunat(); };
+window.rsToggleMedio = (m) => { RS_MEDIOS = RS_MEDIOS.includes(m) ? RS_MEDIOS.filter((x) => x !== m) : [...RS_MEDIOS, m]; reporteDocsSunat(); };
+window.reporteDocsSunat = () => {
+  if (!(ROL === 'admin' || ROL === 'tesorero')) { toast('Solo Tesorería o el Administrador'); return; }
+  const docsTodos = pagosSede().filter((p) => p.doc_tipo);
+  const medios = [...new Set(docsTodos.map((p) => p.medio).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const docs = rsDocsFiltrados();
+  const monto = (p) => p.total ?? p.monto ?? 0;
+  const lblTipo = { boleta: 'Boleta', factura: 'Factura', recibo: 'Recibo' };
+  const chipT = (t) => `<button onclick="rsToggleTipo('${t}')"
+    class="rounded-full px-2.5 py-1 ring-1 ${RS_TIPOS.includes(t) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'}">${lblTipo[t]}</button>`;
+  const filas = docs.map((p) => { const d = rsDatosDoc(p);
+    return [fmtDMY(p.fecha), p.emitido_at ? fmtDMY(String(p.emitido_at).slice(0, 10)) : '—',
+      badge(lblTipo[p.doc_tipo] || p.doc_tipo, p.doc_tipo === 'factura' ? 'sky' : p.doc_tipo === 'recibo' ? 'slate' : 'emerald'),
+      d.doc, d.nombre, S(monto(p)),
+      `${p.doc_serie || ''}-${String(p.doc_numero || '').padStart(6, '0')}`, p.medio || '—'];
+  });
+  // Totales al final: por tipo de documento presente y total general
+  const totales = ['boleta', 'factura', 'recibo'].filter((t) => docs.some((p) => p.doc_tipo === t))
+    .map((t) => { const ds = docs.filter((p) => p.doc_tipo === t);
+      return [`<b class="text-slate-600">Total ${lblTipo[t]}s</b>`, '', '', '', `${ds.length} doc(s)`,
+        `<b>${S(ds.reduce((s, p) => s + monto(p), 0))}</b>`, '', '']; });
+  if (docs.length) totales.push(['<b class="text-slate-700">TOTAL GENERAL</b>', '', '', '', `<b>${docs.length} doc(s)</b>`,
+    `<b class="text-indigo-700">${S(docs.reduce((s, p) => s + monto(p), 0))}</b>`, '', '']);
+  const hayFiltros = RS_MES || RS_DESDE || RS_HASTA || RS_MEDIOS.length;
+  el('content').innerHTML = `
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <h2 class="text-xl font-bold">📑 Reporte documentos SUNAT <span class="text-sm font-normal text-slate-400">· ${sede(SEDE_ACTUAL) ? sede(SEDE_ACTUAL).nombre_sede : ''}</span></h2>
+      <div class="flex gap-2">
+        <button onclick="rsExportarCSV()" class="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">⬇ Exportar CSV</button>
+        <button onclick="go('tesoreria')" class="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">← Volver a Tesorería</button>
+      </div>
+    </div>
+    <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
+      <span class="text-slate-400">Tipo:</span>${['boleta', 'factura', 'recibo'].map(chipT).join('')}
+      <label class="ml-2 flex items-center gap-1.5 text-slate-500">Mes
+        <input type="month" value="${RS_MES}" onchange="rsSet('mes', this.value)" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
+      <label class="flex items-center gap-1.5 text-slate-500">Desde
+        <input type="date" value="${RS_DESDE}" onchange="rsSet('desde', this.value)" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
+      <label class="flex items-center gap-1.5 text-slate-500">Hasta
+        <input type="date" value="${RS_HASTA}" onchange="rsSet('hasta', this.value)" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"></label>
+      <label class="flex items-center gap-1.5 text-slate-500">Filtrar por
+        <select onchange="rsSet('modo', this.value)" class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs">
+          <option value="pago" ${RS_MODO === 'pago' ? 'selected' : ''}>Fecha de pago</option>
+          <option value="emision" ${RS_MODO === 'emision' ? 'selected' : ''}>Fecha de emisión</option>
+        </select></label>
+      ${hayFiltros ? `<button onclick="RS_MES=''; RS_DESDE=''; RS_HASTA=''; RS_MEDIOS=[]; reporteDocsSunat()" class="text-indigo-600 hover:underline">✕ Quitar filtros</button>` : ''}
+      <span class="text-slate-400">· ${docs.length} documento(s)</span>
+    </div>
+    <div class="mb-3 flex flex-wrap items-center gap-1.5 text-xs">
+      <span class="text-slate-400">Medios:</span>
+      ${medios.map((m) => `<button onclick="rsToggleMedio('${m.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"
+        class="rounded-full px-2.5 py-1 ring-1 ${RS_MEDIOS.includes(m) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'}">${m}</button>`).join('') || '<span class="text-slate-300">sin medios registrados</span>'}
+      ${RS_MEDIOS.length ? '<span class="text-slate-400">· puedes marcar varios</span>' : ''}
+    </div>
+    ${docs.length
+      ? table(['F. Pago', 'F. Emisión', 'Tipo', 'DNI / RUC', 'Nombre', 'Monto', 'N° Documento', 'Medio'], [...filas, ...totales])
+      : '<p class="text-sm text-slate-400">No hay documentos emitidos con esos filtros.</p>'}`;
+};
+window.rsExportarCSV = () => {
+  const docs = rsDocsFiltrados();
+  if (!docs.length) { toast('No hay documentos con esos filtros'); return; }
+  const esc = (x) => '"' + String(x ?? '').replace(/"/g, '""') + '"';
+  const cab = ['fecha_pago', 'fecha_emision', 'tipo_documento', 'dni_ruc', 'nombre', 'monto', 'numero_documento', 'medio_pago'];
+  const lineas = docs.map((p) => { const d = rsDatosDoc(p);
+    return [p.fecha, String(p.emitido_at || '').slice(0, 10), p.doc_tipo, d.doc === '—' ? '' : d.doc, d.nombre,
+      (p.total ?? p.monto ?? 0).toFixed(2), `${p.doc_serie || ''}-${String(p.doc_numero || '').padStart(6, '0')}`, p.medio || ''].map(esc).join(','); });
+  const csv = '\ufeff' + cab.join(',') + '\n' + lineas.join('\n');   // BOM para Excel
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `documentos_sunat_${RS_MES || HOY}.csv`;
+  a.click();
+  toast(`${docs.length} documento(s) exportados`);
+};
+
 window.exportarSunat = () => {
   const ids = [...document.querySelectorAll('.tesChk:checked')].map((c) => c.value);
   if (!ids.length) { toast('Marca al menos un documento de pago'); return; }
