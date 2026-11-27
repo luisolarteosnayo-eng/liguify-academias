@@ -202,7 +202,9 @@ Deno.serve(async (req) => {
       // La app manda 6 variables [tutor, alumno, monto, sede, detalle de cargos,
       // medios]. La plantilla ORIGINAL (cobranza_liguify) tiene 5 (sin detalle):
       // se descarta la 5ª. La v2 (cobranza_liguify_v2) usa las 6 tal cual.
-      let vars = (variables as unknown[]).map((v) => String(v));
+      // Meta rechaza variables con saltos de línea, tabs, 4+ espacios seguidos
+      // o vacías (error #132018): se aplanan a una línea y nunca van en blanco
+      let vars = (variables as unknown[]).map((v) => String(v).replace(/\s+/g, ' ').trim() || '-');
       if (tpl === 'cobranza_liguify' && vars.length >= 6) vars = [vars[0], vars[1], vars[2], vars[3], vars[5]];
       // Plantilla VIP con CABECERA DE IMAGEN: la URL (pública, configurada en la
       // sede) viaja como componente header en cada envío

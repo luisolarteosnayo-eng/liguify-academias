@@ -4509,6 +4509,9 @@ window.cmMarcarTodos = (on) => {
   document.querySelectorAll('.cmChk').forEach((c) => { c.checked = on; });
   cmCount();
 };
+// Variable de plantilla de WhatsApp: una sola línea, sin espacios repetidos y
+// nunca vacía (Meta rechaza el envío con el error #132018 en esos casos)
+const limpiaVar = (v, def) => String(v ?? '').replace(/\s+/g, ' ').trim() || def;
 window.enviarCobranzaMasiva = async () => {
   if (!window.AcademiasDB || !AcademiasDB.on) { toast('El envío masivo solo funciona en modo conectado'); return; }
   const sel = [...document.querySelectorAll('.cmChk:checked')].map((c) => window.__cmCand[+c.value]).filter(Boolean);
@@ -4532,11 +4535,14 @@ window.enviarCobranzaMasiva = async () => {
           plantilla: (sd && sd.tpl_cobranza) || undefined,
           imagen_url: (sd && sd.tpl_cobranza && sd.tpl_imagen_url) || undefined,
           // 6 variables [tutor, alumno, monto, sede, detalle, medios]: la función
-          // descarta el detalle si la plantilla activa es la de 5 variables
-          variables: [((x.t.nombres || '').trim().split(/\s+/)[0] || 'padre de familia'), nom(x.j), 'S/ ' + x.total.toFixed(2),
-            sd ? sd.nombre_sede : DB.academia.nombre_academia,
-            x.detalle || 'mensualidad',
-            (sd && sd.medios_cobro) || 'consulta los medios de pago con tu sede'],
+          // descarta el detalle si la plantilla activa es la de 5 variables.
+          // Meta rechaza variables con saltos de línea, tabs o 4+ espacios
+          // seguidos (error #132018): todo se aplana a una sola línea limpia
+          variables: [limpiaVar((x.t.nombres || '').trim().split(/\s+/)[0], 'padre de familia'),
+            limpiaVar(nom(x.j), 'su hijo(a)'), 'S/ ' + x.total.toFixed(2),
+            limpiaVar(sd ? sd.nombre_sede : DB.academia.nombre_academia, 'la academia'),
+            limpiaVar(x.detalle, 'mensualidad'),
+            limpiaVar(sd && sd.medios_cobro, 'consulta los medios de pago con tu sede')],
         } });
         let msg = null;
         if (error) { msg = error.message; try { const b = error.context && await error.context.json(); if (b && b.error) msg = b.error; } catch (e2) { /* genérico */ } }
